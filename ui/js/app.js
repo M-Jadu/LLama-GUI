@@ -1215,6 +1215,13 @@ document.addEventListener("DOMContentLoaded", () => {
     fetchReleases();
     updateCommandPreview();
     updateApiEndpoints();
+
+    document.getElementById("btn-launch").addEventListener("click", launchLlama);
+    document.getElementById("btn-stop").addEventListener("click", stopLlama);
+    document.getElementById("model-select").addEventListener("change", () => {
+        syncQuickLaunchModelOptions();
+        updateCommandPreview();
+    });
 });
 
 function initTabs() {
@@ -1749,8 +1756,7 @@ function createFlagRow(f) {
         checkbox.dataset.flagType = "bool";
         checkbox.checked = flagValues[f.id] === true;
         checkbox.addEventListener("change", () => {
-            flagValues[f.id] = checkbox.checked;
-            updateCommandPreview();
+            setFlagValue(f.id, checkbox.checked);
         });
         const lbl = document.createElement("label");
         lbl.htmlFor = "flag-" + f.id;
@@ -1889,8 +1895,7 @@ function createFlagRow(f) {
         if (f.step !== undefined) numField.step = f.step;
         numField.addEventListener("input", () => {
             const v = numField.value === "" ? undefined : parseInt(numField.value, 10);
-            flagValues[f.id] = v;
-            updateCommandPreview();
+            setFlagValue(f.id, v);
         });
         input.appendChild(numField);
     } else if (f.type === "float") {
@@ -1906,8 +1911,7 @@ function createFlagRow(f) {
         if (f.max !== undefined) numField.max = f.max;
         numField.addEventListener("input", () => {
             const v = numField.value === "" ? undefined : parseFloat(numField.value);
-            flagValues[f.id] = v;
-            updateCommandPreview();
+            setFlagValue(f.id, v);
         });
         input.appendChild(numField);
     } else {
@@ -1919,8 +1923,7 @@ function createFlagRow(f) {
         textField.placeholder = f.placeholder || "";
         textField.value = flagValues[f.id] || "";
         textField.addEventListener("input", () => {
-            flagValues[f.id] = textField.value || undefined;
-            updateCommandPreview();
+            setFlagValue(f.id, textField.value || undefined);
         });
         input.appendChild(textField);
     }
@@ -1931,7 +1934,10 @@ function createFlagRow(f) {
 }
 
 function collectFlagValues() {
-    const values = { ...flagValues };
+    const values = {};
+    for (const [k, v] of Object.entries(flagValues)) {
+        values[k] = Array.isArray(v) ? [...v] : v;
+    }
     return values;
 }
 
@@ -2095,7 +2101,12 @@ function getLaunchArgs() {
     }
 
     if (modelSel.value) {
-        args.push(["-m", "models/" + modelSel.value]);
+        const modelName = modelSel.value;
+        if (modelName.includes("..") || modelName.includes("/") || modelName.includes("\\")) {
+            alert("Invalid model filename.");
+            return args;
+        }
+        args.push(["-m", "models/" + modelName]);
     }
 
     return args;
@@ -2209,7 +2220,14 @@ async function pollOutput() {
             setTimeout(() => checkStatus(), 500);
         }
     } catch (e) {
-        // ignore
+        appendOutput("Connection to server lost: " + e.message);
+        stopOutputPolling();
+        document.getElementById("btn-launch").classList.remove("hidden");
+        document.getElementById("btn-stop").classList.add("hidden");
+        document.getElementById("input-row").classList.add("hidden");
+        document.getElementById("server-address").classList.add("hidden");
+        updateQuickLaunchActionButtons();
+        updateApiEndpoints();
     }
 }
 
@@ -2246,13 +2264,6 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && document.activeElement.id === "cli-input") {
         sendInput();
     }
-});
-
-document.getElementById("btn-launch").addEventListener("click", launchLlama);
-document.getElementById("btn-stop").addEventListener("click", stopLlama);
-document.getElementById("model-select").addEventListener("change", () => {
-    syncQuickLaunchModelOptions();
-    updateCommandPreview();
 });
 
 function copyServerUrl() {

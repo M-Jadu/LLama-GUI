@@ -1,7 +1,10 @@
 let cachedReleases = null;
 let installPollTimer = null;
+let installPollStartTime = null;
 let latestStatus = null;
 let latestAppUpdateStatus = null;
+
+const INSTALL_POLL_TIMEOUT_MS = 10 * 60 * 1000;
 
 function renderBackendOptions(status) {
     const backendSelect = document.getElementById("backend-select");
@@ -338,7 +341,16 @@ async function checkForUpdates() {
 
 function pollInstallProgress() {
     if (installPollTimer) clearInterval(installPollTimer);
+    installPollStartTime = Date.now();
     installPollTimer = setInterval(async () => {
+        if (Date.now() - installPollStartTime > INSTALL_POLL_TIMEOUT_MS) {
+            clearInterval(installPollTimer);
+            installPollTimer = null;
+            showStatus("error", "Installation timed out. The server may have stopped responding. Try restarting Llama GUI.");
+            showProgress(false);
+            setInstallButtonsDisabled(false);
+            return;
+        }
         try {
             const prog = await fetchJson("/api/download-progress");
             updateProgressBar(prog);
@@ -357,7 +369,7 @@ function pollInstallProgress() {
                 setInstallButtonsDisabled(false);
             }
         } catch (e) {
-            // ignore poll errors
+            // ignore transient poll errors
         }
     }, 500);
 }

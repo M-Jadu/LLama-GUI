@@ -188,6 +188,11 @@ download_progress_lock = threading.Lock()
 gui_server = None
 
 
+def is_process_running():
+    with process_lock:
+        return process is not None and process.poll() is None
+
+
 def load_config():
     if CONFIG_FILE.exists():
         with open(CONFIG_FILE, "r") as f:
@@ -470,8 +475,7 @@ def stream_output(pipe, is_stderr=False):
                 decoded = line.rstrip("\n\r")
                 with output_buffer_lock:
                     output_buffer.append(decoded)
-                if len(output_buffer) > 5000:
-                    with output_buffer_lock:
+                    if len(output_buffer) > 5000:
                         del output_buffer[:1000]
     except Exception:
         pass
@@ -903,7 +907,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_OPTIONS(self):
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:5240")
         self.send_header(
             "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"
         )
@@ -915,7 +919,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:5240")
         self.end_headers()
         self.wfile.write(body)
 
@@ -923,7 +927,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         if length == 0:
             return {}
-        return json.loads(self.rfile.read(length))
+        try:
+            return json.loads(self.rfile.read(length))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return None
+
+    def is_safe_request_origin(self):
+        origin = self.headers.get("Origin", "")
+        referer = self.headers.get("Referer", "")
+        allowed = ("http://127.0.0.1:5240", "http://localhost:5240")
+        if origin:
+            return origin in allowed
+        if referer:
+            return referer.startswith(allowed)
+        return True
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -943,7 +960,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             has_config = bool(cfg.get("tag"))
             installed = has_config and exes.get(get_tool_filename("llama-cli"), False)
             config_stale = has_config and not installed
-            running = process and process.poll() is None
+            running = is_process_running()
             self.send_json(
                 {
                     "installed": installed,
@@ -988,7 +1005,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if path == "/api/output":
             with output_buffer_lock:
                 lines = list(output_buffer)
-            running = process and process.poll() is None
+            running = is_process_running()
             self.send_json({"output": lines, "running": running})
             return
 
@@ -1033,6 +1050,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         path = parsed.path
         body = self.read_body()
 
+        if body is None:
+            self.send_json({"error": "Invalid or malformed JSON body"}, 400)
+            return
+
+        if not self.is_safe_request_origin():
+            self.send_json({"error": "Request origin not allowed"}, 403)
+            return
+
         if path == "/api/install":
             tag = body.get("tag")
             backend = body.get("backend")
@@ -1042,7 +1067,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if backend not in BACKEND_SPECS:
                 self.send_json({"error": f"Unsupported backend: {backend}"}, 400)
                 return
-            if process and process.poll() is None:
+            if is_process_running():
                 self.send_json({"error": "Stop running process first"}, 400)
                 return
             threading.Thread(
@@ -1063,7 +1088,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     {"error": f"Unsupported configured backend: {backend}"}, 400
                 )
                 return
-            if process and process.poll() is None:
+            if is_process_running():
                 self.send_json({"error": "Stop running process first"}, 400)
                 return
             try:
@@ -1101,7 +1126,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         if path == "/api/cleanup-llama":
-            if process and process.poll() is None:
+            if is_process_running():
                 self.send_json({"error": "Stop running process first"}, 400)
                 return
             try:
@@ -1147,6 +1172,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
             PRESETS_DIR.mkdir(parents=True, exist_ok=True)
             safe_name = re.sub(r'[<>:"/\\|?*]', "_", name)
+            safe_name = safe_name.replace("..", "_").strip(". ")
+            if not safe_name:
+                self.send_json({"error": "Invalid preset name"}, 400)
+                return
             with open(PRESETS_DIR / f"{safe_name}.json", "w") as f:
                 json.dump(data, f, indent=2)
             self.send_json({"saved": True, "name": safe_name})
@@ -1208,6 +1237,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         path = parsed.path
         body = self.read_body()
 
+        if not self.is_safe_request_origin():
+            self.send_json({"error": "Request origin not allowed"}, 403)
+            return
+
         if path.startswith("/api/presets/"):
             name = path[len("/api/presets/") :]
             safe_name = re.sub(r'[<>:"/\\|?*]', "_", urllib.parse.unquote(name))
@@ -1234,7 +1267,17 @@ def main():
     ]:
         d.mkdir(parents=True, exist_ok=True)
 
-    gui_server = http.server.HTTPServer(("127.0.0.1", port), Handler)
+    try:
+        gui_server = http.server.HTTPServer(("127.0.0.1", port), Handler)
+    except OSError as e:
+        if "address already in use" in str(e).lower() or e.errno == 10048:
+            print(f"ERROR: Port {port} is already in use.")
+            print(f"Another instance of Llama GUI may be running at http://127.0.0.1:{port}")
+            print("Stop the other instance first, or close the browser tab and try again.")
+        else:
+            print(f"ERROR: Could not start server on port {port}: {e}")
+        sys.exit(1)
+
     print(f"Llama GUI running at http://127.0.0.1:{port}")
     print("Press Ctrl+C to stop the server.")
     try:

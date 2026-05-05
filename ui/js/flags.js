@@ -530,45 +530,6 @@ function shouldOmitSpeculativeFlag(f, values) {
     return draftModelOnlyFlags.has(f.id) && !hasDraftModelSpeculation(values);
 }
 
-function buildCommand(tool, values) {
-    const cfg = values || {};
-    const toolBase = tool.replace("llama-", "");
-    const suffix = (typeof getExecutableSuffix === "function") ? getExecutableSuffix() : "";
-    const parts = [tool + suffix];
-
-    for (const f of FLAGS) {
-        if (f.tool !== "both" && f.tool !== toolBase) continue;
-        if (shouldOmitSpeculativeFlag(f, cfg)) continue;
-        const val = cfg[f.id];
-        if (val === undefined || val === null || val === "") continue;
-        if (f.type === "bool") {
-            if (val === true && !f.flag.startsWith("--no-")) {
-                if (f.id === "preserve_thinking") {
-                    parts.push(f.flag, '{"preserve_thinking":true}');
-                } else {
-                    parts.push(f.flag);
-                }
-            } else if (val === false && f.false_flag) {
-                parts.push(f.false_flag);
-            } else if (val === false && f.flag.startsWith("--no-")) {
-                parts.push(f.flag);
-            }
-        } else if (f.type === "multi_enum") {
-            if (Array.isArray(val) && val.length > 0) {
-                parts.push(f.flag, val.map(v => String(v)).join(","));
-            } else if (typeof val === "string" && val.trim()) {
-                parts.push(f.flag, val.trim());
-            }
-        } else {
-            if (f.id === "chat_template" && !isSupportedChatTemplateValue(val)) {
-                continue;
-            }
-            parts.push(f.flag, String(val));
-        }
-    }
-    return parts.join(" ");
-}
-
 function getDefaultValues() {
     const defaults = {};
     for (const f of FLAGS) {
