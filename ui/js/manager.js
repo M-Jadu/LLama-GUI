@@ -90,6 +90,7 @@ async function fetchReleases() {
 async function checkStatus() {
     try {
         const status = await fetchJson("/api/status");
+        if (!status) return null;
         latestStatus = status;
         updateStatusUI(status);
         return status;
@@ -99,6 +100,7 @@ async function checkStatus() {
 }
 
 function updateStatusUI(status) {
+    if (!status) return;
     const badge = document.getElementById("version-badge");
     const processBadge = document.getElementById("process-badge");
     const info = document.getElementById("installed-info");

@@ -943,7 +943,9 @@ function refreshQuickLaunchUI() {
     const quickCommand = document.getElementById("quick-command-preview");
     if (!quickCommand) return;
 
-    quickLaunchFitCtxLinked = flagValues.fit_ctx === undefined || flagValues.fit_ctx === flagValues.ctx_size;
+    if (quickLaunchFitCtxLinked !== false) {
+        quickLaunchFitCtxLinked = flagValues.fit_ctx === undefined || flagValues.fit_ctx === flagValues.ctx_size;
+    }
     syncQuickLaunchModelOptions();
     refreshQuickSamplerPresetSelect();
 
@@ -2159,7 +2161,8 @@ function getToolBinaryName(tool) {
 }
 
 function updateCommandPreview() {
-    const args = getLaunchArgs();
+    const result = getLaunchArgs();
+    const args = result.args;
     const parts = [getToolBinaryName(currentTool)];
     for (const entry of args) {
         if (Array.isArray(entry)) {
@@ -2228,7 +2231,7 @@ function getLaunchArgs() {
                 }
             } else if (val === false && f.false_flag) {
                 args.push([f.false_flag]);
-            } else if (val === false && f.flag.startsWith("--no-")) {
+            } else if (val === true && f.flag.startsWith("--no-")) {
                 args.push([f.flag]);
             }
         } else if (f.type === "multi_enum") {
@@ -2248,17 +2251,21 @@ function getLaunchArgs() {
     if (modelSel.value) {
         const modelName = modelSel.value;
         if (modelName.includes("..") || modelName.includes("/") || modelName.includes("\\")) {
-            alert("Invalid model filename.");
-            return args;
+            return { args, error: "Invalid model filename." };
         }
         args.push(["-m", "models/" + modelName]);
     }
 
-    return args;
+    return { args, error: null };
 }
 
 async function launchLlama() {
-    const args = getLaunchArgs();
+    const result = getLaunchArgs();
+    if (result.error) {
+        alert(result.error);
+        return;
+    }
+    const args = result.args;
     const hasModel = args.some(a => a[0] === "-m" || a[0] === "-hf");
     if (!hasModel) {
         alert("Select a model or provide an HF repo before launching.");
@@ -2963,7 +2970,12 @@ function saveCurrentConversation() {
         existing.title = generateConversationTitle(chatMessages);
     } else {
         const convo = {
-            id: crypto.randomUUID(),
+            id: (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
+                ? crypto.randomUUID()
+                : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+                    const r = Math.random() * 16 | 0;
+                    return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
+                  }),
             title: generateConversationTitle(chatMessages),
             messages: chatMessages.slice(),
             systemPrompt: sysPrompt ? sysPrompt.value : "",

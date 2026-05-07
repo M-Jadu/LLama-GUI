@@ -722,59 +722,59 @@ def launch_process(tool, args_list):
         if process and process.poll() is None:
             return {"error": "A process is already running"}
 
-    exe_name = get_tool_filename(tool)
-    exe_path = find_tool_executable(tool)
-    if not exe_path.exists():
-        return {"error": f"{exe_name} not found. Install llama.cpp first."}
+        exe_name = get_tool_filename(tool)
+        exe_path = find_tool_executable(tool)
+        if not exe_path.exists():
+            return {"error": f"{exe_name} not found. Install llama.cpp first."}
 
-    args = [str(exe_path)]
-    for entry in args_list:
-        if isinstance(entry, list):
-            args.extend(str(v) for v in entry)
-        else:
-            args.append(str(entry))
+        args = [str(exe_path)]
+        for entry in args_list:
+            if isinstance(entry, list):
+                args.extend(str(v) for v in entry)
+            else:
+                args.append(str(entry))
 
-    env = os.environ.copy()
-    runtime_paths = [str(LLAMA_BIN_DIR)]
-    existing_path = env.get("PATH", "")
-    env["PATH"] = os.pathsep.join(runtime_paths + ([existing_path] if existing_path else []))
+        env = os.environ.copy()
+        runtime_paths = [str(LLAMA_BIN_DIR)]
+        existing_path = env.get("PATH", "")
+        env["PATH"] = os.pathsep.join(runtime_paths + ([existing_path] if existing_path else []))
 
-    if CURRENT_PLATFORM.startswith("linux"):
-        existing_ld = env.get("LD_LIBRARY_PATH", "")
-        env["LD_LIBRARY_PATH"] = os.pathsep.join(
-            runtime_paths + ([existing_ld] if existing_ld else [])
-        )
-    elif CURRENT_PLATFORM == "darwin":
-        existing_dyld = env.get("DYLD_LIBRARY_PATH", "")
-        env["DYLD_LIBRARY_PATH"] = os.pathsep.join(
-            runtime_paths + ([existing_dyld] if existing_dyld else [])
-        )
+        if CURRENT_PLATFORM.startswith("linux"):
+            existing_ld = env.get("LD_LIBRARY_PATH", "")
+            env["LD_LIBRARY_PATH"] = os.pathsep.join(
+                runtime_paths + ([existing_ld] if existing_ld else [])
+            )
+        elif CURRENT_PLATFORM == "darwin":
+            existing_dyld = env.get("DYLD_LIBRARY_PATH", "")
+            env["DYLD_LIBRARY_PATH"] = os.pathsep.join(
+                runtime_paths + ([existing_dyld] if existing_dyld else [])
+            )
 
-    with output_buffer_lock:
-        output_buffer.clear()
+        with output_buffer_lock:
+            output_buffer.clear()
 
-    try:
-        process = subprocess.Popen(
-            args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.PIPE,
-            text=True,
-            env=env,
-            cwd=str(BASE_DIR),
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-            if sys.platform == "win32"
-            else 0,
-        )
-        threading.Thread(
-            target=stream_output, args=(process.stdout,), daemon=True
-        ).start()
-        threading.Thread(
-            target=stream_output, args=(process.stderr, True), daemon=True
-        ).start()
-        return {"pid": process.pid, "command": " ".join(args)}
-    except Exception as e:
-        return {"error": str(e)}
+        try:
+            process = subprocess.Popen(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.PIPE,
+                text=True,
+                env=env,
+                cwd=str(BASE_DIR),
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                if sys.platform == "win32"
+                else 0,
+            )
+            threading.Thread(
+                target=stream_output, args=(process.stdout,), daemon=True
+            ).start()
+            threading.Thread(
+                target=stream_output, args=(process.stderr, True), daemon=True
+            ).start()
+            return {"pid": process.pid, "command": " ".join(args)}
+        except Exception as e:
+            return {"error": str(e)}
 
 
 def stop_process():
