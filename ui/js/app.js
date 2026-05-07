@@ -2212,6 +2212,8 @@ function shouldOmitFlagValue(f, value) {
         yarn_beta_fast: -1,
         reasoning_budget: -1,
         cache_reuse: 0,
+        ctx_checkpoints: 32,
+        checkpoint_every_n_tokens: 8192,
     };
 
     if (!Object.prototype.hasOwnProperty.call(inertDefaultValues, f.id)) {

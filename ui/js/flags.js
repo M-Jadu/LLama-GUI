@@ -162,6 +162,12 @@ const FLAGS = [
       desc: "Use full-size sliding window attention cache instead of compressed. Uses more memory but preserves full context quality.", tool: "both", default: false },
     { id: "cache_ram", flag: "-cram", category: "context", type: "int", label: "KV Cache RAM Limit (MiB)",
       desc: "Maximum RAM/VRAM to use for the KV cache in MiB. The KV cache stores conversation history - more cache = longer conversations before older messages are evicted. -1 = no limit, 0 = disable.", tool: "both", default: 8192, min: -1, placeholder: "-1 unlimited" },
+    { id: "ctx_checkpoints", flag: "-ctxcp", category: "context", type: "int", label: "Context Checkpoints",
+      short_desc: "Keeps reusable snapshots of long prompts so follow-up requests can avoid reprocessing as much context.",
+      desc: "Maximum number of context checkpoints to create per server slot. Higher values can improve prompt-cache reuse for long chats or agent workflows, but use more RAM. Set 0 to disable context checkpoints.", tool: "server", default: 32, min: 0 },
+    { id: "checkpoint_every_n_tokens", flag: "-cpent", category: "context", type: "int", label: "Checkpoint Interval",
+      short_desc: "Controls how often llama.cpp creates context checkpoints while reading a prompt.",
+      desc: "Create a context checkpoint every N tokens during prompt processing. Lower values create more frequent snapshots and may improve reuse granularity, but can use more memory. -1 disables checkpoint creation.", tool: "server", default: 8192, min: -1, placeholder: "-1 disables" },
 
     // ── CPU & Threads ──
     { id: "threads", flag: "-t", category: "cpu", type: "int", label: "CPU Threads",
@@ -367,7 +373,7 @@ const FLAGS = [
         { value: "iq4_nl", label: "IQ4_NL" }, { value: "q5_0", label: "Q5_0" }, { value: "q5_1", label: "Q5_1" },
       ] },
     { id: "context_shift", flag: "--context-shift", category: "kv", type: "bool", label: "Context Shift",
-      desc: "Use context shift on infinite text generation", tool: "both", default: true },
+      desc: "Use context shift on infinite text generation", tool: "both", default: false },
 
     // ── Speculative Decoding ──
     { id: "draft_max", flag: "--spec-draft-n-max", category: "speculative", type: "int", label: "Draft Tokens",
