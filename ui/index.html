@@ -3,44 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
     <title>Llama GUI - llama.cpp Launcher</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>🦙</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/tokens.css">
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-    <div id="app">
-        <header>
-            <h1>Llama GUI</h1>
-            <div class="header-status">
-                <span id="version-badge" class="badge">Not Installed</span>
-                <span id="process-badge" class="badge badge-green hidden">Running</span>
-            </div>
-        </header>
 
-        <nav class="tabs">
-            <button class="tab active" data-tab="install">Install</button>
-            <button class="tab" data-tab="quick-launch">Quick Launch</button>
-            <button class="tab" data-tab="configure">Configure</button>
-            <button class="tab" data-tab="chat">Chat</button>
-            <button class="tab" data-tab="api">API</button>
-            <button class="tab" data-tab="presets">Presets</button>
+<div class="toast-container" id="toast-container"></div>
+
+<button class="mobile-toggle" id="mobile-toggle" type="button">
+    <span class="icon icon-lg"><svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></span>
+</button>
+
+<div class="app-shell">
+
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+            <div class="sidebar-logo">🦙</div>
+            <div>
+                <div class="sidebar-title">Llama GUI</div>
+                <div class="sidebar-subtitle">llama.cpp Launcher</div>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section-label">Setup</div>
+            <button class="nav-item" data-section="install">
+                <span class="icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+                Install
+            </button>
+            <button class="nav-item active" data-section="quick-launch">
+                <span class="icon"><svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
+                Quick Launch
+            </button>
+            <button class="nav-item" data-section="configure">
+                <span class="icon"><svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>
+                Configure
+            </button>
+
+            <div class="nav-section-label">Interact</div>
+            <button class="nav-item" data-section="chat">
+                <span class="icon"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                Chat
+            </button>
+            <button class="nav-item" data-section="api">
+                <span class="icon"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></span>
+                API
+            </button>
+
+            <div class="nav-section-label">Manage</div>
+            <button class="nav-item" data-section="presets">
+                <span class="icon"><svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg></span>
+                Presets
+            </button>
         </nav>
 
-        <!-- INSTALL TAB -->
-        <div class="tab-content active" id="tab-install">
-            <div class="panel">
-                <h2>Install llama.cpp</h2>
+        <div class="sidebar-footer">
+            <div class="sidebar-status" id="sidebar-status" style="display:none;">
+                <span class="status-dot"></span>
+                <span id="sidebar-status-text">Running</span>
+            </div>
+            <span id="version-badge" class="badge badge-neutral">Not Installed</span>
+        </div>
+    </aside>
+
+    <div class="main-content">
+
+        <!-- ═══ INSTALL ═══ -->
+        <div class="section-panel" id="section-install" style="display:none;">
+            <div class="page-header">
+                <div>
+                    <div class="page-title">Install llama.cpp</div>
+                    <div class="page-title-sub">Download releases, select a backend, and manage your llama.cpp installation.</div>
+                </div>
+            </div>
+
+            <div class="card">
                 <div id="install-status" class="status-box"></div>
 
                 <div class="form-group">
-                    <label>Version</label>
+                    <label class="form-label">Version</label>
                     <div class="input-row">
                         <select id="release-select"><option value="">Loading...</option></select>
-                        <button id="refresh-releases" class="btn btn-sm" title="Refresh releases">&#x21bb;</button>
+                        <button id="refresh-releases" class="btn btn-sm" title="Refresh releases">
+                            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
+                        </button>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label>Backend</label>
+                    <label class="form-label">Backend</label>
                     <select id="backend-select">
                         <option value="">Loading available backends...</option>
                     </select>
@@ -94,340 +151,396 @@
             </div>
         </div>
 
-        <!-- QUICK LAUNCH TAB -->
-        <div class="tab-content" id="tab-quick-launch">
-            <div class="panel">
-                <div class="quick-launch-header">
-                    <div>
-                        <h2>Quick Launch</h2>
-                        <p class="quick-launch-intro">Pick a model, use a beginner-friendly setup, and launch with sensible llama.cpp defaults.</p>
-                    </div>
-                    <button id="btn-open-configure" class="btn" type="button">Fine-tune in Configure</button>
+        <!-- ═══ QUICK LAUNCH ═══ -->
+        <div class="section-panel" id="section-quick-launch">
+            <div class="page-header">
+                <div>
+                    <div class="page-title">Quick Launch</div>
+                    <div class="page-title-sub">Pick a model, use a beginner-friendly setup, and launch with sensible llama.cpp defaults.</div>
                 </div>
+                <button id="btn-open-configure" class="btn btn-ghost" type="button">
+                    <span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/></svg></span>
+                    Fine-tune in Configure
+                </button>
+            </div>
 
-                <div class="quick-launch-grid">
-                    <section class="quick-card">
-                        <div class="quick-card-header">
-                            <h3>Model</h3>
-                            <span class="quick-card-kicker">Choose what to run</span>
+            <div class="quick-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-kicker">Step 1</div>
+                            <div class="card-title">Model</div>
                         </div>
-                        <div class="form-group">
-                            <label for="quick-model-select">Model</label>
-                            <div class="input-row">
-                                <select id="quick-model-select">
-                                    <option value="">-- Select Model --</option>
-                                </select>
-                                <button id="btn-quick-refresh-models" class="btn btn-sm" type="button" title="Refresh models">&#x21bb;</button>
-                            </div>
+                        <div class="card-icon icon-blue">
+                            <span class="icon icon-lg"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span>
                         </div>
-                        <div class="form-group">
-                            <label for="quick-profile-select">Beginner Profile</label>
-                            <select id="quick-profile-select">
-                                <option value="">Choose a profile...</option>
-                                <option value="safe-defaults">Safe Defaults</option>
-                                <option value="balanced">Balanced</option>
-                                <option value="low-memory">Low Memory</option>
-                                <option value="long-context">Long Context</option>
-                                <option value="creative-chat">Creative Chat</option>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="quick-model-select">Model</label>
+                        <div class="input-row">
+                            <select id="quick-model-select">
+                                <option value="">-- Select Model --</option>
                             </select>
+                            <button id="btn-quick-refresh-models" class="btn btn-sm" type="button" title="Refresh models">
+                                <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
+                            </button>
                         </div>
-                        <p id="quick-profile-summary" class="quick-help-text">Profiles apply a full starter setup, including context, Auto Fit, GPU offload, and sampler settings.</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="quick-profile-select">Beginner Profile</label>
+                        <select id="quick-profile-select">
+                            <option value="">Choose a profile...</option>
+                            <option value="safe-defaults">Safe Defaults</option>
+                            <option value="balanced">Balanced</option>
+                            <option value="low-memory">Low Memory</option>
+                            <option value="long-context">Long Context</option>
+                            <option value="creative-chat">Creative Chat</option>
+                        </select>
+                    </div>
+                    <p id="quick-profile-summary" class="help-text">Profiles apply a full starter setup, including context, Auto Fit, GPU offload, and sampler settings.</p>
 
-                        <div class="hf-download-panel">
-                            <div class="hf-download-title">Download from Hugging Face</div>
-                            <div id="hf-download-status" class="hf-download-status"></div>
+                    <div class="hf-download-panel">
+                        <div class="hf-download-title">Download from Hugging Face</div>
+                        <div id="hf-download-status" class="hf-download-status"></div>
+                        <div class="form-group">
+                            <label class="form-label" for="hf-repo-input">Repo ID</label>
+                            <input type="text" id="hf-repo-input" placeholder="owner/model-GGUF" />
+                        </div>
+                        <div class="hf-download-grid">
                             <div class="form-group">
-                                <label for="hf-repo-input">Repo ID</label>
-                                <input type="text" id="hf-repo-input" placeholder="owner/model-GGUF" />
+                                <label class="form-label" for="hf-revision-input">Revision</label>
+                                <input type="text" id="hf-revision-input" placeholder="main" />
                             </div>
-                            <div class="hf-download-grid">
-                                <div class="form-group">
-                                    <label for="hf-revision-input">Revision</label>
-                                    <input type="text" id="hf-revision-input" placeholder="main" />
-                                </div>
-                                <div class="form-group">
-                                    <label for="hf-token-input">Token</label>
-                                    <input type="password" id="hf-token-input" placeholder="Optional" autocomplete="off" />
-                                </div>
+                            <div class="form-group">
+                                <label class="form-label" for="hf-token-input">Token</label>
+                                <input type="password" id="hf-token-input" placeholder="Optional" autocomplete="off" />
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <button id="btn-hf-find-files" class="btn btn-sm" type="button">Find GGUF Files</button>
+                        </div>
+                        <div id="hf-file-options" class="hidden">
+                            <div class="form-group">
+                                <label class="form-label" for="hf-model-file-select">Model File</label>
+                                <select id="hf-model-file-select"></select>
+                            </div>
+                            <div class="form-group" id="hf-mmproj-group">
+                                <label class="form-label" for="hf-mmproj-file-select">Companion mmproj</label>
+                                <select id="hf-mmproj-file-select"></select>
+                            </div>
+                            <div id="hf-download-progress" class="progress-container hidden">
+                                <div class="progress-bar"><div id="hf-progress-fill" class="progress-fill"></div></div>
+                                <span id="hf-progress-text">Starting...</span>
                             </div>
                             <div class="form-row">
-                                <button id="btn-hf-find-files" class="btn btn-sm" type="button">Find GGUF Files</button>
-                            </div>
-                            <div id="hf-file-options" class="hidden">
-                                <div class="form-group">
-                                    <label for="hf-model-file-select">Model File</label>
-                                    <select id="hf-model-file-select"></select>
-                                </div>
-                                <div class="form-group" id="hf-mmproj-group">
-                                    <label for="hf-mmproj-file-select">Companion mmproj</label>
-                                    <select id="hf-mmproj-file-select"></select>
-                                </div>
-                                <div id="hf-download-progress" class="progress-container hidden">
-                                    <div class="progress-bar"><div id="hf-progress-fill" class="progress-fill"></div></div>
-                                    <span id="hf-progress-text">Starting...</span>
-                                </div>
-                                <div class="form-row">
-                                    <button id="btn-hf-download" class="btn btn-primary" type="button">Download</button>
-                                    <button id="btn-hf-cancel" class="btn btn-danger hidden" type="button">Cancel</button>
-                                </div>
+                                <button id="btn-hf-download" class="btn btn-primary" type="button">Download</button>
+                                <button id="btn-hf-cancel" class="btn btn-danger hidden" type="button">Cancel</button>
                             </div>
                         </div>
-                    </section>
+                    </div>
+                </div>
 
-                    <section class="quick-card">
-                        <div class="quick-card-header">
-                            <h3>Launch Mode</h3>
-                            <span class="quick-card-kicker">Server is the default</span>
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-kicker">Step 2</div>
+                            <div class="card-title">Launch Mode</div>
                         </div>
-                        <div class="quick-mode-toggle" id="quick-mode-toggle">
-                            <label class="quick-choice">
-                                <input type="radio" name="quick-launch-mode" value="llama-server" checked />
-                                <span>API Server</span>
-                            </label>
-                            <label class="quick-choice">
-                                <input type="radio" name="quick-launch-mode" value="llama-cli" />
-                                <span>Chat</span>
-                            </label>
+                        <div class="card-icon icon-green">
+                            <span class="icon icon-lg"><svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
                         </div>
-                        <p id="quick-mode-summary" class="quick-help-text">API Server exposes the OpenAI-compatible endpoints and built-in web UI.</p>
-                    </section>
+                    </div>
+                    <div class="quick-mode-toggle" id="quick-mode-toggle">
+                        <label class="quick-choice">
+                            <input type="radio" name="quick-launch-mode" value="llama-server" checked />
+                            <span>API Server</span>
+                        </label>
+                        <label class="quick-choice">
+                            <input type="radio" name="quick-launch-mode" value="llama-cli" />
+                            <span>Chat</span>
+                        </label>
+                    </div>
+                    <p id="quick-mode-summary" class="help-text">API Server exposes the OpenAI-compatible endpoints and built-in web UI.</p>
 
-                    <section class="quick-card">
-                        <div class="quick-card-header">
-                            <h3>Memory &amp; Fit</h3>
-                            <span class="quick-card-kicker">Keep it beginner-safe</span>
-                        </div>
+                    <div class="quick-template-section">
+                        <div class="card-kicker" style="margin-bottom:var(--space-2);">Step 3</div>
+                        <div class="card-title" style="margin-bottom:var(--space-3);">Instruction Template</div>
                         <div class="form-group">
-                            <label for="quick-context-preset">Context Length</label>
-                            <div class="input-row">
-                                <select id="quick-context-preset">
-                                    <option value="8192">8192</option>
-                                    <option value="16000">16000</option>
-                                    <option value="32768">32768</option>
-                                    <option value="64000">64000</option>
-                                    <option value="128000">128000</option>
-                                    <option value="256000">256000</option>
-                                    <option value="custom">Custom</option>
-                                </select>
-                                <input type="number" id="quick-context-custom" min="0" step="1" placeholder="Custom tokens" />
-                            </div>
-                            <p class="quick-help-text">16000 is a strong default for most local chat use. Higher values use more RAM or VRAM.</p>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="quick-gpu-mode">GPU Offload</label>
-                            <div class="input-row">
-                                <select id="quick-gpu-mode">
-                                    <option value="auto">Auto</option>
-                                    <option value="0">CPU only</option>
-                                    <option value="all">All GPU layers</option>
-                                    <option value="custom">Custom</option>
-                                </select>
-                                <input type="text" id="quick-gpu-custom" placeholder="Manual layers" />
-                            </div>
-                            <p class="quick-help-text">Leave this on Auto unless you are tuning a specific machine.</p>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="quick-fit-toggle">Auto Fit</label>
-                            <select id="quick-fit-toggle">
-                                <option value="on">On</option>
-                                <option value="off">Off</option>
-                            </select>
-                        </div>
-
-                        <div class="quick-fit-grid">
-                            <div class="form-group">
-                                <label for="quick-fit-target">Fit Target Margin (MiB)</label>
-                                <input type="text" id="quick-fit-target" placeholder="1024" />
-                            </div>
-                            <div class="form-group">
-                                <label for="quick-fit-ctx">Minimum Fit Context</label>
-                                <div class="input-row">
-                                    <input type="number" id="quick-fit-ctx" min="0" step="1" placeholder="16000" />
-                                    <button id="btn-quick-fit-sync" class="btn btn-sm" type="button">Match Context</button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <p id="quick-fit-summary" class="quick-help-text"></p>
-                    </section>
-
-                    <section class="quick-card">
-                        <div class="quick-card-header">
-                            <h3>Instruction Template</h3>
-                            <span class="quick-card-kicker">Template packs</span>
-                        </div>
-                        <div class="form-group">
-                            <label for="quick-template-pack">Template Pack</label>
+                            <label class="form-label" for="quick-template-pack">Template Pack</label>
                             <select id="quick-template-pack"></select>
                         </div>
-                        <p id="quick-template-summary" class="quick-help-text">Choose a pack that matches your model family or desired thinking style.</p>
-                    </section>
+                        <p id="quick-template-summary" class="help-text">Choose a pack that matches your model family or desired thinking style.</p>
+                    </div>
+                </div>
 
-                    <section class="quick-card">
-                        <div class="quick-card-header">
-                            <h3>Sampler</h3>
-                            <span class="quick-card-kicker">Fast control over generation style</span>
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-kicker">Step 4</div>
+                            <div class="card-title">Memory &amp; Fit</div>
+                        </div>
+                        <div class="card-icon icon-cyan">
+                            <span class="icon icon-lg"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="12" x2="6" y2="12.01"/><line x1="10" y1="12" x2="10" y2="12.01"/><line x1="14" y1="12" x2="14" y2="12.01"/><line x1="18" y1="12" x2="18" y2="12.01"/></svg></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="quick-context-preset">Context Length</label>
+                        <div class="input-row">
+                            <select id="quick-context-preset">
+                                <option value="8192">8192</option>
+                                <option value="16000">16000</option>
+                                <option value="32768">32768</option>
+                                <option value="64000">64000</option>
+                                <option value="128000">128000</option>
+                                <option value="256000">256000</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                            <input type="number" id="quick-context-custom" min="0" step="1" placeholder="Custom tokens" />
+                        </div>
+                        <p class="help-text">16000 is a strong default for most local chat use. Higher values use more RAM or VRAM.</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="quick-gpu-mode">GPU Offload</label>
+                        <div class="input-row">
+                            <select id="quick-gpu-mode">
+                                <option value="auto">Auto</option>
+                                <option value="0">CPU only</option>
+                                <option value="all">All GPU layers</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                            <input type="text" id="quick-gpu-custom" placeholder="Manual layers" />
+                        </div>
+                        <p class="help-text">Leave this on Auto unless you are tuning a specific machine.</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="quick-fit-toggle">Auto Fit</label>
+                        <select id="quick-fit-toggle">
+                            <option value="on">On</option>
+                            <option value="off">Off</option>
+                        </select>
+                    </div>
+
+                    <div class="quick-fit-grid">
+                        <div class="form-group">
+                            <label class="form-label" for="quick-fit-target">Fit Target Margin (MiB)</label>
+                            <input type="text" id="quick-fit-target" placeholder="1024" />
                         </div>
                         <div class="form-group">
-                            <label for="quick-sampler-select">Sampler Preset</label>
+                            <label class="form-label" for="quick-fit-ctx">Minimum Fit Context</label>
                             <div class="input-row">
-                                <select id="quick-sampler-select"></select>
-                                <button id="btn-quick-sampler-load" class="btn btn-sm" type="button">Load</button>
+                                <input type="number" id="quick-fit-ctx" min="0" step="1" placeholder="16000" />
+                                <button id="btn-quick-fit-sync" class="btn btn-sm" type="button">Match Context</button>
                             </div>
+                        </div>
+                    </div>
+
+                    <p id="quick-fit-summary" class="help-text"></p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-kicker">Step 5</div>
+                            <div class="card-title">Sampler</div>
+                        </div>
+                        <div class="card-icon icon-magenta">
+                            <span class="icon icon-lg"><svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="quick-sampler-select">Sampler Preset</label>
+                        <div class="input-row">
+                            <select id="quick-sampler-select"></select>
+                            <button id="btn-quick-sampler-load" class="btn btn-sm" type="button">Load</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="quick-sampler-name">Save Current Sampler</label>
+                        <div class="input-row">
+                            <input type="text" id="quick-sampler-name" placeholder="Preset name..." />
+                            <button id="btn-quick-sampler-save" class="btn btn-sm" type="button">Save</button>
+                            <button id="btn-quick-sampler-delete" class="btn btn-sm btn-danger" type="button">Delete</button>
+                        </div>
+                    </div>
+
+                    <div class="quick-slider-grid">
+                        <div class="form-group">
+                            <label class="form-label" for="quick-temperature">Temperature</label>
+                            <input type="number" id="quick-temperature" min="0" max="5" step="0.05" />
                         </div>
                         <div class="form-group">
-                            <label for="quick-sampler-name">Save Current Sampler</label>
-                            <div class="input-row">
-                                <input type="text" id="quick-sampler-name" placeholder="Preset name..." />
-                                <button id="btn-quick-sampler-save" class="btn btn-sm" type="button">Save</button>
-                                <button id="btn-quick-sampler-delete" class="btn btn-sm btn-danger" type="button">Delete</button>
-                            </div>
+                            <label class="form-label" for="quick-top-k">Top-K</label>
+                            <input type="number" id="quick-top-k" min="0" step="1" />
                         </div>
+                        <div class="form-group">
+                            <label class="form-label" for="quick-top-p">Top-P</label>
+                            <input type="number" id="quick-top-p" min="0" max="1" step="0.01" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="quick-min-p">Min-P</label>
+                            <input type="number" id="quick-min-p" min="0" max="1" step="0.01" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="quick-repeat-penalty">Repeat Penalty</label>
+                            <input type="number" id="quick-repeat-penalty" min="0.5" max="3" step="0.05" />
+                        </div>
+                    </div>
+                </div>
 
-                        <div class="quick-slider-grid">
-                            <div class="form-group">
-                                <label for="quick-temperature">Temperature</label>
-                                <input type="number" id="quick-temperature" min="0" max="5" step="0.05" />
-                            </div>
-                            <div class="form-group">
-                                <label for="quick-top-k">Top-K</label>
-                                <input type="number" id="quick-top-k" min="0" step="1" />
-                            </div>
-                            <div class="form-group">
-                                <label for="quick-top-p">Top-P</label>
-                                <input type="number" id="quick-top-p" min="0" max="1" step="0.01" />
-                            </div>
-                            <div class="form-group">
-                                <label for="quick-min-p">Min-P</label>
-                                <input type="number" id="quick-min-p" min="0" max="1" step="0.01" />
-                            </div>
-                            <div class="form-group">
-                                <label for="quick-repeat-penalty">Repeat Penalty</label>
-                                <input type="number" id="quick-repeat-penalty" min="0.5" max="3" step="0.05" />
-                            </div>
+                <div class="card span-full launch-preview">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-kicker">Ready</div>
+                            <div class="card-title">Launch Preview</div>
                         </div>
-                    </section>
-
-                    <section class="quick-card quick-preview-card">
-                        <div class="quick-card-header">
-                            <h3>Launch Preview</h3>
-                            <span class="quick-card-kicker">Still a normal llama.cpp command</span>
-                        </div>
-                        <p class="quick-help-text">Quick Launch uses the same shared settings as Configure. You can always switch over for full control.</p>
-                        <div id="quick-server-address" class="server-address quick-server-address hidden">
-                            <span class="server-label">Server Address:</span>
-                            <a id="quick-server-url" href="#" target="_blank" class="server-link"></a>
-                            <span class="server-sep">|</span>
-                            <a id="quick-server-webui" href="#" target="_blank" class="server-link">Web UI</a>
-                            <button id="btn-copy-quick-server-url" class="btn btn-sm" type="button" title="Copy URL">&#x2398;</button>
-                        </div>
-                        <code id="quick-command-preview"></code>
-                        <div class="quick-options-row">
-                            <label class="quick-option-checkbox">
+                        <div class="launch-preview-badges">
+                            <div id="quick-server-address" class="server-address hidden" style="margin:0;padding:0;border:none;background:none;">
+                                <span class="badge badge-accent"><span class="badge-dot"></span> <a id="quick-server-url" href="#" target="_blank" class="badge-link"></a></span>
+                                <span class="server-sep">|</span>
+                                <a id="quick-server-webui" href="#" target="_blank" class="server-link">Web UI</a>
+                                <button id="btn-copy-quick-server-url" class="btn btn-sm btn-ghost" type="button" title="Copy URL">
+                                    <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+                                </button>
+                            </div>
+                            <label class="toggle" style="font-size:11px;">
                                 <input type="checkbox" id="quick-metrics-toggle" checked />
-                                <span>Show server stats bar</span>
+                                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                                Stats bar
                             </label>
                         </div>
-                        <div class="quick-actions">
-                            <button id="btn-quick-launch" class="btn btn-primary btn-lg" type="button">Launch</button>
-                            <button id="btn-quick-stop" class="btn btn-danger btn-lg hidden" type="button">Stop</button>
-                        </div>
-                    </section>
+                    </div>
+                    <p class="help-text">Quick Launch uses the same shared settings as Configure. You can always switch over for full control.</p>
+                    <div class="code-block" id="quick-command-preview"></div>
+                    <div class="quick-actions">
+                        <button id="btn-quick-launch" class="btn btn-primary btn-lg" type="button">
+                            <span class="icon"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg></span>
+                            Launch
+                        </button>
+                        <button id="btn-quick-stop" class="btn btn-danger btn-lg hidden" type="button">
+                            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg></span>
+                            Stop
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- CONFIGURE TAB -->
-        <div class="tab-content" id="tab-configure">
-            <div class="panel">
-                <div class="config-header">
-                    <h2>Configure &amp; Launch</h2>
-                    <div class="input-row">
-                        <label style="margin:0">Tool:</label>
-                        <select id="tool-select">
-                            <option value="llama-cli">llama-cli (Interactive Chat)</option>
-                            <option value="llama-server" selected>llama-server (HTTP API)</option>
-                        </select>
-                        <select id="model-select">
-                            <option value="">-- Select Model --</option>
-                        </select>
-                        <button class="btn btn-sm" onclick="refreshModels()">&#x21bb;</button>
-                        <button id="btn-configure-hf-download" class="btn btn-sm" type="button">Download in Quick Launch</button>
-                    </div>
+        <!-- ═══ CONFIGURE ═══ -->
+        <div class="section-panel" id="section-configure" style="display:none;">
+            <div class="page-header">
+                <div>
+                    <div class="page-title">Configure &amp; Launch</div>
                 </div>
+                <div class="input-row">
+                    <label class="form-label" style="margin:0;">Tool:</label>
+                    <select id="tool-select">
+                        <option value="llama-cli">llama-cli (Interactive Chat)</option>
+                        <option value="llama-server" selected>llama-server (HTTP API)</option>
+                    </select>
+                    <select id="model-select">
+                        <option value="">-- Select Model --</option>
+                    </select>
+                    <button class="btn btn-sm btn-ghost" id="btn-refresh-models" title="Refresh models">
+                        <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
+                    </button>
+                    <button id="btn-configure-hf-download" class="btn btn-sm" type="button">Download in Quick Launch</button>
+                </div>
+            </div>
 
-                <div class="config-controls">
-                    <input type="text" id="config-search" placeholder="Search categories and flags..." />
+            <div class="config-controls">
+                <input type="text" id="config-search" placeholder="Search categories and flags..." />
+                <div class="form-row">
+                    <button id="btn-clear-search" class="btn btn-sm" type="button" title="Clear search"><span class="ctrl-icon"><svg viewBox="0 0 24 24" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span><span class="ctrl-label">Clear</span></button>
+                    <button id="btn-expand-all" class="btn btn-sm" type="button" title="Expand all categories"><span class="ctrl-icon"><svg viewBox="0 0 24 24" width="14" height="14"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg></span><span class="ctrl-label">Expand All</span></button>
+                    <button id="btn-collapse-all" class="btn btn-sm" type="button" title="Collapse all categories"><span class="ctrl-icon"><svg viewBox="0 0 24 24" width="14" height="14"><polyline points="7 11 12 6 17 11"/><polyline points="7 18 12 13 17 18"/></svg></span><span class="ctrl-label">Collapse All</span></button>
+                </div>
+            </div>
+
+            <div id="flags-container"></div>
+
+            <div id="server-address" class="server-address hidden">
+                <span class="server-label">Server Address:</span>
+                <a id="server-url" href="#" target="_blank" class="server-link"></a>
+                <span class="server-sep">|</span>
+                <a id="server-webui" href="#" target="_blank" class="server-link">Web UI</a>
+                <button class="btn btn-sm btn-ghost" id="btn-copy-server-url" title="Copy URL">
+                    <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+                </button>
+            </div>
+
+            <div class="launch-bar">
+                <button id="btn-launch" class="btn btn-primary btn-lg">
+                    <span class="icon"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg></span>
+                    Launch
+                </button>
+                <button id="btn-stop" class="btn btn-danger btn-lg hidden">
+                    <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg></span>
+                    Stop
+                </button>
+                <div class="command-preview">
+                    <label class="form-label">Command Preview</label>
+                    <code id="command-preview-text"></code>
+                </div>
+            </div>
+
+            <div id="output-section" class="hidden">
+                <div class="output-header">
+                    <h3>Output</h3>
                     <div class="form-row">
-                        <button id="btn-clear-search" class="btn btn-sm" type="button" title="Clear search"><span class="ctrl-icon">&#x2715;</span><span class="ctrl-label">Clear</span></button>
-                        <button id="btn-expand-all" class="btn btn-sm" type="button" title="Expand all categories"><span class="ctrl-icon">&#x229E;</span><span class="ctrl-label">Expand All</span></button>
-                        <button id="btn-collapse-all" class="btn btn-sm" type="button" title="Collapse all categories"><span class="ctrl-icon">&#x229F;</span><span class="ctrl-label">Collapse All</span></button>
+                        <button class="btn btn-sm btn-ghost" id="btn-clear-output">Clear</button>
                     </div>
                 </div>
-
-                <div id="flags-container"></div>
-
-                <div id="server-address" class="server-address hidden">
-                    <span class="server-label">Server Address:</span>
-                    <a id="server-url" href="#" target="_blank" class="server-link"></a>
-                    <span class="server-sep">|</span>
-                    <a id="server-webui" href="#" target="_blank" class="server-link">Web UI</a>
-                    <button class="btn btn-sm" onclick="copyServerUrl()" title="Copy URL">&#x2398;</button>
-                </div>
-
-                <div class="launch-bar">
-                    <button id="btn-launch" class="btn btn-primary btn-lg">Launch</button>
-                    <button id="btn-stop" class="btn btn-danger btn-lg hidden">Stop</button>
-                    <div class="command-preview">
-                        <label>Command Preview</label>
-                        <code id="command-preview-text"></code>
-                    </div>
-                </div>
-
-                <div id="output-section" class="hidden">
-                    <div class="output-header">
-                        <h3>Output</h3>
-                        <div class="form-row">
-                            <button class="btn btn-sm" onclick="clearOutput()">Clear</button>
-                        </div>
-                    </div>
-                    <div id="output-terminal" class="terminal"></div>
-                    <div id="input-row" class="input-row hidden">
-                        <input type="text" id="cli-input" placeholder="Type and press Enter..." />
-                        <button class="btn" onclick="sendInput()">Send</button>
-                    </div>
+                <div id="output-terminal" class="terminal"></div>
+                <div id="input-row" class="input-row hidden">
+                    <input type="text" id="cli-input" placeholder="Type and press Enter..." />
+                    <button class="btn" id="btn-send-input">Send</button>
                 </div>
             </div>
         </div>
 
-        <!-- CHAT TAB -->
-        <div class="tab-content" id="tab-chat">
+        <!-- ═══ CHAT ═══ -->
+        <div class="section-panel" id="section-chat" style="display:none;">
             <div class="chat-header-bar">
-                <h2>&#128172; Chat</h2>
+                <div style="display:flex; align-items:center; gap:var(--space-2);">
+                    <h2>Chat</h2>
+                    <span class="badge badge-green" id="chat-status-badge"><span class="badge-dot"></span> Server Running</span>
+                    <span class="badge badge-neutral" id="chat-no-server-badge" style="display:none;">No Server</span>
+                </div>
                 <div class="chat-header-actions">
-                    <span class="badge badge-green" id="chat-status-badge">&#9679; Server Running</span>
-                    <span class="badge badge-dim" id="chat-no-server-badge">No Server</span>
-                    <button class="btn btn-sm" id="btn-chat-new" type="button">&#10010; New Chat</button>
-                    <button class="btn btn-sm" id="btn-chat-clear" type="button">&#128465; Clear</button>
+                    <button class="btn btn-sm" id="btn-chat-new" type="button">
+                        <span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+                        New Chat
+                    </button>
+                    <button class="btn btn-sm btn-ghost" id="btn-chat-clear" type="button">
+                        <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span>
+                        Clear
+                    </button>
                 </div>
             </div>
             <div class="chat-layout">
                 <div class="chat-history-panel" id="chat-history-panel">
                     <div class="sidebar-header">
                         <h3>Conversations</h3>
-                        <button class="btn-toggle-sidebar" id="btn-collapse-history" title="Collapse history">&#10005;</button>
+                        <button class="btn-toggle-sidebar" id="btn-collapse-history" title="Collapse history">
+                            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
+                        </button>
                     </div>
                     <div class="chat-history-list" id="chat-history-list"></div>
                     <div class="chat-history-footer">
-                        <button class="btn btn-xs btn-danger" id="btn-delete-all-history" type="button">&#128465; Delete All</button>
+                        <button class="btn btn-xs btn-danger" id="btn-delete-all-history" type="button">
+                            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></span>
+                            Delete All
+                        </button>
                     </div>
                 </div>
                 <div class="chat-main">
                     <div class="chat-messages" id="chat-messages">
                         <div class="chat-empty" id="chat-empty">
-                            <div class="chat-empty-icon">&#128172;</div>
+                            <div class="chat-empty-icon">
+                                <span class="icon" style="width:40px;height:40px;color:var(--fg-faint);"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                            </div>
                             <h3>Start a conversation</h3>
                             <p>Send a message to begin chatting with the model. The response will stream in token by token.</p>
                             <div class="suggestions">
@@ -440,16 +553,28 @@
                     <div class="chat-input-area">
                         <div class="chat-input-row">
                             <textarea class="chat-input" id="chat-input" placeholder="Type a message..." rows="1"></textarea>
-                            <button class="btn btn-primary" id="btn-chat-send">&#10148; Send</button>
-                            <button class="btn btn-danger" id="btn-chat-stop" style="display:none;">&#9632; Stop</button>
+                            <button class="btn btn-primary" id="btn-chat-send">
+                                <span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></span>
+                                Send
+                            </button>
+                            <button class="btn btn-danger" id="btn-chat-stop" style="display:none;">
+                                <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg></span>
+                                Stop
+                            </button>
                         </div>
                         <div class="chat-input-actions">
                             <label class="chat-web-toggle" title="Search the web before answering">
                                 <input type="checkbox" id="chat-web-search-toggle">
                                 <span>Web Search</span>
                             </label>
-                            <button class="btn btn-xs" id="btn-chat-undo" title="Undo last message">&#8630; Undo</button>
-                            <button class="btn btn-xs" id="btn-chat-regenerate" title="Regenerate last response">&#8635; Regenerate</button>
+                            <button class="btn btn-xs" id="btn-chat-undo" title="Undo last message">
+                                <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></span>
+                                Undo
+                            </button>
+                            <button class="btn btn-xs" id="btn-chat-regenerate" title="Regenerate last response">
+                                <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
+                                Regenerate
+                            </button>
                             <span class="chat-input-hint"><kbd>Enter</kbd> send &middot; <kbd>Shift+Enter</kbd> new line</span>
                         </div>
                     </div>
@@ -457,16 +582,18 @@
                 <div class="chat-sidebar" id="chat-sidebar">
                     <div class="sidebar-header">
                         <h3>Settings</h3>
-                        <button class="btn-toggle-sidebar" id="btn-collapse-sidebar" title="Collapse sidebar">&#10005;</button>
+                        <button class="btn-toggle-sidebar" id="btn-collapse-sidebar" title="Collapse sidebar">
+                            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
+                        </button>
                     </div>
                     <div class="sidebar-body">
                         <div class="sidebar-section">
-                            <div class="sidebar-section-label"><span class="sidebar-icon">&#9881;</span> System Prompt</div>
+                            <div class="sidebar-section-label"><span class="sidebar-icon"><svg viewBox="0 0 24 24" width="13" height="13"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span> System Prompt</div>
                             <textarea class="sidebar-system-prompt" id="chat-system-prompt" placeholder="You are a helpful assistant..."></textarea>
                             <div class="sidebar-char-count" id="chat-sys-char-count">0 chars</div>
                         </div>
                         <div class="sidebar-section">
-                            <div class="sidebar-section-label"><span class="sidebar-icon">&#127922;</span> Samplers</div>
+                            <div class="sidebar-section-label"><span class="sidebar-icon"><svg viewBox="0 0 24 24" width="13" height="13"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span> Samplers</div>
                             <div class="sidebar-sampler-control">
                                 <div class="sidebar-sampler-label">
                                     <span class="sidebar-sampler-text">Temperature</span>
@@ -518,21 +645,32 @@
                         </div>
                     </div>
                 </div>
-                <button class="btn btn-sm btn-sidebar-open" id="btn-open-history" title="Show conversations">&#128172;</button>
-                <button class="btn btn-sm btn-sidebar-open" id="btn-open-sidebar" title="Show settings">&#9881;</button>
+                <button class="btn btn-sm btn-sidebar-open" id="btn-open-history" title="Show conversations">
+                    <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                </button>
+                <button class="btn btn-sm btn-sidebar-open" id="btn-open-sidebar" title="Show settings">
+                    <span class="icon icon-sm"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+                </button>
             </div>
         </div>
 
-        <!-- API TAB -->
-        <div class="tab-content" id="tab-api">
-            <div class="panel">
-                <h2>OpenAI-Compatible API</h2>
-                <p class="api-intro">llama-server can expose OpenAI-style endpoints so other apps and services can connect directly.</p>
+        <!-- ═══ API ═══ -->
+        <div class="section-panel" id="section-api" style="display:none;">
+            <div class="page-header">
+                <div>
+                    <div class="page-title">OpenAI-Compatible API</div>
+                    <div class="page-title-sub">llama-server can expose OpenAI-style endpoints so other apps and services can connect directly.</div>
+                </div>
+            </div>
 
+            <div class="card">
                 <div class="api-base-row">
                     <span class="api-base-label">Base URL</span>
                     <a id="api-base-url" href="#" target="_blank" class="server-link"></a>
-                    <button id="btn-copy-api-base" class="btn btn-sm" type="button" title="Copy base URL">Copy</button>
+                    <button id="btn-copy-api-base" class="btn btn-sm btn-ghost" type="button" title="Copy base URL">
+                        <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+                        Copy
+                    </button>
                 </div>
 
                 <div id="api-status-note" class="api-status-note"></div>
@@ -551,7 +689,10 @@
                     <div id="remote-tunnel-url-row" class="api-base-row hidden">
                         <span class="api-base-label">Remote URL</span>
                         <a id="remote-tunnel-url" href="#" target="_blank" rel="noopener noreferrer" class="server-link"></a>
-                        <button id="btn-copy-remote-tunnel" class="btn btn-sm" type="button" title="Copy remote URL">Copy</button>
+                        <button id="btn-copy-remote-tunnel" class="btn btn-sm btn-ghost" type="button" title="Copy remote URL">
+                            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+                            Copy
+                        </button>
                     </div>
                     <div id="remote-tunnel-status" class="api-status-note">Remote tunnel is not running.</div>
                     <div class="form-row">
@@ -570,21 +711,27 @@
             </div>
         </div>
 
-        <!-- PRESETS TAB -->
-        <div class="tab-content" id="tab-presets">
-            <div class="panel">
-                <h2>Presets</h2>
+        <!-- ═══ PRESETS ═══ -->
+        <div class="section-panel" id="section-presets" style="display:none;">
+            <div class="page-header">
+                <div>
+                    <div class="page-title">Presets</div>
+                    <div class="page-title-sub">Save, load, and manage preset configurations.</div>
+                </div>
+            </div>
+
+            <div class="card">
                 <div id="preset-status" class="status-box"></div>
                 <div class="presets-toolbar">
                     <div class="presets-save">
-                        <label for="preset-name-input">Save Current Configuration</label>
+                        <label class="form-label" for="preset-name-input">Save Current Configuration</label>
                         <div class="input-row">
                             <input type="text" id="preset-name-input" placeholder="Preset name..." />
-                            <button class="btn btn-primary" onclick="savePreset()">Save</button>
+                            <button class="btn btn-primary" id="btn-save-preset">Save</button>
                         </div>
                     </div>
                     <input type="file" id="preset-import" accept=".json" style="display:none" />
-                    <button class="btn presets-import-btn" onclick="document.getElementById('preset-import').click()">Import JSON</button>
+                    <button class="btn presets-import-btn" id="btn-import-preset">Import JSON</button>
                 </div>
                 <div class="presets-list-header">
                     <h3>Saved Presets</h3>
@@ -597,39 +744,41 @@
                 <div id="presets-list"></div>
             </div>
         </div>
-    </div>
 
-    <div id="stats-bar" class="stats-bar hidden">
-        <span class="stats-dot"></span>
-        <span class="stats-label">Running</span>
-        <span class="stats-sep"></span>
-        <span class="stats-item"><span class="stats-value" id="stats-prompt-tokens">--</span> prompt tokens</span>
-        <span class="stats-sep"></span>
-        <span class="stats-item"><span class="stats-value" id="stats-prompt-speed">--</span> tok/s prompt</span>
-        <span class="stats-sep"></span>
-        <span class="stats-item"><span class="stats-value" id="stats-gen-tokens">--</span> gen tokens</span>
-        <span class="stats-sep"></span>
-        <span class="stats-item"><span class="stats-value" id="stats-gen-speed">--</span> tok/s gen</span>
-        <span class="stats-sep"></span>
-        <span class="stats-item">Context <span class="stats-value" id="stats-context">--</span></span>
-        <span class="stats-sep"></span>
-        <span class="stats-item">KV <span class="stats-value" id="stats-kv-usage">--%</span></span>
     </div>
+</div>
 
-    <div id="confirm-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
-        <div class="modal-dialog">
-            <h3 id="confirm-modal-title">Confirm Action</h3>
-            <p id="confirm-modal-message"></p>
-            <div class="form-row">
-                <button id="confirm-modal-cancel" class="btn">Cancel</button>
-                <button id="confirm-modal-ok" class="btn btn-primary">Confirm</button>
-            </div>
+<div id="stats-bar" class="stats-bar hidden">
+    <span class="stats-dot"></span>
+    <span class="stats-label">Running</span>
+    <span class="stats-sep"></span>
+    <span class="stats-item"><span class="stats-value" id="stats-prompt-tokens">--</span> prompt tokens</span>
+    <span class="stats-sep"></span>
+    <span class="stats-item"><span class="stats-value" id="stats-prompt-speed">--</span> tok/s prompt</span>
+    <span class="stats-sep"></span>
+    <span class="stats-item"><span class="stats-value" id="stats-gen-tokens">--</span> gen tokens</span>
+    <span class="stats-sep"></span>
+    <span class="stats-item"><span class="stats-value" id="stats-gen-speed">--</span> tok/s gen</span>
+    <span class="stats-sep"></span>
+    <span class="stats-item">Context <span class="stats-value" id="stats-context">--</span></span>
+    <span class="stats-sep"></span>
+    <span class="stats-item">KV <span class="stats-value" id="stats-kv-usage">--%</span></span>
+</div>
+
+<div id="confirm-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+    <div class="modal-dialog">
+        <h3 id="confirm-modal-title">Confirm Action</h3>
+        <p id="confirm-modal-message"></p>
+        <div class="form-row">
+            <button id="confirm-modal-cancel" class="btn">Cancel</button>
+            <button id="confirm-modal-ok" class="btn btn-primary">Confirm</button>
         </div>
     </div>
+</div>
 
-    <script src="/js/flags.js"></script>
-    <script src="/js/manager.js"></script>
-    <script src="/js/presets.js?v=presets-groups-1"></script>
-    <script src="/js/app.js?v=presets-groups-1"></script>
+<script src="/js/flags.js"></script>
+<script src="/js/manager.js"></script>
+<script src="/js/presets.js?v=revamp-1"></script>
+<script src="/js/app.js?v=revamp-1"></script>
 </body>
 </html>

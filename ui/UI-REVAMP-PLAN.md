@@ -1,7 +1,7 @@
 # UI Revamp Plan — Sidebar Navigation
 
 **Reference Mockup:** `ui/mockup-sidebar-nav.html`
-**Status:** Planning
+**Status:** Implemented
 
 ---
 

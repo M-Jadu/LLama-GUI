@@ -103,7 +103,8 @@ async function checkStatus() {
 function updateStatusUI(status) {
     if (!status) return;
     const badge = document.getElementById("version-badge");
-    const processBadge = document.getElementById("process-badge");
+    const sidebarStatus = document.getElementById("sidebar-status");
+    const sidebarStatusText = document.getElementById("sidebar-status-text");
     const info = document.getElementById("installed-info");
     const repairBtn = document.getElementById("btn-repair");
     const backendSelect = document.getElementById("backend-select");
@@ -139,9 +140,10 @@ function updateStatusUI(status) {
     }
 
     if (status.running) {
-        processBadge.classList.remove("hidden");
+        if (sidebarStatus) sidebarStatus.style.display = "";
+        if (sidebarStatusText) sidebarStatusText.textContent = "llama-server running";
     } else {
-        processBadge.classList.add("hidden");
+        if (sidebarStatus) sidebarStatus.style.display = "none";
     }
 
     repairBtn.classList.toggle("hidden", !status.config_stale);

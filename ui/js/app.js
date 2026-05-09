@@ -1489,17 +1489,42 @@ document.addEventListener("DOMContentLoaded", () => {
         syncQuickLaunchModelOptions();
         updateCommandPreview();
     });
+
+    const btnRefreshModels = document.getElementById("btn-refresh-models");
+    if (btnRefreshModels) btnRefreshModels.addEventListener("click", () => refreshModels());
+    const btnClearOutput = document.getElementById("btn-clear-output");
+    if (btnClearOutput) btnClearOutput.addEventListener("click", clearOutput);
+    const btnSendInput = document.getElementById("btn-send-input");
+    if (btnSendInput) btnSendInput.addEventListener("click", sendInput);
+    const btnCopyServerUrl = document.getElementById("btn-copy-server-url");
+    if (btnCopyServerUrl) btnCopyServerUrl.addEventListener("click", copyServerUrl);
+    const btnSavePreset = document.getElementById("btn-save-preset");
+    if (btnSavePreset) btnSavePreset.addEventListener("click", savePreset);
+    const btnImportPreset = document.getElementById("btn-import-preset");
+    if (btnImportPreset) btnImportPreset.addEventListener("click", () => document.getElementById("preset-import").click());
+
+    showToast("Llama GUI ready", "info");
 });
 
 function initTabs() {
-    document.querySelectorAll(".tab").forEach(tab => {
-        tab.addEventListener("click", () => switchTab(tab.dataset.tab));
+    document.querySelectorAll(".nav-item").forEach(navItem => {
+        navItem.addEventListener("click", () => switchTab(navItem.dataset.section));
     });
+    const mobileToggle = document.getElementById("mobile-toggle");
+    if (mobileToggle) {
+        mobileToggle.addEventListener("click", () => {
+            document.getElementById("sidebar").classList.toggle("open");
+        });
+    }
 }
 
 function switchTab(tabId) {
-    document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tabId));
-    document.querySelectorAll(".tab-content").forEach(tc => tc.classList.toggle("active", tc.id === "tab-" + tabId));
+    document.querySelectorAll(".nav-item").forEach(t => t.classList.toggle("active", t.dataset.section === tabId));
+    document.querySelectorAll(".section-panel").forEach(panel => {
+        panel.style.display = panel.id === "section-" + tabId ? "" : "none";
+    });
+    const sidebar = document.getElementById("sidebar");
+    if (sidebar) sidebar.classList.remove("open");
     if (tabId === "presets") loadPresets();
     if (tabId === "quick-launch") refreshQuickLaunchUI();
     if (tabId === "chat") { refreshChatSidebarUI(); updateChatStatusBadge(); }
@@ -2771,6 +2796,28 @@ function copyQuickServerUrl() {
 
 function copyText(text) {
     navigator.clipboard.writeText(text).catch(() => {});
+}
+
+function showToast(message, type) {
+    const container = document.getElementById("toast-container");
+    if (!container) return;
+    const toast = document.createElement("div");
+    toast.className = "toast toast-" + (type || "info");
+    const iconNames = { success: "check-circle", error: "alert-circle", info: "info" };
+    const iconName = iconNames[type] || "info";
+    toast.innerHTML = '<span class="icon icon-sm toast-icon"><svg viewBox="0 0 24 24">' +
+        (type === "success" ? '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>' +
+            '<polyline points="22 4 12 14.01 9 11.01"/>' :
+            type === "error" ? '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>' :
+                '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>') +
+        '</svg></span><span>' + message + '</span>';
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = "0";
+        toast.style.transform = "translateY(-8px)";
+        toast.style.transition = "all 0.3s ease";
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
 }
 
 // ── Chat Tab ──
