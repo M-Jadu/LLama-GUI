@@ -18,6 +18,7 @@ Llama GUI provides a browser UI to:
 
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
+- [Install With Pinokio](#install-with-pinokio)
 - [Screenshots](#screenshots)
 - [Getting Models](#getting-models)
 - [Download the Current Release Zip](#download-the-current-release-zip)
@@ -82,6 +83,14 @@ Platform launch helpers:
 6. In **Quick Launch**, select a model, keep the beginner defaults or choose a profile, and click **Launch**.
 7. Open **Chat** to talk to the running server. Enable **Web Search** when you want the model to search the web before answering.
 8. Use **Configure** when you want full flag-by-flag control.
+
+## Install With Pinokio
+
+If you use [Pinokio](https://pinokio.computer/), you can install and launch Llama GUI through the separate one-click launcher repo:
+
+[thomas9120/llama-gui-pinokio](https://github.com/thomas9120/llama-gui-pinokio)
+
+The Pinokio launcher clones this app, installs the Python dependencies, and starts the local web UI. Llama GUI's own **Install** tab still manages `llama.cpp` backend downloads, models, presets, and server launches.
 
 ## Screenshots
 
