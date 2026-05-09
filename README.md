@@ -18,6 +18,7 @@ Llama GUI provides a browser UI to:
 
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
+- [Screenshots](#screenshots)
 - [Getting Models](#getting-models)
 - [Download the Current Release Zip](#download-the-current-release-zip)
 - [Install By Platform](#install-by-platform)
@@ -81,6 +82,20 @@ Platform launch helpers:
 6. In **Quick Launch**, select a model, keep the beginner defaults or choose a profile, and click **Launch**.
 7. Open **Chat** to talk to the running server. Enable **Web Search** when you want the model to search the web before answering.
 8. Use **Configure** when you want full flag-by-flag control.
+
+## Screenshots
+
+| Quick Launch | Configure |
+| --- | --- |
+| ![Quick Launch tab](docs/images/quick-launch.png) | ![Configure tab](docs/images/configure.png) |
+
+| Chat | API |
+| --- | --- |
+| ![Chat tab](docs/images/chat.png) | ![API tab](docs/images/api.png) |
+
+| Install | Presets |
+| --- | --- |
+| ![Install tab](docs/images/install.png) | ![Presets tab](docs/images/presets.png) |
 
 ## Getting Models
 
