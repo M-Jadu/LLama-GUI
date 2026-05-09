@@ -155,7 +155,7 @@ const FLAGS = [
     { id: "mlock", flag: "--mlock", category: "context", type: "bool", label: "Lock Model in RAM",
       desc: "Force the OS to keep the model in physical RAM and never swap it to disk. Prevents stuttering but requires enough free RAM for the entire model.", tool: "both", default: false },
     { id: "mmap", flag: "--mmap", false_flag: "--no-mmap", category: "context", type: "bool", label: "Memory Map Model",
-      desc: "Load the model using memory-mapped files for faster loading and lower RAM usage. Disable if you get pageout/stuttering issues.", tool: "both", default: true },
+      desc: "Load the model using memory-mapped files for faster loading and lower RAM usage. Disable if you get pageout/stuttering issues.", tool: "both", default: false },
     { id: "direct_io", flag: "-dio", category: "context", type: "bool", label: "Direct I/O",
       desc: "Bypass OS page cache when loading the model. Slower load but can prevent cache pollution with large models.", tool: "both", default: false },
     { id: "swa_full", flag: "--swa-full", category: "context", type: "bool", label: "Full SWA Cache",
