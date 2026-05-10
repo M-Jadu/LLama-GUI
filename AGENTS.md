@@ -33,36 +33,53 @@ If a shared control becomes unreliable, prefer removing the duplicate UI over ke
 ## How the program works
 
 ### Architecture
-- A static web UI served by a Python `http.server` backend.
-- The backend handles `llama.cpp` installation, process management, and API proxying.
+- A static web UI served by a Python `http.server` backend on port 5240.
+- The backend handles `llama.cpp` installation, process management, API proxying, model downloading, remote tunnels, and web search.
+- `llama-server` runs separately (default port 8080) as a subprocess.
 - `config.json` persists application state (installed version, active backend, tag).
+- Dependencies: `certifi` (SSL cert bundle), `ddgs` (DuckDuckGo web search), `huggingface_hub` (HF model downloads).
+- All stateful operations (process, download, tunnel) use threading locks for thread safety.
 
 ### Backend (`server.py`)
-- Manages downloading `llama.cpp` releases from GitHub.
-- Runs `llama-server` as a subprocess and streams stdout/stderr.
-- Handles preset and model file APIs.
-- Selects binary based on backend type (e.g., `cuda-12.4`, `cpu`).
+- Manages downloading `llama.cpp` releases from GitHub with SHA256 verification.
+- Runs `llama-server` or `llama-cli` as a subprocess and streams stdout/stderr.
+- Handles preset, model file, and Hugging Face download APIs.
+- Selects binary based on platform (`win32`/`darwin`/`linux`) and backend type (e.g., `cuda-12.4`, `cuda-13.1`, `vulkan`, `hip`, `sycl`, `openvino`, `metal`, `metal-kleidiai`).
+- Proxies OpenAI-compatible chat completions (`/v1/chat/completions`) to `llama-server` with streaming SSE support.
+- Built-in web search via DuckDuckGo (`ddgs` + page fetching with HTML-to-text parsing).
+- Cloudflare tunnel management (auto-downloads `cloudflared`, starts/stops tunnel, returns public URL).
+- Git-based app auto-updating (checks status, pulls, reinstalls dependencies, restarts server).
+- Native file picker (tkinter) for selecting model files and paths.
+- CORS origin validation restricts API access to `127.0.0.1:5240`, `localhost:5240`, and active tunnel URL.
+- Graceful shutdown/restart with port availability polling.
 
 ### Frontend
 - **`ui/index.html`**: HTML template defining the tabbed layout and UI structure.
-- **`ui/js/app.js`**: Core frontend logic; manages tab switching, flag collection, server launch/stop, and output polling.
-- **`ui/js/flags.js`**: Defines CLI flag categories, data types, and built-in chat templates.
-- **`ui/js/manager.js`**: Handles GitHub release fetching, backend selection, and installation progress UI.
-- **`ui/js/presets.js`**: Manages preset normalization, validation, saving, and applying to the UI.
+- **`ui/js/app.js`**: Core frontend logic (~3600 lines). Manages tab switching, flag collection, server launch/stop, output polling, stats polling, chat (streaming, web search, conversation history), quick launch (profiles, HF download, sampler presets), remote tunnel, toasts, and cache-busting reload.
+- **`ui/js/flags.js`**: Defines CLI flag categories, data types, built-in chat templates, chat template presets, sampler presets, and quick launch profiles.
+- **`ui/js/manager.js`**: Handles GitHub release fetching, backend selection, installation progress UI, app update (git status/pull/restart), and the shared `fetchJson()` utility.
+- **`ui/js/presets.js`**: Manages preset normalization, validation, saving, loading, updating, deleting, exporting, importing, and group-by-model rendering with search and collapsible groups.
 - **`ui/css/style.css`**: Stylesheet implementing the dark theme (Tokyo Night) and responsive layout.
+- **`ui/templates/`**: Bundled Jinja chat template files for Kohold-style presets.
 
 ### Tabs
-1. **Install**: Download and install `llama.cpp` releases, select backend.
-2. **Quick Launch**: One-click model launch with preset configuration.
-3. **Configure**: Full CLI flag configuration for `llama-server`.
-4. **API**: View and interact with the `llama.cpp` API endpoints.
-5. **Presets**: Save, load, and manage preset configurations.
+1. **Install**: Download and install `llama.cpp` releases, select backend, update app from git.
+2. **Quick Launch**: One-click model launch with preset configuration, quick profiles, integrated HF model downloader.
+3. **Configure**: Full CLI flag configuration for `llama-server`/`llama-cli` with search, submenus, beginner tips.
+4. **Chat**: Streaming OpenAI-compatible chat interface with web search, conversation history, sampler sliders.
+5. **API**: View and interact with the `llama.cpp` API endpoints, start/stop Cloudflare tunnel.
+6. **Presets**: Save, load, import, export, and manage preset configurations grouped by model.
 
 ### Data Flow
-- UI changes route through a shared setter to update state.
-- All mirrored controls read from the same underlying state object.
-- Command preview and launch args are generated from shared state, never per-tab copies.
+- UI changes route through a shared setter (`setFlagValue`/`setMultipleFlagValues`) to update state.
+- All mirrored controls read from the same underlying `flagValues` object.
+- Command preview and launch args are generated from shared state (`getLaunchArgs()`), never per-tab copies.
 - Server output is polled via HTTP endpoint and streamed to the terminal panel.
+- Chat completions are streamed via SSE from `/api/chat/completions` (backend proxies to `llama-server`).
+- Stats are polled from `llama-server`'s Prometheus `/metrics` endpoint.
+- Remote tunnel status is polled from `/api/remote-tunnel/status`.
+- Model download progress is polled from `/api/hf/download-status`.
+- After app update, the page reloads with a cache-busting `appReload` timestamp parameter.
 
 ## llama.cpp Compatibility
 
@@ -75,7 +92,7 @@ If a shared control becomes unreliable, prefer removing the duplicate UI over ke
 2. Review the `llama-server --help` output or the `examples/server/README.md` in the repo for the current flag list, descriptions, and default values.
 3. Cross-reference every flag in `ui/js/flags.js` against the upstream documentation:
    - Flag name and shorthand (e.g., `--ctx-size` vs `-c`)
-   - Expected value type (integer, string, boolean, enum, etc.)
+   - Expected value type (integer, string, boolean, enum, multi_enum)
    - Valid option values for enum-type flags
    - Default values
    - Whether the flag has been renamed, deprecated, or removed
@@ -86,6 +103,19 @@ If a shared control becomes unreliable, prefer removing the duplicate UI over ke
 - Test that toggling a flag in the UI produces the correct argument in the final launch command.
 - Verify that enum dropdowns only contain values still recognized by the current `llama.cpp` version.
 - Check that chat template names in `flags.js` match templates bundled with the installed `llama.cpp` release.
+
+## Flag Types
+
+The UI supports these flag types in `flags.js`:
+- `bool`: Checkbox. Supports `false_flag` for negation (e.g., `--no-mmap`).
+- `int`: Numeric input with min/max/step constraints.
+- `float`: Decimal input with min/max/step constraints.
+- `text`: Free-form text input.
+- `path`: Text input with native file picker "Browse" button (tkinter).
+- `enum`: Dropdown select from a predefined options list.
+- `multi_enum`: Multiple checkboxes for selecting zero or more values. Supports an `all` shortcut and `risk: "high"` badges with warnings for dangerous options (e.g., shell command execution).
+
+Categories can also define `submenu` entries that render as collapsible sub-accordions within the main category.
 
 ## Chat Template Preset Notes
 
@@ -101,7 +131,7 @@ This trims the dropdown without removing low-level backward compatibility for ol
 
 ### Shared Source Of Truth
 
-The named dropdown presets now live in [ui/js/flags.js](C:/Users/pegas/Downloads/LLM/Misc%20LLM%20Programs/Llama%20GUI%20-%20Copy/LLama-GUI/ui/js/flags.js):
+The named dropdown presets now live in `ui/js/flags.js`:
 - `CHAT_TEMPLATE_PRESETS`
 - `CHAT_TEMPLATE_PRESET_OPTIONS`
 
@@ -123,7 +153,7 @@ Quick Launch does not maintain its own template list. It clones the shared optio
 
 ### State Mapping
 
-Shared selection/state logic is in [ui/js/app.js](C:/Users/pegas/Downloads/LLM/Misc%20LLM%20Programs/Llama%20GUI%20-%20Copy/LLama-GUI/ui/js/app.js).
+Shared selection/state logic is in `ui/js/app.js`.
 
 Important helpers:
 - `getChatTemplatePresetByValue(...)`
@@ -151,7 +181,7 @@ This keeps Configure and Quick Launch synchronized while still ensuring launch a
 
 ### Bundled Templates
 
-Bundled template files live under [ui/templates](C:/Users/pegas/Downloads/LLM/Misc%20LLM%20Programs/Llama%20GUI%20-%20Copy/LLama-GUI/ui/templates).
+Bundled template files live under `ui/templates/`.
 
 They are used for Kobold-style presets that are:
 - non-thinking variants
@@ -163,7 +193,9 @@ Current bundled files include:
 - `chatml-nonthinking.jinja`
 - `deepseek-v31-nonthinking.jinja`
 - `gemma4.jinja`
+- `gemma4-e2b-e4b.jinja`
 - `gemma4-e2b-e4b-nothink.jinja`
+- `gemma4-26b-31b.jinja`
 - `gemma4-26b-31b-nothink.jinja`
 - `glm45-nonthinking.jinja`
 - `glm47-nonthinking.jinja`
@@ -240,3 +272,263 @@ For any new preset:
 - confirm built-in presets use `--chat-template`
 - confirm bundled presets use `--chat-template-file`
 - confirm manual custom files clear named preset selection unless they match a bundled preset path
+
+## Quick Launch Tab
+
+The Quick Launch tab (`section-quick-launch`) provides a simplified launch interface for quick model testing.
+
+### Profiles
+
+`QUICK_PROFILES` in `app.js` provides preconfigured setups:
+- `safe-defaults` / `balanced`: 16K context, auto GPU, auto-fit, Balanced sampler preset
+- `low-memory`: 8K context, smaller batch sizes, Precise sampler preset
+- `long-context`: 32K context, auto-fit
+- `creative-chat`: 16K context, Creative sampler preset
+
+Each profile applies a tool setting, flag values, fit linking, and sampler preset in one action.
+
+### Controls
+
+Quick Launch renders simplified controls for:
+- Model selection (synced with Configure's model dropdown)
+- Tool mode toggle (llama-server / llama-cli)
+- Context size (preset dropdown + custom input, linked to fit_ctx by default)
+- GPU layers (auto/0/all/custom, synced with Configure)
+- Auto Fit toggle + fit target/context inputs
+- Chat template (reuses shared `chat_template` options from flags.js)
+- Sampler preset selection (load/save/delete from shared sampler preset store)
+- Quick sampler fields (temperature, top-k, top-p, min-p, repeat-penalty)
+- Metrics toggle
+- Profile selector with summary text
+
+All controls write through `setFlagValue()` / `setMultipleFlagValues()`, keeping Configure and Quick Launch in sync.
+
+### Hugging Face Download Integration
+
+The Quick Launch tab includes a full HF model downloader section:
+- Repo ID + revision + token inputs
+- "Find Files" button fetches GGUF file listing from `/api/hf/repo-files`
+- Model and mmproj file selectors
+- Download progress bar with cancel support
+- Auto-selects downloaded model on completion
+
+## Chat Tab
+
+The Chat tab (`section-chat`) is a streaming OpenAI-compatible chat interface that proxies through the Python backend.
+
+### Architecture
+
+The backend proxies `/api/chat/completions` to `llama-server`'s `/v1/chat/completions` endpoint:
+1. Frontend sends POST with messages, sampler params, and optional web_search flag.
+2. Backend optionally performs web search via DuckDuckGo, fetches result pages, injects context into the system prompt.
+3. Backend proxies the request to `llama-server` and streams the SSE response back to the frontend.
+4. Frontend renders markdown and tracks source citations.
+
+### Web Search
+
+When the web search toggle is enabled:
+- The backend extracts the latest user message and queries DuckDuckGo.
+- Up to 5 search results are fetched, and up to 3 pages are read for full text.
+- Search context is injected into the system prompt with source citations.
+- Sources are rendered as clickable chips below the assistant's response.
+- Web search status messages (e.g., "Searching: ...", "Reading: ...") are streamed during processing.
+
+### Conversation History
+
+- Conversations are stored in `localStorage` under `llama_gui_conversations`.
+- Each conversation has an id, title (derived from first user message), messages array, system prompt, and timestamp.
+- Sidebar shows recent conversations with preview text and relative timestamps.
+- Features: new chat, undo last message, regenerate last response, delete individual/all conversations, collapse sidebar.
+
+### Markdown Rendering
+
+`renderMarkdown()` in `app.js` converts chat output to HTML:
+- Fenced code blocks (``` ... ```) with optional language attribute
+- Inline code (`...`)
+- Bold (**...**, __...__)
+- Italic (*...*, _..._)
+- Strikethrough (~~...~~)
+- Paragraphs, line breaks
+
+### Sampler Sliders
+
+Chat sidebar has sliders for temperature, top-p, top-k, min-p, repeat-penalty, and max-tokens. Changes write through `setFlagValue()` and sync with Configure/Quick Launch.
+
+## Hugging Face Model Downloader
+
+Integrated model downloading from Hugging Face Hub.
+
+### Backend API
+
+- `POST /api/hf/repo-files`: Takes `repo_id`, `revision`, `token`. Uses `huggingface_hub.HfApi.model_info()` to list GGUF files. Returns separated model and mmproj file lists.
+- `POST /api/hf/download`: Takes `repo_id`, `revision`, `model_file`, `mmproj_file`, `token`, `overwrite`. Downloads in a background thread with cancellation support. Validates filenames and repo IDs.
+- `GET /api/hf/download-status`: Returns current download progress (total, downloaded, status, current_file, model_name, model_path, mmproj_path).
+- `POST /api/hf/download-cancel`: Sets cancellation event to abort in-progress download.
+
+### Frontend Flow
+
+1. User enters a HF repo ID (e.g., `ggml-org/gemma-3-1b-it-GGUF`).
+2. "Find Files" fetches available GGUF files.
+3. User selects a model file and optional mmproj file.
+4. "Download" starts the download with progress bar.
+5. On completion, the model is auto-selected in the model dropdown and command preview updates.
+
+### Safety
+
+- Repo IDs, revisions, and filenames are validated with strict regex and path traversal checks.
+- Only `.gguf` files can be downloaded.
+- mmproj files must contain `mmproj`, `clip`, or `projector` in the stem.
+- Duplicate downloads detect existing files and prompt for overwrite confirmation.
+- Partial downloads are cleaned up on error/cancellation.
+
+## Remote Tunnel (Cloudflare)
+
+The API tab includes Cloudflare tunnel integration for exposing `llama-server` to the internet.
+
+### Backend
+
+- `cloudflared` binary is auto-downloaded on first use to `tools/cloudflared/`.
+- Platform-specific assets: Windows `.exe`, macOS `.tgz`, Linux binary.
+- Tunnel process runs `cloudflared tunnel --url http://127.0.0.1:5240`.
+- Status polling detects the `trycloudflare.com` URL from stderr.
+- Thread-safe state management with start/stop lifecycle.
+- CORS origin is updated to include the active tunnel URL.
+
+### Frontend
+
+- Start/stop buttons with disabled states during transitions.
+- Polls tunnel status every 2 seconds while running/starting.
+- Displays tunnel URL as a clickable link with copy button.
+- Status badge with running/working/error styling.
+- Tunnel URL is added to allowed CORS origins for API requests.
+
+## Auto-Update System
+
+The Install tab includes git-based app updating.
+
+### How It Works
+
+1. `GET /api/app-update-status` (with `fetch=true`) runs `git fetch --prune origin`, then checks `git rev-list --left-right --count HEAD...origin/<branch>`.
+2. Dirty git paths are classified as "safe" (ignored directories like `llama/`, `models/`, `presets/`, cache dirs, file suffixes like `.pyc`, `.log`, `.tmp`) or "blocking" (source file changes).
+3. If the local branch is behind origin and has no blocking changes, auto-update is available.
+4. `POST /api/app-update` runs `git pull --ff-only`, then reinstalls `requirements.txt` via pip.
+5. After success, the server restarts and the frontend reloads with cache busting.
+6. CORS-safe request origin validation applies to update endpoints.
+
+### Dependency Installation
+
+`install_python_dependencies()` runs `pip install -r requirements.txt` and reports success/failure. Called after git pull and exposed as `POST /api/install-deps`.
+
+### Safe Dirty Path Classification
+
+Paths matching these patterns are considered "safe" (not blocking updates):
+- Prefixes: `llama/`, `models/`, `presets/`, `releases/`, `__pycache__/`, `.ruff_cache/`, `.pytest_cache/`, `.mypy_cache/`, `.venv/`, `venv/`, `env/`, `logs/`, `tmp/`, `temp/`
+- Exact names: `config.json`, `.DS_Store`, `Thumbs.db`, `desktop.ini`, `.env*`
+- Suffixes: `.pyc`, `.pyo`, `.log`, `.tmp`, `.temp`, `.bak`, `.orig`, `.swp`, `.swo`, `.zip`, `.tar.gz`, `.tgz`
+
+## Sampler Presets
+
+Sampler presets allow saving and loading groups of sampling flags.
+
+### Built-In Presets
+
+Defined in `BUILTIN_SAMPLER_PRESETS` in `app.js`:
+- **Neutral**: temperature=1.0, top_k=0, top_p=1.0, min_p=0, all penalties disabled
+- **Balanced**: temperature=0.8, top_k=40, top_p=0.95, min_p=0.05, repeat_penalty=1.05
+- **Creative**: temperature=1.05, top_k=100, top_p=0.97, min_p=0.03, repeat_penalty=1.02
+- **Precise**: temperature=0.45, top_k=30, top_p=0.9, min_p=0.08, repeat_penalty=1.1
+
+### Custom Presets
+
+- Stored in `localStorage` under `llama_gui_sampler_presets_v1`.
+- Saved from current sampler values with user-defined names.
+- Unique name generation handles collisions (e.g., "Creative (2)").
+- Load, save, delete, export (single JSON file), and import (single or batch JSON) operations.
+
+### Integration
+
+- Configure tab: Sampler Preset controls appear at the top of the Sampling accordion.
+- Quick Launch tab: Sampler Preset controls in the sampler section.
+- Quick profiles reference preset names (e.g., `samplerPresetName: "Balanced"`).
+- Loading a preset calls `applySamplerPresetValues()` which writes through `setMultipleFlagValues()`.
+
+## Server Stats & Metrics
+
+Live performance metrics are polled from `llama-server`'s Prometheus endpoint.
+
+### How It Works
+
+1. `startStatsPolling()` begins polling ~2 seconds after server launch.
+2. Every 3 seconds, `pollStats()` fetches `/api/llama/metrics?host=...&port=...`.
+3. The backend proxies to `llama-server`'s `/metrics` endpoint.
+4. Metrics are parsed from Prometheus text format.
+
+### Displayed Metrics
+
+- **Prompt tokens**: Total tokens processed in prompts (delta since baseline)
+- **Prompt speed**: Tokens per second during prompt ingestion
+- **Generated tokens**: Total tokens generated (delta since baseline)
+- **Generation speed**: Tokens per second during generation
+- **Context usage**: Total prompt + generated tokens
+- **KV cache usage**: Percentage of KV cache filled
+
+The `snapshotStatsBaseline()` function resets the delta counter (called on conversation load and new chat).
+
+Metrics host validation restricts proxying to local addresses only for security.
+
+## MCP / Agent Tools
+
+The Configure tab's "Server and MCP Settings" category includes an "MCP Settings" submenu with:
+- **WebUI MCP Proxy**: Enables CORS proxy support for MCP requests in the Web UI.
+- **Built-in Tools** (`multi_enum` type): Select from available agent tools exposed to the model:
+  - `all`: Enable all tools (high risk)
+  - `read_file`, `file_glob_search`, `grep_search`: Read-only tools
+  - `exec_shell_command`: Execute shell commands (high risk)
+  - `write_file`, `edit_file`, `apply_diff`: File modification tools (high risk)
+
+When a high-risk tool is selected, a warning message appears: "High-risk tools selected. Only enable on trusted/local environments."
+
+## Reasoning / Thinking Support
+
+Flags for reasoning/thinking models:
+- `-rea` (enum: auto/on/off): Enable or disable reasoning/thinking mode.
+- `--reasoning-budget` (int): Token budget for thinking (-1 = unlimited, 0 = off).
+- `--chat-template-kwargs` (bool, flag: `preserve_thinking`): When enabled, passes `{"preserve_thinking":true}` to the chat template engine. Required for models like Qwen3, DeepSeek-R1 to show chain-of-thought output.
+
+If `preserve_thinking` is true and the flag passes the inert-default filter, the launch arg is `--chat-template-kwargs {"preserve_thinking":true}`.
+
+## Configuration Search
+
+The Configure tab has a search input that filters visible flags in real-time.
+
+### Search Behavior
+
+- Searches across: flag name (`--flag`), label, id, description, short description, beginner tip, submenu name, and all option labels/values.
+- When a search query is active, all accordion categories automatically expand to show matching flags.
+- Partial matches are highlighted; unmatched flags within a category are hidden.
+- Empty results show "No configuration options match your search."
+- Escape key or clear button resets the search and collapses all categories.
+
+### Expand/Collapse
+
+- "Expand All" opens all categories and submenus.
+- "Collapse All" closes all categories and submenus.
+- Individual categories remember their open/closed state via `openCategories` Set.
+- Individual submenus remember their state via `openSubmenus` Set.
+
+## Native File Picker
+
+Path-type flags (model, mmproj, draft model, etc.) have a "Browse" button that opens a native OS file dialog via tkinter.
+
+### Backend
+
+`POST /api/select-file` accepts:
+- `purpose`: Determines initial directory and file type filters.
+- `title`: Dialog window title.
+
+Returns `{"selected": bool, "path": string}`.
+
+### File Type Filters
+
+- Model files (purpose: model, model_draft, mmproj, model_vocoder): `*.gguf`, `*.bin`
+- Other paths (grammar file, log file, etc.): `*.*`
