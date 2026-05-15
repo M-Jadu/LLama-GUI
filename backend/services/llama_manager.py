@@ -4,14 +4,19 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import shutil
+import subprocess
 import tarfile
 import tempfile
 import urllib.request
 import zipfile
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional
 
 from ..context import AppContext
+
+
+RPATH_LIBRARY_RE = re.compile(r"^\s*@rpath/([^\s(]+)")
 
 
 def build_backend_specs(current_platform: str, current_arch: str) -> dict[str, Any]:
@@ -161,6 +166,78 @@ def reset_download_progress(
 
 def get_download_progress_snapshot(ctx: AppContext) -> dict[str, Any]:
     return ctx.state.download_progress.snapshot()
+
+
+def parse_otool_rpath_libraries(output: str) -> list[str]:
+    libraries: list[str] = []
+    seen = set()
+    for line in (output or "").splitlines():
+        match = RPATH_LIBRARY_RE.match(line)
+        if not match:
+            continue
+        name = pathlib.PurePosixPath(match.group(1)).name
+        if name and name not in seen:
+            seen.add(name)
+            libraries.append(name)
+    return libraries
+
+
+def get_macos_rpath_libraries(executable: pathlib.Path) -> list[str]:
+    result = subprocess.run(
+        ["otool", "-L", str(executable)],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    return parse_otool_rpath_libraries(result.stdout)
+
+
+def validate_runtime_dependencies(
+    ctx: AppContext, tools: Optional[Iterable[str]] = None
+) -> dict[str, Any]:
+    current_platform = ctx.services.current_platform
+    if current_platform != "darwin":
+        return {
+            "ok": True,
+            "checked": False,
+            "required_runtime_files": [],
+            "missing_runtime_files": [],
+        }
+
+    required: set[str] = set()
+    checked_tools: list[str] = []
+    unchecked_tools: list[str] = []
+    missing_executables: list[str] = []
+
+    for tool in tools or ("llama-cli", "llama-server"):
+        exe_path = ctx.services.find_tool_executable(tool)
+        if not exe_path.exists():
+            missing_executables.append(ctx.services.get_tool_filename(tool))
+            continue
+        try:
+            required.update(get_macos_rpath_libraries(exe_path))
+            checked_tools.append(tool)
+        except (
+            FileNotFoundError,
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ):
+            unchecked_tools.append(tool)
+
+    missing_runtime_files = sorted(
+        name for name in required if not (ctx.paths.llama_bin / name).exists()
+    )
+    return {
+        "ok": not missing_runtime_files,
+        "checked": bool(checked_tools),
+        "checked_tools": checked_tools,
+        "unchecked_tools": unchecked_tools,
+        "required_runtime_files": sorted(required),
+        "missing_runtime_files": missing_runtime_files,
+        "missing_executables": missing_executables,
+    }
 
 
 def download_file(

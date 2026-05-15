@@ -181,11 +181,26 @@ function updateStatusUI(status) {
             appendRow(status.runtime_files_label || "Runtime libraries", `${status.runtime_files.length} file(s)`);
         }
     } else if (status.config_stale) {
+        const missingRuntimeFiles = Array.isArray(status.missing_runtime_files)
+            ? status.missing_runtime_files.filter(Boolean)
+            : [];
         const warning = document.createElement("div");
         warning.style.color = "var(--yellow)";
         warning.style.marginBottom = "8px";
-        warning.textContent = "Configuration exists, but required llama.cpp executables are missing.";
+        warning.textContent = missingRuntimeFiles.length > 0
+            ? "Configuration exists, but required llama.cpp runtime libraries are missing."
+            : "Configuration exists, but required llama.cpp executables are missing.";
         info.appendChild(warning);
+
+        if (missingRuntimeFiles.length > 0) {
+            const missing = document.createElement("div");
+            missing.style.color = "var(--fg-dim)";
+            missing.style.marginBottom = "8px";
+            const shown = missingRuntimeFiles.slice(0, 8).join(", ");
+            const extra = missingRuntimeFiles.length > 8 ? `, and ${missingRuntimeFiles.length - 8} more` : "";
+            missing.textContent = "Missing runtime libraries: " + shown + extra;
+            info.appendChild(missing);
+        }
 
         const hint = document.createElement("div");
         hint.style.color = "var(--fg-dim)";

@@ -208,6 +208,38 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertEqual(response.payload["models_dir"], str(ctx.paths.models))
             self.assertEqual(response.payload["available_backends"], [{"id": "cpu", "label": "CPU"}])
 
+    def test_status_route_marks_install_stale_when_runtime_library_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            cli_path = ctx.paths.llama_bin / "llama-cli"
+            cli_path.parent.mkdir(parents=True)
+            cli_path.write_text("")
+            ctx.services = BackendServices(
+                backend_specs={"metal": {"label": "Metal"}},
+                current_arch="arm64",
+                current_platform="darwin",
+                find_tool_executable=lambda tool: ctx.paths.llama_bin / tool,
+                get_platform_label=lambda: "macOS",
+                get_runtime_files=lambda: [],
+                get_tool_filename=lambda tool: tool,
+                is_process_running=lambda: False,
+                llama_tools=["llama-cli"],
+                load_config=lambda: {"tag": "b1", "backend": "metal"},
+                validate_runtime_dependencies=lambda: {
+                    "ok": False,
+                    "checked": True,
+                    "required_runtime_files": ["libllama-common.0.dylib"],
+                    "missing_runtime_files": ["libllama-common.0.dylib"],
+                },
+            )
+            response = DummyResponse()
+
+            status.get_status(Request("GET", "/api/status", "", {}), response, ctx)
+
+            self.assertFalse(response.payload["installed"])
+            self.assertTrue(response.payload["config_stale"])
+            self.assertEqual(response.payload["missing_runtime_files"], ["libllama-common.0.dylib"])
+
     def test_status_route_returns_error_when_service_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = make_context(tmp)
@@ -321,6 +353,63 @@ class ExtractedRouteTests(unittest.TestCase):
             result = process_manager.parse_launch_api_target(ctx, ["--host", "bad.example"])
 
             self.assertEqual(result, fallback)
+
+    def test_process_manager_launch_reports_missing_runtime_before_popen(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.paths.llama_bin.mkdir(parents=True)
+            (ctx.paths.llama_bin / "llama-server").write_text("binary")
+            ctx.services = BackendServices(
+                current_platform="darwin",
+                find_tool_executable=lambda tool: ctx.paths.llama_bin / tool,
+                get_tool_filename=lambda tool: tool,
+                validate_runtime_dependencies=lambda tools=None: {
+                    "ok": False,
+                    "checked": True,
+                    "missing_runtime_files": ["libllama-common.0.dylib"],
+                },
+            )
+
+            with mock.patch.object(process_manager.subprocess, "Popen") as mock_popen:
+                result = process_manager.launch_process(ctx, "llama-server", [])
+
+            self.assertIn("Missing llama.cpp runtime library", result["error"])
+            self.assertIn("libllama-common.0.dylib", result["error"])
+            mock_popen.assert_not_called()
+
+    def test_process_launch_route_returns_missing_runtime_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.paths.llama_bin.mkdir(parents=True)
+            (ctx.paths.llama_bin / "llama-server").write_text("binary")
+            ctx.services = BackendServices(
+                current_platform="darwin",
+                find_tool_executable=lambda tool: ctx.paths.llama_bin / tool,
+                get_tool_filename=lambda tool: tool,
+                validate_runtime_dependencies=lambda tools=None: {
+                    "ok": False,
+                    "checked": True,
+                    "missing_runtime_files": ["libllama-common.0.dylib"],
+                },
+            )
+            response = DummyResponse()
+
+            with mock.patch.object(process_manager.subprocess, "Popen") as mock_popen:
+                process.launch(
+                    Request(
+                        "POST",
+                        "/api/launch",
+                        "",
+                        {},
+                        body={"tool": "llama-server", "args": []},
+                    ),
+                    response,
+                    ctx,
+                )
+
+            self.assertEqual(response.status, 400)
+            self.assertIn("libllama-common.0.dylib", response.payload["error"])
+            mock_popen.assert_not_called()
 
     def test_hf_download_status_route_reads_context_state(self):
         with tempfile.TemporaryDirectory() as tmp:

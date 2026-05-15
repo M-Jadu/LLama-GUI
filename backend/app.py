@@ -178,6 +178,10 @@ def get_runtime_files():
     return runtime_files
 
 
+def validate_runtime_dependencies(tools=None):
+    return llama_manager_service.validate_runtime_dependencies(APP_CONTEXT, tools)
+
+
 def configure_services(ctx=APP_CONTEXT):
     ctx.services.backend_specs = BACKEND_SPECS
     ctx.services.binary_suffix = BINARY_SUFFIX
@@ -196,6 +200,7 @@ def configure_services(ctx=APP_CONTEXT):
     ctx.services.get_llama_api_target = get_llama_api_target
     ctx.services.set_llama_api_target = set_llama_api_target
     ctx.services.get_local_llama_metrics = get_local_llama_metrics
+    ctx.services.validate_runtime_dependencies = validate_runtime_dependencies
 
 
 def download_file(url, dest, progress_cb=None):

@@ -192,6 +192,96 @@ class Sha256FileTests(unittest.TestCase):
             tmppath.unlink()
 
 
+class RuntimeDependencyValidationTests(unittest.TestCase):
+    def make_runtime_context(self, tmpdir, platform_name="darwin"):
+        from backend.context import AppContext, AppPaths, BackendServices
+
+        root = pathlib.Path(tmpdir)
+        ctx = AppContext(
+            paths=AppPaths(
+                root=root,
+                llama=root / "llama",
+                llama_bin=root / "llama" / "bin",
+                llama_grammars=root / "llama" / "grammars",
+                models=root / "models",
+                presets=root / "presets",
+                config_file=root / "config.json",
+                ui=root / "ui",
+                app_logo=root / "ui" / "assets" / "app-logo.png",
+                tools=root / "tools",
+                cloudflared=root / "tools" / "cloudflared",
+            )
+        )
+        ctx.paths.llama_bin.mkdir(parents=True)
+        ctx.services = BackendServices(
+            current_platform=platform_name,
+            find_tool_executable=lambda tool: ctx.paths.llama_bin / tool,
+            get_tool_filename=lambda tool: tool,
+        )
+        return ctx
+
+    def test_parse_otool_rpath_libraries_ignores_system_libraries(self):
+        output = """
+/tmp/llama/bin/llama-server:
+    @rpath/libllama-common.0.dylib (compatibility version 0.0.0, current version 0.0.0)
+    /usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1336.0.0)
+    @rpath/libllama-common.0.dylib (compatibility version 0.0.0, current version 0.0.0)
+"""
+
+        self.assertEqual(
+            llama_manager.parse_otool_rpath_libraries(output),
+            ["libllama-common.0.dylib"],
+        )
+
+    def test_validate_macos_runtime_dependencies_passes_when_dylib_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.make_runtime_context(tmp)
+            (ctx.paths.llama_bin / "llama-server").write_text("binary")
+            (ctx.paths.llama_bin / "libllama-common.0.dylib").write_text("lib")
+
+            with mock.patch.object(
+                llama_manager,
+                "get_macos_rpath_libraries",
+                return_value=["libllama-common.0.dylib"],
+            ):
+                result = llama_manager.validate_runtime_dependencies(ctx, ["llama-server"])
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["missing_runtime_files"], [])
+        self.assertEqual(result["required_runtime_files"], ["libllama-common.0.dylib"])
+
+    def test_validate_macos_runtime_dependencies_reports_missing_dylib(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.make_runtime_context(tmp)
+            (ctx.paths.llama_bin / "llama-server").write_text("binary")
+
+            with mock.patch.object(
+                llama_manager,
+                "get_macos_rpath_libraries",
+                return_value=["libllama-common.0.dylib"],
+            ):
+                result = llama_manager.validate_runtime_dependencies(ctx, ["llama-server"])
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["missing_runtime_files"], ["libllama-common.0.dylib"])
+
+    def test_validate_macos_runtime_dependencies_degrades_when_otool_unavailable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.make_runtime_context(tmp)
+            (ctx.paths.llama_bin / "llama-server").write_text("binary")
+
+            with mock.patch.object(
+                llama_manager,
+                "get_macos_rpath_libraries",
+                side_effect=FileNotFoundError(),
+            ):
+                result = llama_manager.validate_runtime_dependencies(ctx, ["llama-server"])
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["checked"])
+        self.assertEqual(result["unchecked_tools"], ["llama-server"])
+
+
 class GetLatestUserMessageTests(unittest.TestCase):
     def test_returns_last_user_message(self):
         messages = [

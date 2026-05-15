@@ -37,6 +37,15 @@ def _missing_service(*args: Any, **kwargs: Any) -> Any:
     raise RuntimeError("Backend service has not been configured.")
 
 
+def _healthy_runtime_dependencies(*args: Any, **kwargs: Any) -> Mapping[str, Any]:
+    return {
+        "ok": True,
+        "checked": False,
+        "required_runtime_files": [],
+        "missing_runtime_files": [],
+    }
+
+
 @dataclass
 class BackendServices:
     backend_specs: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
@@ -56,6 +65,9 @@ class BackendServices:
     set_llama_api_target: Callable[[Any, Any], Mapping[str, Any]] = _missing_service
     ssl_context: Any = None
     urlopen_with_ssl: Callable[..., Any] = _missing_service
+    validate_runtime_dependencies: Callable[..., Mapping[str, Any]] = (
+        _healthy_runtime_dependencies
+    )
 
 
 @dataclass

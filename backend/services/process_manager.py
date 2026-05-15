@@ -103,6 +103,18 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
         if not exe_path.exists():
             return {"error": f"{exe_name} not found. Install llama.cpp first."}
 
+        runtime_health = dict(ctx.services.validate_runtime_dependencies([tool]))
+        missing_runtime_files = runtime_health.get("missing_runtime_files") or []
+        if missing_runtime_files:
+            missing = ", ".join(str(name) for name in missing_runtime_files)
+            plural = "libraries" if len(missing_runtime_files) != 1 else "library"
+            return {
+                "error": (
+                    f"Missing llama.cpp runtime {plural}: {missing}. "
+                    "Use Repair Install to reinstall binaries."
+                )
+            }
+
         args = [str(exe_path), *flatten_launch_args(args_list)]
         env = _build_process_env(ctx)
 
