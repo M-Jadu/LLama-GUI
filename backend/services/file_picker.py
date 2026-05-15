@@ -1,6 +1,9 @@
 """Native file picker helpers."""
 
 from pathlib import Path
+import json
+import platform
+import subprocess
 from typing import Any, Optional, Sequence, Tuple
 
 from backend.context import AppContext
@@ -8,11 +11,66 @@ from backend.context import AppContext
 FileTypes = Sequence[Tuple[str, str]]
 
 
+def _extensions_from_filetypes(filetypes: Optional[FileTypes]) -> list[str]:
+    extensions: list[str] = []
+    seen = set()
+    for _label, pattern_group in filetypes or []:
+        for pattern in str(pattern_group or "").split():
+            if not pattern.startswith("*."):
+                continue
+            ext = pattern[2:].strip().lower()
+            if not ext or ext == "*" or ext in seen:
+                continue
+            seen.add(ext)
+            extensions.append(ext)
+    return extensions
+
+
+def _applescript_list(values: Sequence[str]) -> str:
+    return "{" + ", ".join(json.dumps(value) for value in values) + "}"
+
+
+def select_file_with_osascript(
+    title: str = "Select File",
+    initial_dir: Optional[Path] = None,
+    filetypes: Optional[FileTypes] = None,
+) -> str:
+    initial = Path(initial_dir or Path.home()).expanduser()
+    extensions = _extensions_from_filetypes(filetypes)
+    type_clause = ""
+    if extensions:
+        type_clause = f" of type {_applescript_list(extensions)}"
+
+    script = (
+        "set dialogTitle to item 1 of argv\n"
+        "set initialDir to item 2 of argv\n"
+        "set selectedFile to choose file with prompt dialogTitle "
+        "default location (POSIX file initialDir)"
+        f"{type_clause}\n"
+        "return POSIX path of selectedFile\n"
+    )
+    result = subprocess.run(
+        ["osascript", "-e", f"on run argv\n{script}end run", str(title), str(initial)],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    if result.returncode == 1 and "User canceled" in result.stderr:
+        return ""
+    if result.returncode != 0:
+        message = (result.stderr or result.stdout or "macOS file picker failed.").strip()
+        raise RuntimeError(message)
+    return result.stdout.strip()
+
+
 def select_file_in_native_dialog(
     title: str = "Select File",
     initial_dir: Optional[Path] = None,
     filetypes: Optional[FileTypes] = None,
 ) -> str:
+    if platform.system() == "Darwin":
+        return select_file_with_osascript(title, initial_dir, filetypes)
+
     try:
         import tkinter as tk
         from tkinter import filedialog

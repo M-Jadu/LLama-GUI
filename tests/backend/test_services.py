@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from backend.services import chat as chat_service
+from backend.services import file_picker as file_picker_service
 from backend.services import hf_download as hf_service
 from backend.services import llama_manager
 
@@ -280,6 +281,48 @@ class RuntimeDependencyValidationTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertFalse(result["checked"])
         self.assertEqual(result["unchecked_tools"], ["llama-server"])
+
+
+class FilePickerServiceTests(unittest.TestCase):
+    def test_extensions_from_filetypes_extracts_unique_extensions(self):
+        self.assertEqual(
+            file_picker_service._extensions_from_filetypes(
+                [
+                    ("Model files", "*.gguf *.bin"),
+                    ("GGUF files", "*.gguf"),
+                    ("All files", "*.*"),
+                ]
+            ),
+            ["gguf", "bin"],
+        )
+
+    def test_macos_file_picker_uses_osascript_and_returns_stdout_path(self):
+        completed = SimpleNamespace(
+            returncode=0,
+            stdout="/Users/test/model.gguf\n",
+            stderr="",
+        )
+        with mock.patch.object(file_picker_service.subprocess, "run", return_value=completed) as run:
+            selected = file_picker_service.select_file_with_osascript(
+                title="Pick Model",
+                initial_dir=pathlib.Path("/Users/test/models"),
+                filetypes=[("Model files", "*.gguf *.bin")],
+            )
+
+        self.assertEqual(selected, "/Users/test/model.gguf")
+        args = run.call_args.args[0]
+        self.assertEqual(args[0], "osascript")
+        self.assertIn('of type {"gguf", "bin"}', args[2])
+
+    def test_macos_file_picker_returns_empty_on_cancel(self):
+        completed = SimpleNamespace(returncode=1, stdout="", stderr="User canceled.")
+        with mock.patch.object(file_picker_service.subprocess, "run", return_value=completed):
+            selected = file_picker_service.select_file_with_osascript(
+                title="Pick Model",
+                initial_dir=pathlib.Path("/Users/test/models"),
+            )
+
+        self.assertEqual(selected, "")
 
 
 class GetLatestUserMessageTests(unittest.TestCase):
