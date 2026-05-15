@@ -6,7 +6,7 @@ import signal
 import subprocess
 import sys
 import threading
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 from .. import config
 from ..context import AppContext
@@ -36,7 +36,7 @@ def stream_output(ctx: AppContext, pipe: Any, is_stderr: bool = False) -> None:
         pass
 
 
-def flatten_launch_args(args_list: Iterable[Any] | None) -> list[str]:
+def flatten_launch_args(args_list: Optional[Iterable[Any]]) -> list[str]:
     flat_args: list[str] = []
     for entry in args_list or []:
         if isinstance(entry, list):
@@ -46,7 +46,7 @@ def flatten_launch_args(args_list: Iterable[Any] | None) -> list[str]:
     return flat_args
 
 
-def parse_launch_api_target(ctx: AppContext, args_list: Iterable[Any] | None) -> dict[str, Any]:
+def parse_launch_api_target(ctx: AppContext, args_list: Optional[Iterable[Any]]) -> dict[str, Any]:
     flat_args = flatten_launch_args(args_list)
 
     host: Any = ctx.config.llama_host
@@ -93,7 +93,7 @@ def _build_process_env(ctx: AppContext) -> dict[str, str]:
     return env
 
 
-def launch_process(ctx: AppContext, tool: str, args_list: Iterable[Any] | None) -> dict[str, Any]:
+def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]]) -> dict[str, Any]:
     with ctx.state.process_lock:
         if ctx.state.process and ctx.state.process.poll() is None:
             return {"error": "A process is already running"}

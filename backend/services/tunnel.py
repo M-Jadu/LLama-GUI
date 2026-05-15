@@ -9,13 +9,14 @@ import sys
 import tarfile
 import threading
 from pathlib import Path
+from typing import Optional
 
 from .. import config
 from ..context import AppContext
 from ..services.llama_manager import download_file
 
 
-def get_cloudflared_asset(platform: str, arch: str) -> dict | None:
+def get_cloudflared_asset(platform: str, arch: str) -> Optional[dict]:
     if platform == "win32":
         return {
             "url": "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe",
