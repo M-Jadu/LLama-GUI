@@ -1,8 +1,9 @@
 """HTTP adapter helpers for the stdlib server backend."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from typing import Any, Mapping, Optional, Sequence
+import urllib.parse
 
 from . import config
 
@@ -13,6 +14,8 @@ class Request:
     path: str
     query: str
     headers: Any
+    body: Any = None
+    params: Mapping[str, str] = field(default_factory=dict)
 
 
 def is_v1_proxy_path(path: str) -> bool:
@@ -36,7 +39,11 @@ def is_safe_request_origin(headers: Any, allowed_origins: Sequence[str]) -> bool
     if origin:
         return origin in allowed_origins
     if referer:
-        return referer.startswith(tuple(allowed_origins))
+        parsed = urllib.parse.urlparse(referer)
+        if not parsed.scheme or not parsed.netloc:
+            return False
+        referer_origin = f"{parsed.scheme}://{parsed.netloc}"
+        return referer_origin in allowed_origins
     return True
 
 

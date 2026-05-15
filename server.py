@@ -56,6 +56,7 @@ from backend.config import (
 )
 from backend.context import DEFAULT_CONTEXT
 from backend.http import (
+    Request,
     Response,
     SseWriter,
     get_access_control_origin,
@@ -66,6 +67,10 @@ from backend.http import (
     is_v1_proxy_path,
 )
 from backend.routing import Router
+from backend.routes import metrics as metrics_routes
+from backend.routes import models as models_routes
+from backend.routes import presets as presets_routes
+from backend.routes import status as status_routes
 
 try:
     import certifi
@@ -283,6 +288,23 @@ def get_runtime_files():
         if path.is_file() and path.suffix.lower() in SHARED_LIBRARY_SUFFIXES:
             runtime_files.append(path)
     return runtime_files
+
+
+APP_CONTEXT.services.update(
+    {
+        "backend_specs": BACKEND_SPECS,
+        "binary_suffix": BINARY_SUFFIX,
+        "current_arch": CURRENT_ARCH,
+        "current_platform": CURRENT_PLATFORM,
+        "find_tool_executable": find_tool_executable,
+        "get_platform_label": get_platform_label,
+        "get_runtime_files": get_runtime_files,
+        "get_tool_filename": get_tool_filename,
+        "is_process_running": is_process_running,
+        "llama_tools": LLAMA_TOOLS,
+        "load_config": load_config,
+    }
+)
 
 
 def download_file(url, dest, progress_cb=None):
@@ -1838,6 +1860,9 @@ def get_local_llama_metrics(host, port):
         return None, f"Failed to fetch llama-server metrics: {exc}"
 
 
+APP_CONTEXT.services["get_local_llama_metrics"] = get_local_llama_metrics
+
+
 def write_sse(wfile, data):
     SseWriter(wfile).write(data)
 
@@ -2113,41 +2138,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             else:
                 self.send_error(404)
             return
-        handler = getattr(self, match.handler_name)
-        handler(parsed, body, dict(match.params))
+        if isinstance(match.handler, str):
+            handler = getattr(self, match.handler)
+            handler(parsed, body, dict(match.params))
+            return
 
-    def handle_get_status(self, parsed, body=None, params=None):
-        cfg = load_config()
-        exes = {}
-        for tool in LLAMA_TOOLS:
-            name = get_tool_filename(tool)
-            exes[name] = find_tool_executable(tool).exists()
-        runtime_files = get_runtime_files()
-        has_config = bool(cfg.get("tag"))
-        installed = has_config and exes.get(get_tool_filename("llama-cli"), False)
-        config_stale = has_config and not installed
-        running = is_process_running()
-        self.send_json(
-            {
-                "installed": installed,
-                "config_stale": config_stale,
-                "version": cfg.get("tag"),
-                "backend": cfg.get("backend"),
-                "executables": exes,
-                "runtime_files": [d.name for d in runtime_files],
-                "runtime_files_label": "Runtime libraries",
-                "models_dir": str(MODELS_DIR),
-                "running": running,
-                "platform": CURRENT_PLATFORM,
-                "platform_label": get_platform_label(),
-                "arch": CURRENT_ARCH,
-                "executable_suffix": BINARY_SUFFIX,
-                "available_backends": [
-                    {"id": key, "label": spec["label"]}
-                    for key, spec in BACKEND_SPECS.items()
-                ],
-            }
+        request = Request(
+            method=method,
+            path=path,
+            query=parsed.query,
+            headers=self.headers,
+            body=body,
+            params=dict(match.params),
         )
+        match.handler(request, Response(self), APP_CONTEXT)
 
     def handle_get_releases(self, parsed, body=None, params=None):
         try:
@@ -2181,42 +2185,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def handle_get_remote_tunnel_status(self, parsed, body=None, params=None):
         self.send_json(get_remote_tunnel_snapshot())
 
-    def handle_get_llama_metrics(self, parsed, body=None, params=None):
-        query = urllib.parse.parse_qs(parsed.query)
-        metrics_text, error = get_local_llama_metrics(
-            (query.get("host") or [LLAMA_HOST])[0],
-            (query.get("port") or [str(LLAMA_PORT)])[0],
-        )
-        if metrics_text is None:
-            self.send_error_json(error, 502)
-            return
-        Response(self).text(metrics_text)
-
-    def handle_get_models(self, parsed, body=None, params=None):
-        models = []
-        if MODELS_DIR.exists():
-            for f in sorted(MODELS_DIR.iterdir()):
-                if f.is_file() and f.suffix.lower() == ".gguf":
-                    size_mb = f.stat().st_size / (1024 * 1024)
-                    models.append({"name": f.name, "size_mb": round(size_mb, 2)})
-        self.send_json(models)
-
     def handle_get_app_update_status(self, parsed, body=None, params=None):
         try:
             self.send_json(get_app_update_status(fetch=True))
         except Exception as e:
             self.send_error_json(str(e), 500)
-
-    def handle_get_presets(self, parsed, body=None, params=None):
-        presets = []
-        if PRESETS_DIR.exists():
-            for f in sorted(PRESETS_DIR.glob("*.json")):
-                try:
-                    with open(f, "r") as pf:
-                        presets.append({"name": f.stem, "data": json.load(pf)})
-                except Exception:
-                    pass
-        self.send_json(presets)
 
     def handle_post_web_search(self, parsed, body=None, params=None):
         self.handle_web_search_request(body)
@@ -2399,22 +2372,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             else:
                 self.send_json({"sent": False})
 
-    def handle_post_presets(self, parsed, body=None, params=None):
-        name = body.get("name")
-        data = body.get("data")
-        if not name or data is None:
-            self.send_error_json("name and data required", 400)
-            return
-        PRESETS_DIR.mkdir(parents=True, exist_ok=True)
-        safe_name = re.sub(r'[<>:"/\\|?*]', "_", name)
-        safe_name = safe_name.replace("..", "_").strip(". ")
-        if not safe_name:
-            self.send_error_json("Invalid preset name", 400)
-            return
-        with open(PRESETS_DIR / f"{safe_name}.json", "w") as f:
-            json.dump(data, f, indent=2)
-        self.send_json({"saved": True, "name": safe_name})
-
     def handle_post_open_folder(self, parsed, body=None, params=None):
         folder = body.get("folder", "models")
         folder_map = {"models": MODELS_DIR, "llama": LLAMA_DIR}
@@ -2461,16 +2418,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             )
         except Exception as e:
             self.send_error_json(str(e), 500)
-
-    def handle_delete_preset(self, parsed, body=None, params=None):
-        name = (params or {}).get("name", "")
-        safe_name = re.sub(r'[<>:"/\\|?*]', "_", urllib.parse.unquote(name))
-        preset_file = PRESETS_DIR / f"{safe_name}.json"
-        if preset_file.exists():
-            preset_file.unlink()
-            self.send_json({"deleted": True})
-        else:
-            self.send_error_json("Preset not found", 404)
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -2539,16 +2486,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 API_ROUTER = (
     Router()
-    .add("GET", "/api/status", "handle_get_status")
+    .add("GET", "/api/status", status_routes.get_status)
     .add("GET", "/api/releases", "handle_get_releases")
     .add("GET", "/api/output", "handle_get_output")
     .add("GET", "/api/download-progress", "handle_get_download_progress")
     .add("GET", "/api/hf/download-status", "handle_get_hf_download_status")
     .add("GET", "/api/remote-tunnel/status", "handle_get_remote_tunnel_status")
-    .add("GET", "/api/llama/metrics", "handle_get_llama_metrics")
-    .add("GET", "/api/models", "handle_get_models")
+    .add("GET", "/api/llama/metrics", metrics_routes.get_metrics)
+    .add("GET", "/api/models", models_routes.list_models)
     .add("GET", "/api/app-update-status", "handle_get_app_update_status")
-    .add("GET", "/api/presets", "handle_get_presets")
+    .add("GET", "/api/presets", presets_routes.list_presets)
     .add("POST", "/api/web-search", "handle_post_web_search")
     .add("POST", "/api/chat/completions", "handle_post_chat_completions")
     .add("POST", "/api/remote-tunnel/start", "handle_post_remote_tunnel_start")
@@ -2565,10 +2512,10 @@ API_ROUTER = (
     .add("POST", "/api/cleanup-llama", "handle_post_cleanup_llama")
     .add("POST", "/api/app-update", "handle_post_app_update")
     .add("POST", "/api/send-input", "handle_post_send_input")
-    .add("POST", "/api/presets", "handle_post_presets")
+    .add("POST", "/api/presets", presets_routes.save_preset)
     .add("POST", "/api/open-folder", "handle_post_open_folder")
     .add("POST", "/api/select-file", "handle_post_select_file")
-    .add_prefix("DELETE", "/api/presets/", "handle_delete_preset", "name")
+    .add_prefix("DELETE", "/api/presets/", presets_routes.delete_preset, "name")
 )
 
 

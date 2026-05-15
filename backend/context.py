@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Dict
 
 from . import config
 from .state import ServerState
@@ -37,7 +38,7 @@ class AppContext:
     paths: AppPaths = field(default_factory=AppPaths)
     config: ServerConfig = field(default_factory=ServerConfig)
     state: ServerState = field(default_factory=ServerState)
+    services: Dict[str, Any] = field(default_factory=dict)
 
 
 DEFAULT_CONTEXT = AppContext()
-

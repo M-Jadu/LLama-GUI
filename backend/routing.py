@@ -1,20 +1,26 @@
 """Small route registry used by the stdlib HTTP entrypoint."""
 
 from dataclasses import dataclass
-from typing import Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple
 
 
 @dataclass(frozen=True)
 class RouteMatch:
-    handler_name: str
+    handler: Any
     params: Mapping[str, str]
+
+    @property
+    def handler_name(self) -> str:
+        if isinstance(self.handler, str):
+            return self.handler
+        return getattr(self.handler, "__name__", str(self.handler))
 
 
 @dataclass(frozen=True)
 class _Route:
     method: str
     path: str
-    handler_name: str
+    handler: Any
     param_name: Optional[str] = None
     is_prefix: bool = False
 
@@ -24,22 +30,22 @@ class Router:
         self._exact: Dict[Tuple[str, str], RouteMatch] = {}
         self._prefixes = []
 
-    def add(self, method: str, path: str, handler_name: str) -> "Router":
-        self._exact[(method.upper(), path)] = RouteMatch(handler_name, {})
+    def add(self, method: str, path: str, handler: Any) -> "Router":
+        self._exact[(method.upper(), path)] = RouteMatch(handler, {})
         return self
 
     def add_prefix(
         self,
         method: str,
         prefix: str,
-        handler_name: str,
+        handler: Any,
         param_name: Optional[str] = None,
     ) -> "Router":
         self._prefixes.append(
             _Route(
                 method=method.upper(),
                 path=prefix,
-                handler_name=handler_name,
+                handler=handler,
                 param_name=param_name,
                 is_prefix=True,
             )
@@ -58,5 +64,5 @@ class Router:
             params = {}
             if route.param_name:
                 params[route.param_name] = path[len(route.path) :]
-            return RouteMatch(route.handler_name, params)
+            return RouteMatch(route.handler, params)
         return None

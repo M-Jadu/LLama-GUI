@@ -56,9 +56,11 @@ class HandlerCorsTests(unittest.TestCase):
     def test_referer_must_start_with_allowed_origin(self):
         allowed = self.make_handler(referer="http://127.0.0.1:5240/index.html")
         denied = self.make_handler(referer="http://127.0.0.1.evil.example:5240/")
+        prefix_bypass = self.make_handler(referer="http://localhost:5240@evil.example/")
 
         self.assertTrue(allowed.is_safe_request_origin())
         self.assertFalse(denied.is_safe_request_origin())
+        self.assertFalse(prefix_bypass.is_safe_request_origin())
 
 
 class HandlerResponseTests(unittest.TestCase):
@@ -132,7 +134,7 @@ class HandlerResponseTests(unittest.TestCase):
         match = server.API_ROUTER.match("GET", "/api/status")
 
         self.assertIsNotNone(match)
-        self.assertEqual(match.handler_name, "handle_get_status")
+        self.assertEqual(match.handler_name, "get_status")
 
     def test_unknown_api_route_returns_json_404(self):
         handler = self.make_handler(origin="http://localhost:5240")

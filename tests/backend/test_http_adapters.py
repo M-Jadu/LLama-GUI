@@ -39,6 +39,8 @@ class HttpCorsAdapterTests(unittest.TestCase):
         self.assertTrue(is_safe_request_origin(self.make_headers(), allowed))
         self.assertFalse(is_safe_request_origin(self.make_headers(origin="https://evil.example"), allowed))
         self.assertFalse(is_safe_request_origin(self.make_headers(referer="http://127.0.0.1.evil.example/"), allowed))
+        self.assertFalse(is_safe_request_origin(self.make_headers(referer="http://localhost:5240@evil.example/"), allowed))
+        self.assertFalse(is_safe_request_origin(self.make_headers(referer="http://localhost:5240.evil.example/"), allowed))
 
     def test_access_control_origin_reflects_allowed_origin_or_default(self):
         allowed = get_allowed_request_origins()
