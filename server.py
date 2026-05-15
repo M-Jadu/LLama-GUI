@@ -54,6 +54,18 @@ from backend.config import (
     WEB_SEARCH_TIMEOUT,
     WEB_SEARCH_USER_AGENT,
 )
+from backend.context import DEFAULT_CONTEXT
+from backend.http import (
+    Response,
+    SseWriter,
+    get_access_control_origin,
+    get_allowed_request_origins,
+    get_cors_methods,
+    is_safe_request_origin,
+    is_static_ui_path,
+    is_v1_proxy_path,
+)
+from backend.routing import Router
 
 try:
     import certifi
@@ -203,44 +215,13 @@ def build_backend_specs():
 
 BACKEND_SPECS = build_backend_specs()
 
-process = None
-process_lock = threading.Lock()
-output_buffer = []
-output_buffer_lock = threading.Lock()
-download_progress = {"total": 0, "downloaded": 0, "status": "idle", "message": ""}
-download_progress_lock = threading.Lock()
-install_in_progress = False
-install_lock = threading.Lock()
-model_download_state = {
-    "status": "idle",
-    "message": "",
-    "total": 0,
-    "downloaded": 0,
-    "current_file": "",
-    "model_name": "",
-    "model_path": "",
-    "mmproj_path": "",
-}
-model_download_lock = threading.Lock()
-model_download_in_progress = False
-model_download_cancel = threading.Event()
-gui_server = None
-remote_tunnel_process = None
-remote_tunnel_lock = threading.Lock()
-remote_tunnel_state = {
-    "status": "idle",
-    "url": "",
-    "message": "Remote tunnel is not running.",
-    "log": "",
-}
-llama_api_target_lock = threading.Lock()
-llama_api_target = {"host": LLAMA_HOST, "port": LLAMA_PORT}
-active_process_tool = None
+APP_CONTEXT = DEFAULT_CONTEXT
+STATE = APP_CONTEXT.state
 
 
 def is_process_running():
-    with process_lock:
-        return process is not None and process.poll() is None
+    with STATE.process_lock:
+        return STATE.process is not None and STATE.process.poll() is None
 
 
 def load_config():
@@ -346,16 +327,17 @@ def get_cloudflared_asset():
 
 
 def set_remote_tunnel_state(status=None, url=None, message=None, log=None):
-    with remote_tunnel_lock:
-        if status is not None:
-            remote_tunnel_state["status"] = status
-        if url is not None:
-            remote_tunnel_state["url"] = url
-        if message is not None:
-            remote_tunnel_state["message"] = message
-        if log is not None:
-            remote_tunnel_state["log"] = log[-TUNNEL_LOG_LIMIT:]
-        return dict(remote_tunnel_state)
+    updates = {}
+    if status is not None:
+        updates["status"] = status
+    if url is not None:
+        updates["url"] = url
+    if message is not None:
+        updates["message"] = message
+    if log is not None:
+        updates["log"] = log[-TUNNEL_LOG_LIMIT:]
+    with STATE.remote_tunnel_lock:
+        return STATE.remote_tunnel.update(**updates)
 
 
 def parse_port(value, default=LLAMA_PORT):
@@ -381,14 +363,13 @@ def normalize_local_proxy_host(host):
 def set_llama_api_target(host=None, port=None):
     proxy_host = normalize_local_proxy_host(host)
     proxy_port = parse_port(port)
-    with llama_api_target_lock:
-        llama_api_target.update({"host": proxy_host, "port": proxy_port})
-        return dict(llama_api_target)
+    with STATE.llama_api_target_lock:
+        return STATE.llama_api_target.update(host=proxy_host, port=proxy_port)
 
 
 def get_llama_api_target():
-    with llama_api_target_lock:
-        return dict(llama_api_target)
+    with STATE.llama_api_target_lock:
+        return STATE.llama_api_target.snapshot()
 
 
 def parse_launch_api_target(args_list):
@@ -424,9 +405,9 @@ def parse_launch_api_target(args_list):
 
 
 def get_remote_tunnel_snapshot():
-    with remote_tunnel_lock:
-        proc = remote_tunnel_process
-        snapshot = dict(remote_tunnel_state)
+    with STATE.remote_tunnel_lock:
+        proc = STATE.remote_tunnel_process
+        snapshot = STATE.remote_tunnel.snapshot()
         if proc is not None and proc.poll() is not None and snapshot["status"] in {
             "preparing",
             "downloading",
@@ -435,7 +416,7 @@ def get_remote_tunnel_snapshot():
         }:
             snapshot["status"] = "error"
             snapshot["message"] = "Remote tunnel process exited."
-            remote_tunnel_state.update(snapshot)
+            STATE.remote_tunnel.replace(snapshot)
         snapshot["running"] = proc is not None and proc.poll() is None
         return snapshot
 
@@ -485,7 +466,6 @@ def ensure_cloudflared():
 
 
 def _start_remote_tunnel_worker():
-    global remote_tunnel_process
     log = ""
     try:
         set_remote_tunnel_state(
@@ -520,8 +500,8 @@ def _start_remote_tunnel_worker():
             if sys.platform == "win32"
             else 0,
         )
-        with remote_tunnel_lock:
-            remote_tunnel_process = proc
+        with STATE.remote_tunnel_lock:
+            STATE.remote_tunnel_process = proc
 
         pattern = re.compile(r"https://[\w.-]+\.trycloudflare\.com")
         while True:
@@ -541,10 +521,10 @@ def _start_remote_tunnel_worker():
                 set_remote_tunnel_state(log=log)
 
         exit_code = proc.wait()
-        with remote_tunnel_lock:
-            if remote_tunnel_process is proc:
-                remote_tunnel_process = None
-            current_status = remote_tunnel_state["status"]
+        with STATE.remote_tunnel_lock:
+            if STATE.remote_tunnel_process is proc:
+                STATE.remote_tunnel_process = None
+            current_status = STATE.remote_tunnel.snapshot()["status"]
         if current_status != "stopped":
             set_remote_tunnel_state(
                 status="error",
@@ -553,41 +533,37 @@ def _start_remote_tunnel_worker():
                 log=log,
             )
     except Exception as exc:
-        with remote_tunnel_lock:
-            remote_tunnel_process = None
+        with STATE.remote_tunnel_lock:
+            STATE.remote_tunnel_process = None
         set_remote_tunnel_state(status="error", url="", message=str(exc), log=log)
 
 
 def start_remote_tunnel():
-    with remote_tunnel_lock:
-        proc = remote_tunnel_process
+    with STATE.remote_tunnel_lock:
+        proc = STATE.remote_tunnel_process
+        snapshot = STATE.remote_tunnel.snapshot()
         if proc is not None and proc.poll() is None:
-            return dict(remote_tunnel_state)
-        if remote_tunnel_state["status"] in {"preparing", "downloading", "starting"}:
-            return dict(remote_tunnel_state)
-        remote_tunnel_state.update(
-            {
-                "status": "preparing",
-                "url": "",
-                "message": "Preparing Cloudflare tunnel...",
-                "log": "",
-            }
+            return snapshot
+        if snapshot["status"] in {"preparing", "downloading", "starting"}:
+            return snapshot
+        STATE.remote_tunnel.update(
+            status="preparing",
+            url="",
+            message="Preparing Cloudflare tunnel...",
+            log="",
         )
     threading.Thread(target=_start_remote_tunnel_worker, daemon=True).start()
     return get_remote_tunnel_snapshot()
 
 
 def stop_remote_tunnel():
-    global remote_tunnel_process
-    with remote_tunnel_lock:
-        proc = remote_tunnel_process
-        remote_tunnel_process = None
-        remote_tunnel_state.update(
-            {
-                "status": "stopped",
-                "url": "",
-                "message": "Remote tunnel stopped.",
-            }
+    with STATE.remote_tunnel_lock:
+        proc = STATE.remote_tunnel_process
+        STATE.remote_tunnel_process = None
+        STATE.remote_tunnel.update(
+            status="stopped",
+            url="",
+            message="Remote tunnel stopped.",
         )
 
     if proc is not None and proc.poll() is None:
@@ -614,53 +590,45 @@ def sha256_file(filepath):
 
 
 def set_download_progress(**updates):
-    with download_progress_lock:
-        download_progress.update(updates)
+    STATE.download_progress.update(**updates)
 
 
 def reset_download_progress(status="idle", message="", total=0, downloaded=0):
-    with download_progress_lock:
-        download_progress.clear()
-        download_progress.update(
-            {
-                "total": total,
-                "downloaded": downloaded,
-                "status": status,
-                "message": message,
-            }
-        )
+    STATE.download_progress.replace(
+        {
+            "total": total,
+            "downloaded": downloaded,
+            "status": status,
+            "message": message,
+        }
+    )
 
 
 def get_download_progress_snapshot():
-    with download_progress_lock:
-        return dict(download_progress)
+    return STATE.download_progress.snapshot()
 
 
 def reset_model_download_state(status="idle", message="", total=0, downloaded=0):
-    with model_download_lock:
-        model_download_state.clear()
-        model_download_state.update(
-            {
-                "status": status,
-                "message": message,
-                "total": total,
-                "downloaded": downloaded,
-                "current_file": "",
-                "model_name": "",
-                "model_path": "",
-                "mmproj_path": "",
-            }
-        )
+    STATE.model_download.replace(
+        {
+            "status": status,
+            "message": message,
+            "total": total,
+            "downloaded": downloaded,
+            "current_file": "",
+            "model_name": "",
+            "model_path": "",
+            "mmproj_path": "",
+        }
+    )
 
 
 def set_model_download_state(**updates):
-    with model_download_lock:
-        model_download_state.update(updates)
+    STATE.model_download.update(**updates)
 
 
 def get_model_download_snapshot():
-    with model_download_lock:
-        return dict(model_download_state)
+    return STATE.model_download.snapshot()
 
 
 def normalize_hf_token(token):
@@ -785,7 +753,7 @@ def download_hf_file(repo_id, filename, revision, token, dest, completed_bytes, 
     downloaded = 0
     with urlopen_with_ssl(req, timeout=60) as resp, open(tmp_path, "wb") as f:
         while True:
-            if model_download_cancel.is_set():
+            if STATE.model_download_cancel.is_set():
                 raise InterruptedError("Download cancelled.")
             chunk = resp.read(1024 * 1024)
             if not chunk:
@@ -812,7 +780,6 @@ def remove_partial_downloads(paths):
 
 
 def start_hf_model_download(repo_id, revision, model_file, mmproj_file, token, overwrite=False):
-    global model_download_in_progress
     repo_id = validate_hf_repo_id(repo_id)
     revision = validate_hf_revision(revision)
     model_file = validate_hf_filename(model_file)
@@ -833,14 +800,13 @@ def start_hf_model_download(repo_id, revision, model_file, mmproj_file, token, o
     if existing and not overwrite:
         raise FileExistsError(f"Already exists: {', '.join(existing)}")
 
-    with model_download_lock:
-        if model_download_in_progress:
+    with STATE.model_download_lock:
+        if STATE.model_download_in_progress:
             raise RuntimeError("A model download is already in progress.")
-        model_download_in_progress = True
-    model_download_cancel.clear()
+        STATE.model_download_in_progress = True
+    STATE.model_download_cancel.clear()
 
     def _worker():
-        global model_download_in_progress
         destinations = [model_dest]
         if mmproj_dest:
             destinations.append(mmproj_dest)
@@ -880,9 +846,9 @@ def start_hf_model_download(repo_id, revision, model_file, mmproj_file, token, o
             remove_partial_downloads(destinations)
             set_model_download_state(status="error", message=str(exc), current_file="")
         finally:
-            with model_download_lock:
-                model_download_in_progress = False
-            model_download_cancel.clear()
+            with STATE.model_download_lock:
+                STATE.model_download_in_progress = False
+            STATE.model_download_cancel.clear()
 
     reset_model_download_state(status="starting", message="Preparing Hugging Face download...")
     threading.Thread(target=_worker, daemon=True).start()
@@ -1060,18 +1026,17 @@ def stream_output(pipe, is_stderr=False):
         for line in iter(pipe.readline, ""):
             if line:
                 decoded = line.rstrip("\n\r")
-                with output_buffer_lock:
-                    output_buffer.append(decoded)
-                    if len(output_buffer) > PROCESS_OUTPUT_LIMIT:
-                        del output_buffer[:PROCESS_OUTPUT_TRIM]
+                with STATE.output_buffer_lock:
+                    STATE.output_buffer.append(decoded)
+                    if len(STATE.output_buffer) > PROCESS_OUTPUT_LIMIT:
+                        del STATE.output_buffer[:PROCESS_OUTPUT_TRIM]
     except Exception:
         pass
 
 
 def launch_process(tool, args_list):
-    global process, active_process_tool
-    with process_lock:
-        if process and process.poll() is None:
+    with STATE.process_lock:
+        if STATE.process and STATE.process.poll() is None:
             return {"error": "A process is already running"}
 
         exe_name = get_tool_filename(tool)
@@ -1102,11 +1067,11 @@ def launch_process(tool, args_list):
                 runtime_paths + ([existing_dyld] if existing_dyld else [])
             )
 
-        with output_buffer_lock:
-            output_buffer.clear()
+        with STATE.output_buffer_lock:
+            STATE.output_buffer.clear()
 
         try:
-            process = subprocess.Popen(
+            STATE.process = subprocess.Popen(
                 args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -1119,38 +1084,37 @@ def launch_process(tool, args_list):
                 else 0,
             )
             threading.Thread(
-                target=stream_output, args=(process.stdout,), daemon=True
+                target=stream_output, args=(STATE.process.stdout,), daemon=True
             ).start()
             threading.Thread(
-                target=stream_output, args=(process.stderr, True), daemon=True
+                target=stream_output, args=(STATE.process.stderr, True), daemon=True
             ).start()
-            active_process_tool = tool
+            STATE.active_process_tool = tool
             if tool == "llama-server":
                 parse_launch_api_target(args_list)
-            return {"pid": process.pid, "command": " ".join(args)}
+            return {"pid": STATE.process.pid, "command": " ".join(args)}
         except Exception as e:
             return {"error": str(e)}
 
 
 def stop_process():
-    global process, active_process_tool
-    with process_lock:
-        if process and process.poll() is None:
+    with STATE.process_lock:
+        if STATE.process and STATE.process.poll() is None:
             if sys.platform == "win32":
-                process.send_signal(signal.CTRL_BREAK_EVENT)
+                STATE.process.send_signal(signal.CTRL_BREAK_EVENT)
             else:
-                process.terminate()
+                STATE.process.terminate()
             try:
-                process.wait(timeout=5)
+                STATE.process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                process.kill()
-            active_process_tool = None
+                STATE.process.kill()
+            STATE.active_process_tool = None
             return True
         return False
 
 
 def shutdown_gui_server():
-    server = gui_server
+    server = STATE.gui_server
     if server is None:
         return False
     stop_remote_tunnel()
@@ -1160,7 +1124,7 @@ def shutdown_gui_server():
 
 
 def restart_gui_server():
-    server = gui_server
+    server = STATE.gui_server
     if server is None:
         return False
     stop_remote_tunnel()
@@ -1875,12 +1839,7 @@ def get_local_llama_metrics(host, port):
 
 
 def write_sse(wfile, data):
-    if isinstance(data, str):
-        payload = data
-    else:
-        payload = json.dumps(data)
-    wfile.write(f"data: {payload}\n\n".encode("utf-8"))
-    wfile.flush()
+    SseWriter(wfile).write(data)
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -1893,47 +1852,31 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
-        if path in {"/", "/index.html"} or path.startswith("/js/") or path.startswith("/css/"):
+        if is_static_ui_path(path):
             self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
             self.send_header("Pragma", "no-cache")
             self.send_header("Expires", "0")
+            self.send_header("Access-Control-Allow-Origin", self.get_access_control_origin())
         super().end_headers()
 
     def do_OPTIONS(self):
         parsed = urllib.parse.urlparse(self.path)
-        if self.is_v1_proxy_path(parsed.path):
-            self.send_response(200)
-            self.send_header("Access-Control-Allow-Origin", self.get_access_control_origin())
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-            self.send_header("Access-Control-Max-Age", "86400")
-            self.end_headers()
-            return
-
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", self.get_access_control_origin())
-        self.send_header(
-            "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"
-        )
+        self.send_header("Access-Control-Allow-Methods", get_cors_methods(parsed.path))
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        if self.is_v1_proxy_path(parsed.path):
+            self.send_header("Access-Control-Max-Age", "86400")
         self.end_headers()
 
     def send_json(self, data, status=200):
-        body = json.dumps(data).encode()
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", self.get_access_control_origin())
-        self.end_headers()
-        self.wfile.write(body)
+        Response(self).json(data, status)
+
+    def send_error_json(self, message, status=500, code=None, extra=None):
+        Response(self).error(message, status=status, code=code, extra=extra)
 
     def send_sse_headers(self, status=200):
-        self.send_response(status)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self.send_header("Access-Control-Allow-Origin", self.get_access_control_origin())
-        self.end_headers()
+        Response(self).sse_headers(status)
 
     def read_body(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -1945,30 +1888,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return None
 
     def is_safe_request_origin(self):
-        origin = self.headers.get("Origin", "")
-        referer = self.headers.get("Referer", "")
-        allowed = self.get_allowed_request_origins()
-        if origin:
-            return origin in allowed
-        if referer:
-            return referer.startswith(allowed)
-        return True
+        return is_safe_request_origin(self.headers, self.get_allowed_request_origins())
 
     def is_v1_proxy_path(self, path):
-        return path == "/v1" or path.startswith("/v1/")
+        return is_v1_proxy_path(path)
 
     def get_allowed_request_origins(self):
-        allowed = [f"http://{GUI_HOST}:{GUI_PORT}", f"http://localhost:{GUI_PORT}"]
         tunnel_url = get_remote_tunnel_snapshot().get("url")
-        if tunnel_url:
-            allowed.append(tunnel_url)
-        return tuple(allowed)
+        return get_allowed_request_origins(tunnel_url, GUI_HOST, GUI_PORT)
 
     def get_access_control_origin(self):
-        origin = self.headers.get("Origin", "")
-        if origin and origin in self.get_allowed_request_origins():
-            return origin
-        return f"http://{GUI_HOST}:{GUI_PORT}"
+        return get_access_control_origin(self.headers, self.get_allowed_request_origins())
 
     def get_proxy_request_body(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -1977,25 +1907,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return self.rfile.read(length)
 
     def send_proxy_error(self, message, status=502):
-        self.send_json({"error": message}, status)
+        self.send_error_json(message, status)
 
     def handle_v1_index(self):
         target = get_llama_api_target()
-        body = (
+        text = (
             "Llama-GUI OpenAI-compatible proxy is running.\n"
             f"Local llama-server target: http://{target['host']}:{target['port']}\n"
             "Use /v1/models or /v1/chat/completions with an OpenAI-compatible client.\n"
-        ).encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", self.get_access_control_origin())
-        self.end_headers()
-        self.wfile.write(body)
+        )
+        Response(self).text(text)
 
     def proxy_v1_request(self, method, parsed):
         if not self.is_safe_request_origin():
-            self.send_json({"error": "Request origin not allowed"}, 403)
+            self.send_error_json("Request origin not allowed", 403)
             return
 
         if parsed.path == "/v1":
@@ -2179,6 +2104,374 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         finally:
             self.close_connection = True
 
+    def dispatch_api_request(self, method, parsed, body=None):
+        path = parsed.path
+        match = API_ROUTER.match(method, path)
+        if not match:
+            if path.startswith("/api/"):
+                self.send_error_json("Not found", 404)
+            else:
+                self.send_error(404)
+            return
+        handler = getattr(self, match.handler_name)
+        handler(parsed, body, dict(match.params))
+
+    def handle_get_status(self, parsed, body=None, params=None):
+        cfg = load_config()
+        exes = {}
+        for tool in LLAMA_TOOLS:
+            name = get_tool_filename(tool)
+            exes[name] = find_tool_executable(tool).exists()
+        runtime_files = get_runtime_files()
+        has_config = bool(cfg.get("tag"))
+        installed = has_config and exes.get(get_tool_filename("llama-cli"), False)
+        config_stale = has_config and not installed
+        running = is_process_running()
+        self.send_json(
+            {
+                "installed": installed,
+                "config_stale": config_stale,
+                "version": cfg.get("tag"),
+                "backend": cfg.get("backend"),
+                "executables": exes,
+                "runtime_files": [d.name for d in runtime_files],
+                "runtime_files_label": "Runtime libraries",
+                "models_dir": str(MODELS_DIR),
+                "running": running,
+                "platform": CURRENT_PLATFORM,
+                "platform_label": get_platform_label(),
+                "arch": CURRENT_ARCH,
+                "executable_suffix": BINARY_SUFFIX,
+                "available_backends": [
+                    {"id": key, "label": spec["label"]}
+                    for key, spec in BACKEND_SPECS.items()
+                ],
+            }
+        )
+
+    def handle_get_releases(self, parsed, body=None, params=None):
+        try:
+            releases = get_releases()
+            result = []
+            for r in releases[:20]:
+                result.append(
+                    {
+                        "tag": r["tag_name"],
+                        "name": r.get("name", r["tag_name"]),
+                        "published": r["published_at"],
+                        "assets": [a["name"] for a in r["assets"]],
+                    }
+                )
+            self.send_json(result)
+        except Exception as e:
+            self.send_error_json(str(e), 500)
+
+    def handle_get_output(self, parsed, body=None, params=None):
+        with STATE.output_buffer_lock:
+            lines = list(STATE.output_buffer)
+        running = is_process_running()
+        self.send_json({"output": lines, "running": running})
+
+    def handle_get_download_progress(self, parsed, body=None, params=None):
+        self.send_json(get_download_progress_snapshot())
+
+    def handle_get_hf_download_status(self, parsed, body=None, params=None):
+        self.send_json(get_model_download_snapshot())
+
+    def handle_get_remote_tunnel_status(self, parsed, body=None, params=None):
+        self.send_json(get_remote_tunnel_snapshot())
+
+    def handle_get_llama_metrics(self, parsed, body=None, params=None):
+        query = urllib.parse.parse_qs(parsed.query)
+        metrics_text, error = get_local_llama_metrics(
+            (query.get("host") or [LLAMA_HOST])[0],
+            (query.get("port") or [str(LLAMA_PORT)])[0],
+        )
+        if metrics_text is None:
+            self.send_error_json(error, 502)
+            return
+        Response(self).text(metrics_text)
+
+    def handle_get_models(self, parsed, body=None, params=None):
+        models = []
+        if MODELS_DIR.exists():
+            for f in sorted(MODELS_DIR.iterdir()):
+                if f.is_file() and f.suffix.lower() == ".gguf":
+                    size_mb = f.stat().st_size / (1024 * 1024)
+                    models.append({"name": f.name, "size_mb": round(size_mb, 2)})
+        self.send_json(models)
+
+    def handle_get_app_update_status(self, parsed, body=None, params=None):
+        try:
+            self.send_json(get_app_update_status(fetch=True))
+        except Exception as e:
+            self.send_error_json(str(e), 500)
+
+    def handle_get_presets(self, parsed, body=None, params=None):
+        presets = []
+        if PRESETS_DIR.exists():
+            for f in sorted(PRESETS_DIR.glob("*.json")):
+                try:
+                    with open(f, "r") as pf:
+                        presets.append({"name": f.stem, "data": json.load(pf)})
+                except Exception:
+                    pass
+        self.send_json(presets)
+
+    def handle_post_web_search(self, parsed, body=None, params=None):
+        self.handle_web_search_request(body)
+
+    def handle_post_chat_completions(self, parsed, body=None, params=None):
+        self.handle_chat_completions(body)
+
+    def handle_post_remote_tunnel_start(self, parsed, body=None, params=None):
+        try:
+            set_llama_api_target(body.get("host"), body.get("port"))
+        except Exception as e:
+            self.send_error_json(str(e), 400)
+            return
+        self.send_json(start_remote_tunnel())
+
+    def handle_post_remote_tunnel_stop(self, parsed, body=None, params=None):
+        self.send_json(stop_remote_tunnel())
+
+    def handle_post_hf_repo_files(self, parsed, body=None, params=None):
+        try:
+            repo_id = validate_hf_repo_id(body.get("repo_id"))
+            revision = validate_hf_revision(body.get("revision"))
+            token = normalize_hf_token(body.get("token"))
+            self.send_json(get_hf_gguf_files(repo_id, revision, token))
+        except Exception as e:
+            self.send_error_json(str(e), 400)
+
+    def handle_post_hf_download(self, parsed, body=None, params=None):
+        try:
+            result = start_hf_model_download(
+                repo_id=body.get("repo_id"),
+                revision=body.get("revision"),
+                model_file=body.get("model_file"),
+                mmproj_file=body.get("mmproj_file"),
+                token=normalize_hf_token(body.get("token")),
+                overwrite=bool(body.get("overwrite")),
+            )
+            self.send_json(result)
+        except FileExistsError as e:
+            self.send_error_json(str(e), 409, code="exists")
+        except Exception as e:
+            self.send_error_json(str(e), 400)
+
+    def handle_post_hf_download_cancel(self, parsed, body=None, params=None):
+        STATE.model_download_cancel.set()
+        set_model_download_state(status="cancelling", message="Cancelling download...")
+        self.send_json(get_model_download_snapshot())
+
+    def handle_post_install(self, parsed, body=None, params=None):
+        tag = body.get("tag")
+        backend = body.get("backend")
+        if not tag or not backend:
+            self.send_error_json("tag and backend required", 400)
+            return
+        if backend not in BACKEND_SPECS:
+            self.send_error_json(f"Unsupported backend: {backend}", 400)
+            return
+        if is_process_running():
+            self.send_error_json("Stop running process first", 400)
+            return
+        with STATE.install_lock:
+            if STATE.install_in_progress:
+                self.send_error_json("Installation already in progress", 409)
+                return
+            STATE.install_in_progress = True
+
+        def _install(tag, backend):
+            try:
+                install_release(tag, backend)
+            finally:
+                with STATE.install_lock:
+                    STATE.install_in_progress = False
+
+        threading.Thread(
+            target=_install, args=(tag, backend), daemon=True
+        ).start()
+        self.send_json({"status": "started"})
+
+    def handle_post_update(self, parsed, body=None, params=None):
+        cfg = load_config()
+        tag = cfg.get("tag")
+        backend = cfg.get("backend")
+        if not tag or not backend:
+            self.send_error_json("Nothing installed to update", 400)
+            return
+        if backend not in BACKEND_SPECS:
+            self.send_error_json(f"Unsupported configured backend: {backend}", 400)
+            return
+        if is_process_running():
+            self.send_error_json("Stop running process first", 400)
+            return
+        with STATE.install_lock:
+            if STATE.install_in_progress:
+                self.send_error_json("Installation already in progress", 409)
+                return
+            STATE.install_in_progress = True
+        try:
+            releases = get_releases()
+            latest = releases[0]["tag_name"] if releases else None
+            if latest and latest != tag:
+
+                def _update(latest_tag, backend_name):
+                    try:
+                        install_release(latest_tag, backend_name)
+                    finally:
+                        with STATE.install_lock:
+                            STATE.install_in_progress = False
+
+                threading.Thread(
+                    target=_update, args=(latest, backend), daemon=True
+                ).start()
+                self.send_json({"status": "started", "from": tag, "to": latest})
+            else:
+                with STATE.install_lock:
+                    STATE.install_in_progress = False
+                self.send_json({"status": "already_latest"})
+        except Exception as e:
+            with STATE.install_lock:
+                STATE.install_in_progress = False
+            self.send_error_json(str(e), 500)
+
+    def handle_post_launch(self, parsed, body=None, params=None):
+        tool = body.get("tool", "llama-cli")
+        args = body.get("args", [])
+        result = launch_process(tool, args)
+        if "error" in result:
+            self.send_error_json(result.get("error", "Launch failed"), 400)
+        else:
+            self.send_json(result)
+
+    def handle_post_stop(self, parsed, body=None, params=None):
+        stopped = stop_process()
+        self.send_json({"stopped": stopped})
+
+    def handle_post_shutdown(self, parsed, body=None, params=None):
+        shutting_down = shutdown_gui_server()
+        self.send_json({"shutting_down": shutting_down})
+
+    def handle_post_restart(self, parsed, body=None, params=None):
+        restarting = restart_gui_server()
+        self.send_json({"restarting": restarting})
+
+    def handle_post_cleanup_llama(self, parsed, body=None, params=None):
+        if is_process_running():
+            self.send_error_json("Stop running process first", 400)
+            return
+        try:
+            removed_files = remove_llama_files()
+            self.send_json({"removed_files": removed_files})
+        except Exception as e:
+            self.send_error_json(str(e), 500)
+
+    def handle_post_app_update(self, parsed, body=None, params=None):
+        try:
+            result = update_app_from_git()
+            if result.get("error"):
+                self.send_error_json(
+                    result.get("error", "App update failed"),
+                    400,
+                    extra={key: value for key, value in result.items() if key != "error"},
+                )
+            else:
+                self.send_json(result)
+        except Exception as e:
+            self.send_error_json(str(e), 500)
+
+    def handle_post_send_input(self, parsed, body=None, params=None):
+        text = body.get("text", "")
+        with STATE.process_lock:
+            if STATE.process and STATE.process.poll() is None:
+                try:
+                    if STATE.process.stdin:
+                        STATE.process.stdin.write(text + "\n")
+                        STATE.process.stdin.flush()
+                        self.send_json({"sent": True})
+                    else:
+                        self.send_json({"sent": False})
+                except Exception:
+                    self.send_json({"sent": False})
+            else:
+                self.send_json({"sent": False})
+
+    def handle_post_presets(self, parsed, body=None, params=None):
+        name = body.get("name")
+        data = body.get("data")
+        if not name or data is None:
+            self.send_error_json("name and data required", 400)
+            return
+        PRESETS_DIR.mkdir(parents=True, exist_ok=True)
+        safe_name = re.sub(r'[<>:"/\\|?*]', "_", name)
+        safe_name = safe_name.replace("..", "_").strip(". ")
+        if not safe_name:
+            self.send_error_json("Invalid preset name", 400)
+            return
+        with open(PRESETS_DIR / f"{safe_name}.json", "w") as f:
+            json.dump(data, f, indent=2)
+        self.send_json({"saved": True, "name": safe_name})
+
+    def handle_post_open_folder(self, parsed, body=None, params=None):
+        folder = body.get("folder", "models")
+        folder_map = {"models": MODELS_DIR, "llama": LLAMA_DIR}
+        target = folder_map.get(folder, MODELS_DIR)
+        target.mkdir(parents=True, exist_ok=True)
+        try:
+            open_folder_in_file_manager(target)
+            self.send_json({"opened": True})
+        except Exception as e:
+            self.send_error_json(str(e), 500)
+
+    def handle_post_select_file(self, parsed, body=None, params=None):
+        purpose = str(body.get("purpose") or "").strip().lower()
+        title = str(body.get("title") or "Select File").strip() or "Select File"
+
+        initial_dir = MODELS_DIR if purpose in {
+            "model",
+            "model_draft",
+            "mmproj",
+            "model_vocoder",
+        } else BASE_DIR
+        initial_dir.mkdir(parents=True, exist_ok=True)
+
+        filetypes = [("All files", "*.*")]
+        if purpose in {"model", "model_draft", "mmproj", "model_vocoder"}:
+            filetypes = [
+                ("Model files", "*.gguf *.bin"),
+                ("GGUF files", "*.gguf"),
+                ("BIN files", "*.bin"),
+                ("All files", "*.*"),
+            ]
+
+        try:
+            selected_path = select_file_in_native_dialog(
+                title=title,
+                initial_dir=initial_dir,
+                filetypes=filetypes,
+            )
+            self.send_json(
+                {
+                    "selected": bool(selected_path),
+                    "path": selected_path,
+                }
+            )
+        except Exception as e:
+            self.send_error_json(str(e), 500)
+
+    def handle_delete_preset(self, parsed, body=None, params=None):
+        name = (params or {}).get("name", "")
+        safe_name = re.sub(r'[<>:"/\\|?*]', "_", urllib.parse.unquote(name))
+        preset_file = PRESETS_DIR / f"{safe_name}.json"
+        if preset_file.exists():
+            preset_file.unlink()
+            self.send_json({"deleted": True})
+        else:
+            self.send_error_json("Preset not found", 404)
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
@@ -2192,12 +2485,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(404, "Logo not found")
                 return
             body = APP_LOGO_FILE.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "image/png")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "public, max-age=3600")
-            self.end_headers()
-            self.wfile.write(body)
+            Response(self).bytes(
+                body,
+                content_type="image/png",
+                headers={"Cache-Control": "public, max-age=3600"},
+            )
             return
 
         if path == "/" or path == "/index.html":
@@ -2205,131 +2497,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         if path.startswith("/api/") and not self.is_safe_request_origin():
-            self.send_json({"error": "Forbidden"}, 403)
+            self.send_error_json("Forbidden", 403)
             return
 
-        if path == "/api/status":
-            cfg = load_config()
-            exes = {}
-            for tool in LLAMA_TOOLS:
-                name = get_tool_filename(tool)
-                exes[name] = find_tool_executable(tool).exists()
-            runtime_files = get_runtime_files()
-            has_config = bool(cfg.get("tag"))
-            installed = has_config and exes.get(get_tool_filename("llama-cli"), False)
-            config_stale = has_config and not installed
-            running = is_process_running()
-            self.send_json(
-                {
-                    "installed": installed,
-                    "config_stale": config_stale,
-                    "version": cfg.get("tag"),
-                    "backend": cfg.get("backend"),
-                    "executables": exes,
-                    "runtime_files": [d.name for d in runtime_files],
-                    "runtime_files_label": "Runtime libraries",
-                    "models_dir": str(MODELS_DIR),
-                    "running": running,
-                    "platform": CURRENT_PLATFORM,
-                    "platform_label": get_platform_label(),
-                    "arch": CURRENT_ARCH,
-                    "executable_suffix": BINARY_SUFFIX,
-                    "available_backends": [
-                        {"id": key, "label": spec["label"]}
-                        for key, spec in BACKEND_SPECS.items()
-                    ],
-                }
-            )
-            return
-
-        if path == "/api/releases":
-            try:
-                releases = get_releases()
-                result = []
-                for r in releases[:20]:
-                    result.append(
-                        {
-                            "tag": r["tag_name"],
-                            "name": r.get("name", r["tag_name"]),
-                            "published": r["published_at"],
-                            "assets": [a["name"] for a in r["assets"]],
-                        }
-                    )
-                self.send_json(result)
-            except Exception as e:
-                self.send_json({"error": str(e)}, 500)
-            return
-
-        if path == "/api/output":
-            with output_buffer_lock:
-                lines = list(output_buffer)
-            running = is_process_running()
-            self.send_json({"output": lines, "running": running})
-            return
-
-        if path == "/api/download-progress":
-            self.send_json(get_download_progress_snapshot())
-            return
-
-        if path == "/api/hf/download-status":
-            self.send_json(get_model_download_snapshot())
-            return
-
-        if path == "/api/remote-tunnel/status":
-            self.send_json(get_remote_tunnel_snapshot())
-            return
-
-        if path == "/api/llama/metrics":
-            query = urllib.parse.parse_qs(parsed.query)
-            metrics_text, error = get_local_llama_metrics(
-                (query.get("host") or [LLAMA_HOST])[0],
-                (query.get("port") or [str(LLAMA_PORT)])[0],
-            )
-            if metrics_text is None:
-                self.send_json({"error": error}, 502)
-                return
-            body = metrics_text.encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Access-Control-Allow-Origin", self.get_access_control_origin())
-            self.end_headers()
-            self.wfile.write(body)
-            return
-
-        if path == "/api/models":
-            models = []
-            if MODELS_DIR.exists():
-                for f in sorted(MODELS_DIR.iterdir()):
-                    if f.is_file() and f.suffix.lower() == ".gguf":
-                        size_mb = f.stat().st_size / (1024 * 1024)
-                        models.append({"name": f.name, "size_mb": round(size_mb, 2)})
-            self.send_json(models)
-            return
-
-        if path == "/api/app-update-status":
-            try:
-                self.send_json(get_app_update_status(fetch=True))
-            except Exception as e:
-                self.send_json({"error": str(e)}, 500)
-            return
-
-        if path == "/api/presets":
-            presets = []
-            if PRESETS_DIR.exists():
-                for f in sorted(PRESETS_DIR.glob("*.json")):
-                    try:
-                        with open(f, "r") as pf:
-                            presets.append({"name": f.stem, "data": json.load(pf)})
-                    except Exception:
-                        pass
-            self.send_json(presets)
+        if path.startswith("/api/"):
+            self.dispatch_api_request("GET", parsed)
             return
 
         super().do_GET()
 
     def do_POST(self):
-        global process
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
@@ -2340,304 +2517,62 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         body = self.read_body()
 
         if body is None:
-            self.send_json({"error": "Invalid or malformed JSON body"}, 400)
+            self.send_error_json("Invalid or malformed JSON body", 400)
             return
 
         if not self.is_safe_request_origin():
-            self.send_json({"error": "Request origin not allowed"}, 403)
+            self.send_error_json("Request origin not allowed", 403)
             return
 
-        if path == "/api/web-search":
-            self.handle_web_search_request(body)
-            return
-
-        if path == "/api/chat/completions":
-            self.handle_chat_completions(body)
-            return
-
-        if path == "/api/remote-tunnel/start":
-            try:
-                set_llama_api_target(body.get("host"), body.get("port"))
-            except Exception as e:
-                self.send_json({"error": str(e)}, 400)
-                return
-            self.send_json(start_remote_tunnel())
-            return
-
-        if path == "/api/remote-tunnel/stop":
-            self.send_json(stop_remote_tunnel())
-            return
-
-        if path == "/api/hf/repo-files":
-            try:
-                repo_id = validate_hf_repo_id(body.get("repo_id"))
-                revision = validate_hf_revision(body.get("revision"))
-                token = normalize_hf_token(body.get("token"))
-                self.send_json(get_hf_gguf_files(repo_id, revision, token))
-            except Exception as e:
-                self.send_json({"error": str(e)}, 400)
-            return
-
-        if path == "/api/hf/download":
-            try:
-                result = start_hf_model_download(
-                    repo_id=body.get("repo_id"),
-                    revision=body.get("revision"),
-                    model_file=body.get("model_file"),
-                    mmproj_file=body.get("mmproj_file"),
-                    token=normalize_hf_token(body.get("token")),
-                    overwrite=bool(body.get("overwrite")),
-                )
-                self.send_json(result)
-            except FileExistsError as e:
-                self.send_json({"error": str(e), "code": "exists"}, 409)
-            except Exception as e:
-                self.send_json({"error": str(e)}, 400)
-            return
-
-        if path == "/api/hf/download-cancel":
-            model_download_cancel.set()
-            set_model_download_state(status="cancelling", message="Cancelling download...")
-            self.send_json(get_model_download_snapshot())
-            return
-
-        if path == "/api/install":
-            tag = body.get("tag")
-            backend = body.get("backend")
-            if not tag or not backend:
-                self.send_json({"error": "tag and backend required"}, 400)
-                return
-            if backend not in BACKEND_SPECS:
-                self.send_json({"error": f"Unsupported backend: {backend}"}, 400)
-                return
-            if is_process_running():
-                self.send_json({"error": "Stop running process first"}, 400)
-                return
-            global install_in_progress
-            with install_lock:
-                if install_in_progress:
-                    self.send_json({"error": "Installation already in progress"}, 409)
-                    return
-                install_in_progress = True
-
-            def _install(tag, backend):
-                global install_in_progress
-                try:
-                    install_release(tag, backend)
-                finally:
-                    with install_lock:
-                        install_in_progress = False
-
-            threading.Thread(
-                target=_install, args=(tag, backend), daemon=True
-            ).start()
-            self.send_json({"status": "started"})
-            return
-
-        if path == "/api/update":
-            cfg = load_config()
-            tag = cfg.get("tag")
-            backend = cfg.get("backend")
-            if not tag or not backend:
-                self.send_json({"error": "Nothing installed to update"}, 400)
-                return
-            if backend not in BACKEND_SPECS:
-                self.send_json(
-                    {"error": f"Unsupported configured backend: {backend}"}, 400
-                )
-                return
-            if is_process_running():
-                self.send_json({"error": "Stop running process first"}, 400)
-                return
-            with install_lock:
-                if install_in_progress:
-                    self.send_json({"error": "Installation already in progress"}, 409)
-                    return
-                install_in_progress = True
-            try:
-                releases = get_releases()
-                latest = releases[0]["tag_name"] if releases else None
-                if latest and latest != tag:
-
-                    def _update(latest_tag, backend_name):
-                        global install_in_progress
-                        try:
-                            install_release(latest_tag, backend_name)
-                        finally:
-                            with install_lock:
-                                install_in_progress = False
-
-                    threading.Thread(
-                        target=_update, args=(latest, backend), daemon=True
-                    ).start()
-                    self.send_json({"status": "started", "from": tag, "to": latest})
-                else:
-                    with install_lock:
-                        install_in_progress = False
-                    self.send_json({"status": "already_latest"})
-            except Exception as e:
-                with install_lock:
-                    install_in_progress = False
-                self.send_json({"error": str(e)}, 500)
-            return
-
-        if path == "/api/launch":
-            tool = body.get("tool", "llama-cli")
-            args = body.get("args", [])
-            result = launch_process(tool, args)
-            if "error" in result:
-                self.send_json(result, 400)
-            else:
-                self.send_json(result)
-            return
-
-        if path == "/api/stop":
-            stopped = stop_process()
-            self.send_json({"stopped": stopped})
-            return
-
-        if path == "/api/shutdown":
-            shutting_down = shutdown_gui_server()
-            self.send_json({"shutting_down": shutting_down})
-            return
-
-        if path == "/api/restart":
-            restarting = restart_gui_server()
-            self.send_json({"restarting": restarting})
-            return
-
-        if path == "/api/cleanup-llama":
-            if is_process_running():
-                self.send_json({"error": "Stop running process first"}, 400)
-                return
-            try:
-                removed_files = remove_llama_files()
-                self.send_json({"removed_files": removed_files})
-            except Exception as e:
-                self.send_json({"error": str(e)}, 500)
-            return
-
-        if path == "/api/app-update":
-            try:
-                result = update_app_from_git()
-                if result.get("error"):
-                    self.send_json(result, 400)
-                else:
-                    self.send_json(result)
-            except Exception as e:
-                self.send_json({"error": str(e)}, 500)
-            return
-
-        if path == "/api/send-input":
-            text = body.get("text", "")
-            with process_lock:
-                if process and process.poll() is None:
-                    try:
-                        if process.stdin:
-                            process.stdin.write(text + "\n")
-                            process.stdin.flush()
-                            self.send_json({"sent": True})
-                        else:
-                            self.send_json({"sent": False})
-                    except Exception:
-                        self.send_json({"sent": False})
-                else:
-                    self.send_json({"sent": False})
-            return
-
-        if path == "/api/presets":
-            name = body.get("name")
-            data = body.get("data")
-            if not name or data is None:
-                self.send_json({"error": "name and data required"}, 400)
-                return
-            PRESETS_DIR.mkdir(parents=True, exist_ok=True)
-            safe_name = re.sub(r'[<>:"/\\|?*]', "_", name)
-            safe_name = safe_name.replace("..", "_").strip(". ")
-            if not safe_name:
-                self.send_json({"error": "Invalid preset name"}, 400)
-                return
-            with open(PRESETS_DIR / f"{safe_name}.json", "w") as f:
-                json.dump(data, f, indent=2)
-            self.send_json({"saved": True, "name": safe_name})
-            return
-
-        if path == "/api/open-folder":
-            folder = body.get("folder", "models")
-            folder_map = {"models": MODELS_DIR, "llama": LLAMA_DIR}
-            target = folder_map.get(folder, MODELS_DIR)
-            target.mkdir(parents=True, exist_ok=True)
-            try:
-                open_folder_in_file_manager(target)
-                self.send_json({"opened": True})
-            except Exception as e:
-                self.send_json({"error": str(e)}, 500)
-            return
-
-        if path == "/api/select-file":
-            purpose = str(body.get("purpose") or "").strip().lower()
-            title = str(body.get("title") or "Select File").strip() or "Select File"
-
-            initial_dir = MODELS_DIR if purpose in {
-                "model",
-                "model_draft",
-                "mmproj",
-                "model_vocoder",
-            } else BASE_DIR
-            initial_dir.mkdir(parents=True, exist_ok=True)
-
-            filetypes = [("All files", "*.*")]
-            if purpose in {"model", "model_draft", "mmproj", "model_vocoder"}:
-                filetypes = [
-                    ("Model files", "*.gguf *.bin"),
-                    ("GGUF files", "*.gguf"),
-                    ("BIN files", "*.bin"),
-                    ("All files", "*.*"),
-                ]
-
-            try:
-                selected_path = select_file_in_native_dialog(
-                    title=title,
-                    initial_dir=initial_dir,
-                    filetypes=filetypes,
-                )
-                self.send_json(
-                    {
-                        "selected": bool(selected_path),
-                        "path": selected_path,
-                    }
-                )
-            except Exception as e:
-                self.send_json({"error": str(e)}, 500)
-            return
-
-        self.send_error(404)
+        self.dispatch_api_request("POST", parsed, body)
 
     def do_DELETE(self):
         parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
         body = self.read_body()
 
         if not self.is_safe_request_origin():
-            self.send_json({"error": "Request origin not allowed"}, 403)
+            self.send_error_json("Request origin not allowed", 403)
             return
 
-        if path.startswith("/api/presets/"):
-            name = path[len("/api/presets/") :]
-            safe_name = re.sub(r'[<>:"/\\|?*]', "_", urllib.parse.unquote(name))
-            preset_file = PRESETS_DIR / f"{safe_name}.json"
-            if preset_file.exists():
-                preset_file.unlink()
-                self.send_json({"deleted": True})
-            else:
-                self.send_json({"error": "Preset not found"}, 404)
-            return
+        self.dispatch_api_request("DELETE", parsed, body)
 
-        self.send_error(404)
+
+API_ROUTER = (
+    Router()
+    .add("GET", "/api/status", "handle_get_status")
+    .add("GET", "/api/releases", "handle_get_releases")
+    .add("GET", "/api/output", "handle_get_output")
+    .add("GET", "/api/download-progress", "handle_get_download_progress")
+    .add("GET", "/api/hf/download-status", "handle_get_hf_download_status")
+    .add("GET", "/api/remote-tunnel/status", "handle_get_remote_tunnel_status")
+    .add("GET", "/api/llama/metrics", "handle_get_llama_metrics")
+    .add("GET", "/api/models", "handle_get_models")
+    .add("GET", "/api/app-update-status", "handle_get_app_update_status")
+    .add("GET", "/api/presets", "handle_get_presets")
+    .add("POST", "/api/web-search", "handle_post_web_search")
+    .add("POST", "/api/chat/completions", "handle_post_chat_completions")
+    .add("POST", "/api/remote-tunnel/start", "handle_post_remote_tunnel_start")
+    .add("POST", "/api/remote-tunnel/stop", "handle_post_remote_tunnel_stop")
+    .add("POST", "/api/hf/repo-files", "handle_post_hf_repo_files")
+    .add("POST", "/api/hf/download", "handle_post_hf_download")
+    .add("POST", "/api/hf/download-cancel", "handle_post_hf_download_cancel")
+    .add("POST", "/api/install", "handle_post_install")
+    .add("POST", "/api/update", "handle_post_update")
+    .add("POST", "/api/launch", "handle_post_launch")
+    .add("POST", "/api/stop", "handle_post_stop")
+    .add("POST", "/api/shutdown", "handle_post_shutdown")
+    .add("POST", "/api/restart", "handle_post_restart")
+    .add("POST", "/api/cleanup-llama", "handle_post_cleanup_llama")
+    .add("POST", "/api/app-update", "handle_post_app_update")
+    .add("POST", "/api/send-input", "handle_post_send_input")
+    .add("POST", "/api/presets", "handle_post_presets")
+    .add("POST", "/api/open-folder", "handle_post_open_folder")
+    .add("POST", "/api/select-file", "handle_post_select_file")
+    .add_prefix("DELETE", "/api/presets/", "handle_delete_preset", "name")
+)
 
 
 def main():
-    global gui_server
     port = GUI_PORT
     for d in [
         MODELS_DIR,
@@ -2648,7 +2583,7 @@ def main():
         d.mkdir(parents=True, exist_ok=True)
 
     try:
-        gui_server = http.server.ThreadingHTTPServer((GUI_HOST, port), Handler)
+        STATE.gui_server = http.server.ThreadingHTTPServer((GUI_HOST, port), Handler)
     except OSError as e:
         if "address already in use" in str(e).lower() or e.errno == 10048:
             print(f"ERROR: Port {port} is already in use.")
@@ -2661,15 +2596,15 @@ def main():
     print(f"Llama GUI running at http://{GUI_HOST}:{port}")
     print("Press Ctrl+C to stop the server.")
     try:
-        gui_server.serve_forever()
+        STATE.gui_server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         stop_remote_tunnel()
         stop_process()
-        if gui_server is not None:
-            gui_server.server_close()
-            gui_server = None
+        if STATE.gui_server is not None:
+            STATE.gui_server.server_close()
+            STATE.gui_server = None
 
 
 if __name__ == "__main__":

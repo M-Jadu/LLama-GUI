@@ -39,18 +39,18 @@ Goal: remove the most fragile global-state coupling before route extraction.
 - [x] Add `backend/config.py` for constants like `GUI_PORT`, `LLAMA_PORT`, restart delays, retry counts, and `BYTES_PER_MB`.
 - [x] Add `backend/context.py` with `AppPaths`, `ServerConfig`, and `AppContext`.
 - [x] Add `backend/state.py` with `AtomicDict` and typed state containers.
-- [ ] Move install/update state into `ServerState`.
-- [ ] Move HF download state, in-progress flag, and cancel event into `ServerState`.
-- [ ] Move remote tunnel state/process/lock into `ServerState`.
-- [ ] Move llama process state and output buffer ownership into `ServerState`.
-- [ ] Move local llama API target host/port into `ServerState`.
+- [x] Move install/update state into `ServerState`.
+- [x] Move HF download state, in-progress flag, and cancel event into `ServerState`.
+- [x] Move remote tunnel state/process/lock into `ServerState`.
+- [x] Move llama process state and output buffer ownership into `ServerState`.
+- [x] Move local llama API target host/port into `ServerState`.
 
 Exit criteria:
 
-- [ ] `server.py` still runs as the entrypoint.
-- [ ] Existing APIs still read/write the same state through context/state objects.
-- [ ] State tests cover snapshots, updates, resets, and lock behavior.
-- [ ] No extracted route module imports mutable process/download/tunnel globals from `server.py`.
+- [x] `server.py` still runs as the entrypoint.
+- [x] Existing APIs still read/write the same state through context/state objects.
+- [x] State tests cover snapshots, updates, resets, and lock behavior.
+- [x] No extracted route module imports mutable process/download/tunnel globals from `server.py`.
 
 ---
 
@@ -58,20 +58,20 @@ Exit criteria:
 
 Goal: make route logic portable before splitting route files.
 
-- [ ] Add `backend/http.py` with request and response wrapper classes.
-- [ ] Add `response.json(...)`, `response.error(...)`, `response.text(...)`, and `response.bytes(...)`.
-- [ ] Standardize API error bodies to include `error` and numeric `status`.
-- [ ] Preserve machine-readable `code` for compatibility cases such as HF duplicate downloads.
-- [ ] Centralize CORS allowed-origin logic.
-- [ ] Define explicit CORS handling for `/api/*`, `/v1/*`, static UI assets, and `/assets/app-logo.png`.
-- [ ] Add `SseWriter` and migrate chat streaming writes to it while keeping behavior unchanged.
+- [x] Add `backend/http.py` with request and response wrapper classes.
+- [x] Add `response.json(...)`, `response.error(...)`, `response.text(...)`, and `response.bytes(...)`.
+- [x] Standardize API error bodies to include `error` and numeric `status`.
+- [x] Preserve machine-readable `code` for compatibility cases such as HF duplicate downloads.
+- [x] Centralize CORS allowed-origin logic.
+- [x] Define explicit CORS handling for `/api/*`, `/v1/*`, static UI assets, and `/assets/app-logo.png`.
+- [x] Add `SseWriter` and migrate chat streaming writes to it while keeping behavior unchanged.
 
 Exit criteria:
 
-- [ ] API errors use the shared helper.
-- [ ] Existing frontend flows still receive compatible errors.
-- [ ] Chat streaming and web-search status SSE messages still work.
-- [ ] CORS tests cover API routes, `/v1/*`, allowed origins, denied origins, and no-origin local requests.
+- [x] API errors use the shared helper.
+- [x] Existing frontend flows still receive compatible errors.
+- [x] Chat streaming and web-search status SSE messages still work.
+- [x] CORS tests cover API routes, `/v1/*`, allowed origins, denied origins, and no-origin local requests.
 
 ---
 
@@ -79,19 +79,19 @@ Exit criteria:
 
 Goal: replace long handler branches before moving code across files.
 
-- [ ] Add `backend/routing.py` with route registration and dispatch lookup.
-- [ ] Keep route handler functions in `server.py` initially, but register them through the dispatch table.
-- [ ] Convert GET API routes to dispatch handlers.
-- [ ] Convert POST API routes to dispatch handlers.
-- [ ] Convert DELETE preset route to dispatch handling.
-- [ ] Keep static file serving and `/v1/*` proxy handling separate from API dispatch.
-- [ ] Add route-dispatch tests for known paths and unknown paths.
+- [x] Add `backend/routing.py` with route registration and dispatch lookup.
+- [x] Keep route handler functions in `server.py` initially, but register them through the dispatch table.
+- [x] Convert GET API routes to dispatch handlers.
+- [x] Convert POST API routes to dispatch handlers.
+- [x] Convert DELETE preset route to dispatch handling.
+- [x] Keep static file serving and `/v1/*` proxy handling separate from API dispatch.
+- [x] Add route-dispatch tests for known paths and unknown paths.
 
 Exit criteria:
 
-- [ ] `Handler.do_GET`, `Handler.do_POST`, and `Handler.do_DELETE` are thin wrappers around parsing, CORS, and dispatch.
-- [ ] Unknown API routes return the same effective 404 behavior as before.
-- [ ] All existing UI workflows still reach their API endpoints.
+- [x] `Handler.do_GET`, `Handler.do_POST`, and `Handler.do_DELETE` are thin wrappers around parsing, CORS, and dispatch.
+- [x] Unknown API routes return the same effective 404 behavior as before.
+- [x] All existing UI workflows still reach their API endpoints.
 
 ---
 
@@ -211,7 +211,9 @@ Exit criteria:
 ## Current Notes
 
 - Phase 0 completed with `tests/backend/test_server_baseline.py`; latest run: `python -m unittest discover -s tests` passed 19 tests.
-- Phase 1 foundation modules added in `backend/config.py`, `backend/context.py`, and `backend/state.py`; `server.py` now imports shared constants while keeping behavior unchanged. Latest run: `python -m unittest discover -s tests` passed 25 tests.
+- Phase 1 completed. Runtime process, install/update, HF download, tunnel, output buffer, GUI server, and llama API target state now live under `APP_CONTEXT.state`; latest run: `python -m unittest discover -s tests` passed 26 tests.
+- Phase 2 completed. `backend/http.py` now owns response helpers, standardized API errors, CORS helpers, and SSE writing; latest run: `python -m unittest discover -s tests` passed 35 tests.
+- Phase 3 completed. `backend/routing.py` now owns route registration/lookup, API routes dispatch through `API_ROUTER`, and `/v1/*` proxy plus static UI handling remain outside API dispatch; latest run: `python -m unittest discover -s tests` passed 41 tests.
 - The safest first implementation milestone is Phase 0 plus the non-invasive parts of Phase 1.
 - Avoid extracting process, install, tunnel, shutdown, or restart logic until the shared state/context and lifecycle abstractions are in place.
 - Keep route extraction incremental. One route group per commit is preferred.

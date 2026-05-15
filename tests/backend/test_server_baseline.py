@@ -86,6 +86,27 @@ class HandlerResponseTests(unittest.TestCase):
         handler.end_headers = end_headers
         return handler
 
+    def test_options_uses_v1_cors_methods(self):
+        handler = self.make_handler(origin="http://localhost:5240")
+        handler.path = "/v1/chat/completions"
+
+        handler.do_OPTIONS()
+
+        self.assertEqual(handler.sent_response, 200)
+        self.assertIn(("Access-Control-Allow-Origin", "http://localhost:5240"), handler.sent_headers)
+        self.assertIn(("Access-Control-Allow-Methods", "GET, POST, OPTIONS"), handler.sent_headers)
+        self.assertIn(("Access-Control-Max-Age", "86400"), handler.sent_headers)
+
+    def test_options_uses_api_cors_methods(self):
+        handler = self.make_handler(origin="http://localhost:5240")
+        handler.path = "/api/status"
+
+        handler.do_OPTIONS()
+
+        self.assertEqual(handler.sent_response, 200)
+        self.assertIn(("Access-Control-Allow-Origin", "http://localhost:5240"), handler.sent_headers)
+        self.assertIn(("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"), handler.sent_headers)
+
     def test_send_json_writes_body_and_cors_header(self):
         handler = self.make_handler(origin="http://localhost:5240")
 
@@ -104,11 +125,32 @@ class HandlerResponseTests(unittest.TestCase):
         self.assertEqual(handler.sent_response, 502)
         self.assertEqual(
             json.loads(handler.wfile.getvalue().decode("utf-8")),
-            {"error": "upstream failed"},
+            {"error": "upstream failed", "status": 502},
+        )
+
+    def test_api_router_knows_existing_endpoint(self):
+        match = server.API_ROUTER.match("GET", "/api/status")
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.handler_name, "handle_get_status")
+
+    def test_unknown_api_route_returns_json_404(self):
+        handler = self.make_handler(origin="http://localhost:5240")
+        handler.path = "/api/missing"
+
+        handler.do_GET()
+
+        self.assertEqual(handler.sent_response, 404)
+        self.assertEqual(
+            json.loads(handler.wfile.getvalue().decode("utf-8")),
+            {"error": "Not found", "status": 404},
         )
 
 
 class StateSnapshotTests(unittest.TestCase):
+    def test_server_helpers_use_shared_server_state(self):
+        self.assertIs(server.APP_CONTEXT.state, server.STATE)
+
     def test_download_progress_reset_and_snapshot_are_copied(self):
         server.reset_download_progress(status="downloading", message="Working", total=100, downloaded=25)
         snapshot = server.get_download_progress_snapshot()
@@ -116,6 +158,7 @@ class StateSnapshotTests(unittest.TestCase):
 
         self.assertEqual(snapshot["status"], "downloading")
         self.assertEqual(server.get_download_progress_snapshot()["downloaded"], 25)
+        self.assertEqual(server.STATE.download_progress.snapshot()["downloaded"], 25)
 
     def test_model_download_state_reset_update_and_snapshot_are_copied(self):
         server.reset_model_download_state(status="idle", message="", total=0, downloaded=0)
@@ -126,6 +169,7 @@ class StateSnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot["status"], "downloading")
         self.assertEqual(snapshot["model_name"], "model.gguf")
         self.assertEqual(server.get_model_download_snapshot()["downloaded"], 128)
+        self.assertEqual(server.STATE.model_download.snapshot()["downloaded"], 128)
 
     def test_remote_tunnel_log_is_truncated_in_state(self):
         server.set_remote_tunnel_state(status="running", url="https://example.trycloudflare.com", log="x" * 7000)
@@ -135,6 +179,7 @@ class StateSnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot["status"], "running")
         self.assertEqual(snapshot["url"], "https://example.trycloudflare.com")
         self.assertEqual(len(snapshot["log"]), 6000)
+        self.assertEqual(len(server.STATE.remote_tunnel.snapshot()["log"]), 6000)
 
 
 class ValidationTests(unittest.TestCase):
@@ -175,6 +220,7 @@ class ValidationTests(unittest.TestCase):
 
         self.assertEqual(target, {"host": "127.0.0.1", "port": 9090})
         self.assertEqual(server.get_llama_api_target(), target)
+        self.assertEqual(server.STATE.llama_api_target.snapshot(), target)
 
     def test_local_chat_api_url_validation(self):
         self.assertEqual(

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 import threading
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 from . import config
 
@@ -40,7 +40,7 @@ def default_llama_api_target():
 class AtomicDict:
     """Small lock-protected dict wrapper used for status snapshots."""
 
-    def __init__(self, initial: Mapping[str, Any] | None = None):
+    def __init__(self, initial: Optional[Mapping[str, Any]] = None):
         self._lock = threading.Lock()
         self._data = dict(initial or {})
 
@@ -66,7 +66,7 @@ class ServerState:
     process_lock: threading.Lock = field(default_factory=threading.Lock)
     output_buffer: list[str] = field(default_factory=list)
     output_buffer_lock: threading.Lock = field(default_factory=threading.Lock)
-    active_process_tool: str | None = None
+    active_process_tool: Optional[str] = None
 
     download_progress: AtomicDict = field(
         default_factory=lambda: AtomicDict(default_download_progress())
@@ -92,4 +92,3 @@ class ServerState:
         default_factory=lambda: AtomicDict(default_llama_api_target())
     )
     llama_api_target_lock: threading.Lock = field(default_factory=threading.Lock)
-
