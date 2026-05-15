@@ -4,7 +4,7 @@
 
 ## Architecture
 
-- **Backend:** `backend/` package using stdlib `http.server`; `server.py` remains the compatibility entrypoint
+- **Backend:** `backend/` package using stdlib `http.server`; `server.py` is a 26-line compatibility wrapper that re-exports `backend.app`
 
 - **Frontend:** Vanilla HTML/CSS/JS, served statically from `ui/`
 - **Dependencies:** `certifi` (SSL verification), `ddgs` (DuckDuckGo web search), `huggingface_hub` (model downloads)
@@ -15,14 +15,17 @@
 
 | File / Dir | Role |
 |------------|------|
-| `server.py` | Small compatibility wrapper that re-exports `backend.app` and starts `main()` when executed |
+| `server.py` | Thin compatibility entrypoint — delegates to `backend.app` |
 | `backend/app.py` | HTTP handler, app context wiring, route registry, CORS/proxy helpers, and GUI server startup |
-| `backend/routes/` | API route handlers grouped by feature |
-| `backend/services/` | Feature services for llama.cpp install/processes, HF downloads, web search, tunnels, git updates, lifecycle, and file picking |
+| `backend/config.py` | Constants and platform detection (GUI port, defaults) |
+| `backend/context.py` | `AppContext`, `AppPaths`, `ServerConfig` — shared state containers |
+| `backend/state.py` | `AtomicDict` and typed shared state classes with locks |
 | `backend/http.py` | Request/response adapters, standardized API errors, CORS helpers, and SSE writer |
 | `backend/routing.py` | Dispatch-table route matching for API routes |
+| `backend/routes/` | 14 route handler modules grouped by feature (status, models, presets, metrics, chat, search, hf_download, file_picker, process, install, tunnel, git_update, lifecycle) |
+| `backend/services/` | 10 service modules (llama_manager, process_manager, hf_download, web_search, tunnel, git_update, lifecycle, file_picker, chat) |
 | `ui/js/app.js` | Main UI logic (~3600 lines): shared state, tab switching, flags, launch, chat (streaming, web search, history), Quick Launch (profiles, HF download, sampler presets), remote tunnel, stats polling, toasts |
-| `ui/js/flags.js` | All llama.cpp flag definitions (15 categories, ~120 flags), flag types (`bool`/`int`/`float`/`text`/`path`/`enum`/`multi_enum`), chat template presets, command builder |
+| `ui/js/flags.js` | All llama.cpp flag definitions (14 categories, ~135 flags), flag types (`bool`/`int`/`float`/`text`/`path`/`enum`/`multi_enum`), chat template presets (51 built-in templates), command builder |
 | `ui/js/manager.js` | Install flow, GitHub release fetch, backend selection, status polling, app auto-update (git), confirmation modal |
 | `ui/js/presets.js` | Launcher preset save/load/update/delete with group-by-model rendering, collapsible groups, search/filter, warnings, import/export |
 | `ui/index.html` | Tabbed UI: Install, Quick Launch, Configure, Chat, API, Presets |
@@ -31,6 +34,7 @@
 | `config.json` | Persists installed version, backend type, and release tag |
 | `tools/cloudflared/` | Auto-downloaded Cloudflare tunnel binary |
 | `requirements.txt` | Python dependencies (certifi, ddgs, huggingface_hub) |
+| `tests/backend/` | 6 test files (~246 tests) covering baseline, HTTP adapters, routing, services, and extracted routes |
 
 ## Tabs
 
@@ -108,3 +112,17 @@ Configure tab search bar:
 ## AGENTS.md Rule
 
 The `AGENTS.md` file enforces that any setting appearing in multiple UI locations must use the same shared state object, setter, and options source — no per-tab copies.
+
+## Documentation
+
+| File | Purpose |
+|------|---------|
+| `docs/agent-workflows.md` | Agent reference for flag audits and chat template updates |
+| `docs/directory.md` | This file — project structure overview |
+| `docs/archive/backend_architecture_plan.md` | Plan for the completed backend refactor |
+| `docs/archive/backend_progress.md` | Progress tracker for the completed backend refactor |
+| `docs/flag_report.md` | One-time flag audit report (May 2026) |
+| `docs/frontend_modularization.md` | Plan for future frontend modularization |
+| `docs/long-term-plans.md` | Architectural improvement roadmap |
+| `docs/potential_improvements.md` | Feature improvement ideas |
+| `docs/images/` | 6 screenshots used by README.md |

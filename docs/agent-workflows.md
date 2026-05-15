@@ -1,23 +1,23 @@
-# CHECK_FLAGS.md
+# Agent Workflows
 
-Agent reference for auditing `ui/js/flags.js` against upstream `llama.cpp` and reporting findings.
+Consolidated reference for routine maintenance tasks: auditing `ui/js/flags.js` against upstream `llama.cpp` and updating bundled chat templates.
 
-## Purpose
+## Flag Audit Workflow
 
-When asked to check for flag changes, additions, removals, deprecations, or chat-template changes, compare the local GUI flag definitions against current upstream `llama.cpp` and produce a structured markdown report.
+Audit `ui/js/flags.js` against upstream `llama.cpp` and produce a structured markdown report of findings.
 
-Do not modify `ui/js/flags.js` during the audit unless the user explicitly asks for implementation. A report file is fine when requested.
+Do not modify `ui/js/flags.js` during the audit unless the user explicitly asks for implementation.
 
-## Files To Check
+### Files To Check
 
-### Local
+**Local**
 
 | File | Role |
 |---|---|
 | `ui/js/flags.js` | Single source of truth for all CLI flags exposed in the UI |
 | `ui/js/app.js` | Shared setter/state and launch-arg generation logic that consumes `FLAGS` |
 
-### Upstream
+**Upstream**
 
 | URL | What to extract |
 |---|---|
@@ -31,13 +31,13 @@ Do not modify `ui/js/flags.js` during the audit unless the user explicitly asks 
 
 Note: `src/chat.cpp` may not exist in current upstream. Prefer `src/llama-chat.cpp` for built-in template names.
 
-## Efficient Workflow
+### Efficient Workflow
 
-### 1. Pin upstream
+#### 1. Pin upstream
 
 Fetch the upstream master commit first and include the SHA in the report. This makes the audit reproducible even if master changes later.
 
-### 2. Parse local `FLAGS`
+#### 2. Parse local `FLAGS`
 
 Use a JavaScript runtime instead of regex-only parsing so shared constants like `CHAT_TEMPLATE_PRESET_OPTIONS` resolve correctly.
 
@@ -69,7 +69,7 @@ Extract:
 
 Also count and compare `BUILTIN_CHAT_TEMPLATES` and `CHAT_TEMPLATE_PRESETS`.
 
-### 3. Parse upstream flags
+#### 3. Parse upstream flags
 
 Parse `common/arg.cpp` for `common_arg(...)` registrations. `arg.h` defines the constructors, but `arg.cpp` is the practical source for the flag table.
 
@@ -92,7 +92,7 @@ Use `set_examples` / `set_excludes` to decide tool scope:
 
 Filter out utility/meta flags unless the GUI intends to expose them, for example `--help`, `--usage`, `--version`, `--license`, and shell completion flags.
 
-### 4. Match flags
+#### 4. Match flags
 
 Match by all known aliases, not just the local `flag` field.
 
@@ -104,9 +104,9 @@ Rules:
 4. Canonical-renamed bools: if local uses a negation alias that upstream still accepts, report it as a rename/cleanup, not a removal.
 5. Option additions count as changed flags, not new flags. Example: upstream adding `tensor` to `--split-mode`.
 
-### 5. Compare and categorize
+#### 5. Compare and categorize
 
-#### A. New upstream flags not in `flags.js`
+##### A. New upstream flags not in `flags.js`
 
 Report upstream server/common flags that have no local alias match.
 
@@ -121,7 +121,7 @@ For each high-signal flag include:
 
 For large unmatched sets, summarize by category and list the highest-value candidates rather than dumping every niche flag into a huge table.
 
-#### B. Local flags missing from upstream
+##### B. Local flags missing from upstream
 
 Report local flags that have no upstream alias match.
 
@@ -132,7 +132,7 @@ Before calling a flag removed, check whether it is still accepted as:
 - a renamed canonical flag
 - a server-only option
 
-#### C. Changed flags
+##### C. Changed flags
 
 Check:
 
@@ -147,7 +147,7 @@ Check:
 
 Important: local defaults may intentionally differ as GUI safe defaults. Still report them, because this app initializes `flagValues` from `getDefaultValues()` and launch args may emit those values.
 
-#### D. Chat template changes
+##### D. Chat template changes
 
 Compare local `BUILTIN_CHAT_TEMPLATES` against upstream `LLM_CHAT_TEMPLATES` in `src/llama-chat.cpp`.
 
@@ -159,11 +159,11 @@ Report:
 
 Remember: `BUILTIN_CHAT_TEMPLATES` is a compatibility allowlist. New upstream templates do not automatically need curated dropdown presets unless they map to a user-facing preset.
 
-#### E. Other server features
+##### E. Other server features
 
 Scan `tools/server/server.cpp` and `examples/server/README.md` for `--flag` strings not found in `common/arg.cpp`. If none are found, state that.
 
-## Category Mapping Guide
+### Category Mapping Guide
 
 | Category | Keywords |
 |---|---|
@@ -182,7 +182,7 @@ Scan `tools/server/server.cpp` and `examples/server/README.md` for `--flag` stri
 | `logging` | verbose, log, timestamps, colors, timings |
 | `advanced` | override, tensor check, warmup, offline, host buffer, shortcut presets |
 
-## Output Format
+### Output Format
 
 Use this structure for the report:
 
@@ -221,7 +221,7 @@ Use this structure for the report:
 - [T] template changes
 ```
 
-## Current Known Patterns
+### Current Known Patterns
 
 These examples came up in a recent audit and are useful as calibration points:
 
@@ -231,10 +231,121 @@ These examples came up in a recent audit and are useful as calibration points:
 - `src/llama-chat.cpp` currently contains the built-in template map, not `src/chat.cpp`.
 - `common/arg.cpp` can contain more than 100 upstream server/common flags that the GUI does not expose. Treat this as a curated-surface decision unless a flag is user-facing, newly important, or affects an already exposed control.
 
-## Reminders
+### Reminders
 
 - Prefer `rg` for local search.
 - Keep the audit read-only unless the user asks for edits.
 - Always include the upstream commit SHA.
 - Report default differences even if they are intentional.
 - Do not add every upstream flag automatically. Prioritize flags that affect existing controls, user-visible launch behavior, compatibility, security, or common server workflows.
+
+---
+
+## Chat Template Update Workflow
+
+Use this workflow when updating bundled chat templates under `ui/templates/`, especially model-family presets exposed through `ui/js/flags.js`.
+
+### Source Of Truth
+
+- Prefer official model repos for model-specific templates. For Hugging Face repos, check whether `chat_template.jinja` exists at the repo root before relying on `tokenizer_config.json`.
+- Check related model sizes separately. A family may not share one template across all variants.
+- For llama.cpp compatibility, also check the current upstream llama.cpp docs, template examples, and relevant issues/discussions if the template uses newer syntax or model-specific parsing.
+- Do not use small assistant/helper repos as the source for main instruct templates unless they actually expose the intended template.
+
+### Update Steps
+
+1. Find all current app references:
+   - Template files: `ui/templates/*`
+   - Preset definitions: `CHAT_TEMPLATE_PRESETS` in `ui/js/flags.js`
+   - Shared state helpers in `ui/js/app.js` if new behavior is needed
+2. Download the official template files and compare variants by size/hash/content.
+3. Add or replace bundled `.jinja` files with the upstream content.
+4. Keep backward-compatible template paths when saved presets may already reference them.
+5. Update `CHAT_TEMPLATE_PRESETS`; Quick Launch clones options from the `chat_template` flag, so do not maintain a second list.
+6. Bundled presets should set `chat_template_custom` and clear `chat_template`; built-in presets should do the opposite.
+
+### NoThink Templates
+
+- Prefer deriving NoThink templates from the exact official upstream template for that model family, not from a generic wrapper.
+- Force no-think inside the bundled template, for example:
+
+```jinja
+{%- set enable_thinking = false -%}
+```
+
+- Preserve model-family-specific disabled-thinking behavior. Example from Gemma 4:
+  - E2B/E4B disabled thinking ends generation with a plain model turn.
+  - 26B-A4B/31B disabled thinking keeps the empty thought block:
+
+```text
+<|channel>thought\n<channel|>
+```
+
+- Verify NoThink templates never render `<|think|>`, even if runtime kwargs pass `enable_thinking=true`.
+- Keep upstream logic that strips historical assistant thinking from prior messages unless there is a clear reason to change it.
+
+### Validation Checklist
+
+- Confirm every new preset appears in both Configure and Quick Launch.
+- Confirm mirrored controls stay synced when either one changes.
+- Confirm command preview uses `--chat-template-file` for bundled templates and does not also emit `--chat-template`.
+- Render representative samples through each template:
+  - plain user/assistant turns
+  - system/developer prompts
+  - multimodal content markers
+  - tool definitions
+  - tool calls
+  - tool responses
+  - `add_generation_prompt`
+- For NoThink variants, assert no `<|think|>` appears in rendered output.
+- For thinking-capable variants, assert `enable_thinking=true` still emits the expected thinking trigger.
+- Run a browser smoke test against `ui/index.html` served from the `ui/` directory, because the page uses root-relative assets like `/js/app.js`.
+
+### Useful One-Off Checks
+
+Fetch and hash official Hugging Face templates:
+
+```powershell
+$repos = @(
+  "google/gemma-4-E2B-it",
+  "google/gemma-4-E4B-it",
+  "google/gemma-4-26B-A4B-it",
+  "google/gemma-4-31B-it"
+)
+foreach ($repo in $repos) {
+  $url = "https://huggingface.co/$repo/raw/main/chat_template.jinja"
+  $content = (Invoke-WebRequest -UseBasicParsing -Uri $url).Content
+  $sha = [System.BitConverter]::ToString(
+    [System.Security.Cryptography.SHA256]::Create().ComputeHash(
+      [System.Text.Encoding]::UTF8.GetBytes($content)
+    )
+  ).Replace("-", "").ToLower()
+  "$repo $($content.Length) $sha"
+}
+```
+
+Check bundled Gemma templates for thinking markers:
+
+```powershell
+Get-ChildItem ui/templates -Filter *gemma* | ForEach-Object {
+  $text = Get-Content -Raw -Path $_.FullName
+  $think = [regex]::Matches($text, [regex]::Escape("<|think|>")).Count
+  $empty = [regex]::Matches($text, [regex]::Escape("<|channel>thought\n<channel|>")).Count
+  $force = [regex]::Matches($text, "set\s+enable_thinking\s*=\s*false").Count
+  "$($_.Name): think=$think empty_thought=$empty force_no_think=$force"
+}
+```
+
+### Notes From Gemma 4 Update
+
+- Official Hugging Face Gemma 4 templates were in root-level `chat_template.jinja`, not `tokenizer_config.json`.
+- `google/gemma-4-E2B-it` and `google/gemma-4-E4B-it` shared one template.
+- `google/gemma-4-26B-A4B-it` and `google/gemma-4-31B-it` shared another template.
+- `*-assistant` repos did not provide the main instruct template and were not used.
+- Static file smoke tests should serve `ui/` as the web root:
+
+```powershell
+python -m http.server 8765 --bind 127.0.0.1
+```
+
+Run that command from the `ui/` directory, then open `http://127.0.0.1:8765/index.html`.
