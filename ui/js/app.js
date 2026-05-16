@@ -3,8 +3,10 @@ function debounce(fn, ms) {
     return function (...args) { clearTimeout(t); t = setTimeout(() => fn.apply(this, args), ms); };
 }
 
-let currentTool = "llama-server";
-let flagValues = getDefaultValues();
+const flagCore = window.LlamaGui.flagCore;
+const configFlagsUi = window.LlamaGui.configFlagsUi;
+flagCore.setCurrentToolValue("llama-server");
+flagCore.replaceFlagValues(getDefaultValues());
 let outputTimer = null;
 let lastOutputLen = 0;
 let statsTimer = null;
@@ -12,9 +14,6 @@ let pollOutputActive = false;
 let pollStatsActive = false;
 let remoteTunnelTimer = null;
 let hfDownloadTimer = null;
-let openCategories = new Set();
-let openSubmenus = new Set();
-let configSearchQuery = "";
 let selectedChatTemplatePresetValue = "";
 
 let chatMessages = [];
@@ -322,8 +321,9 @@ function saveSamplerPresetStore(store) {
 
 function collectSamplerValues() {
     const values = {};
+    const currentValues = flagCore.getFlagValues();
     for (const f of getSamplerFlags()) {
-        const v = flagValues[f.id];
+        const v = currentValues[f.id];
         if (v !== undefined && v !== null && v !== "") {
             values[f.id] = v;
         }
@@ -370,7 +370,7 @@ function applySamplerPresetValues(values) {
             patch[f.id] = undefined;
         }
     }
-    setMultipleFlagValues(patch);
+    flagCore.setMultipleFlagValues(patch);
 }
 
 function createSamplerPresetControls() {
@@ -499,6 +499,7 @@ function createSamplerPresetControls() {
         store[name] = normalizeSamplerPresetValues(collectSamplerValues());
         saveSamplerPresetStore(store);
         refreshOptions();
+        refreshQuickSamplerPresetSelect();
         select.value = `custom|${name}`;
         nameInput.value = "";
     });
@@ -521,6 +522,7 @@ function createSamplerPresetControls() {
         delete store[selected.name];
         saveSamplerPresetStore(store);
         refreshOptions();
+        refreshQuickSamplerPresetSelect();
     });
 
     exportBtn.addEventListener("click", () => {
@@ -584,6 +586,7 @@ function createSamplerPresetControls() {
 
             saveSamplerPresetStore(store);
             refreshOptions();
+            refreshQuickSamplerPresetSelect();
             if (lastImportedName) {
                 select.value = `custom|${lastImportedName}`;
             }
@@ -607,70 +610,97 @@ function createSamplerPresetControls() {
     return panel;
 }
 
-function setCurrentTool(tool) {
-    const nextTool = tool === "llama-cli" ? "llama-cli" : "llama-server";
-    currentTool = nextTool;
-
+function syncUiAfterToolChange(nextTool) {
     const toolSel = document.getElementById("tool-select");
     if (toolSel && toolSel.value !== nextTool) {
         toolSel.value = nextTool;
     }
 
-    openCategories.clear();
-    renderFlags();
-    updateCommandPreview();
+    configFlagsUi.resetOpenCategories();
+    configFlagsUi.renderFlags();
+    flagCore.updateCommandPreview();
 }
 
 function syncUiAfterSharedStateChange() {
-    restoreFlagInputs();
-    updateCommandPreview();
+    configFlagsUi.restoreFlagInputs();
+    flagCore.updateCommandPreview();
     refreshChatSidebarUI();
 }
 
-function setFlagValue(flagId, value, options = {}) {
-    setMultipleFlagValues({ [flagId]: value }, options);
-}
+configFlagsUi.configure({
+    debounce,
+    getFlagsByCategory,
+    switchTab,
+    createSamplerPresetControls,
+    refreshQuickLaunchUI,
+    browseForPathFlag,
+    showStatus,
+    setChatTemplateValue,
+    getSelectedChatTemplateDropdownValue,
+});
 
-function setPathFlagValue(flagId, value, options = {}) {
-    const patch = { [flagId]: value };
-    if (flagId === "mmproj" && value) {
-        patch.no_mmproj = false;
-    }
-    if (flagId === "chat_template_custom") {
-        patch.chat_template = undefined;
-        const matchedPreset = getChatTemplatePresetByPath(value);
-        selectedChatTemplatePresetValue = matchedPreset ? matchedPreset.value : "";
-    }
-    setMultipleFlagValues(patch, options);
-}
-
-function setMultipleFlagValues(patch, options = {}) {
-    for (const [flagId, value] of Object.entries(patch || {})) {
-        if (value === undefined) {
-            delete flagValues[flagId];
-        } else {
-            flagValues[flagId] = value;
+flagCore.configure({
+    getDefaultFlagValues: getDefaultValues,
+    getFlags: () => FLAGS,
+    normalizeMultiEnumValue: configFlagsUi.normalizeMultiEnumValue,
+    shouldOmitSpeculativeFlag: (flag, values) => (
+        typeof shouldOmitSpeculativeFlag === "function" && shouldOmitSpeculativeFlag(flag, values)
+    ),
+    isSupportedChatTemplateValue: (value) => (
+        typeof isSupportedChatTemplateValue === "function" ? isSupportedChatTemplateValue(value) : true
+    ),
+    getToolBinaryName,
+    renderCommandPreview(command) {
+        document.getElementById("command-preview-text").textContent = command;
+        updateServerAddressPreview();
+        updateApiEndpoints();
+        refreshQuickLaunchUI();
+    },
+    afterToolChange: syncUiAfterToolChange,
+    beforePathPatch(flagId, value, patch) {
+        if (flagId === "mmproj" && value) {
+            patch.no_mmproj = false;
         }
-    }
+        if (flagId === "chat_template_custom") {
+            patch.chat_template = undefined;
+            const matchedPreset = getChatTemplatePresetByPath(value);
+            selectedChatTemplatePresetValue = matchedPreset ? matchedPreset.value : "";
+        }
+    },
+    afterPatch(patch, options) {
+        if (Object.prototype.hasOwnProperty.call(options, "quickLaunchFitCtxLinked")) {
+            quickLaunchFitCtxLinked = options.quickLaunchFitCtxLinked;
+        } else if (Object.prototype.hasOwnProperty.call(patch || {}, "fit_ctx")
+            || Object.prototype.hasOwnProperty.call(patch || {}, "ctx_size")) {
+            const values = flagCore.getFlagValues();
+            const fitCtx = values.fit_ctx;
+            const ctxSize = values.ctx_size;
+            quickLaunchFitCtxLinked = fitCtx === undefined || fitCtx === ctxSize;
+        }
 
-    if (Object.prototype.hasOwnProperty.call(options, "quickLaunchFitCtxLinked")) {
-        quickLaunchFitCtxLinked = options.quickLaunchFitCtxLinked;
-    } else if (Object.prototype.hasOwnProperty.call(patch || {}, "fit_ctx")
-        || Object.prototype.hasOwnProperty.call(patch || {}, "ctx_size")) {
-        const fitCtx = flagValues.fit_ctx;
-        const ctxSize = flagValues.ctx_size;
+        if (Object.prototype.hasOwnProperty.call(options, "quickLaunchGpuCustomSelected")) {
+            quickLaunchGpuCustomSelected = options.quickLaunchGpuCustomSelected;
+        } else if (Object.prototype.hasOwnProperty.call(patch || {}, "gpu_layers")) {
+            const values = flagCore.getFlagValues();
+            const gpuLayers = String(values.gpu_layers ?? "auto");
+            quickLaunchGpuCustomSelected = gpuLayers !== "auto" && gpuLayers !== "0" && gpuLayers !== "all";
+        }
+    },
+    afterApply(values) {
+        selectedChatTemplatePresetValue = "";
+        if (values.chat_template_custom) {
+            const bundled = getChatTemplatePresetByPath(values.chat_template_custom);
+            if (bundled) selectedChatTemplatePresetValue = bundled.value;
+        } else if (values.chat_template) {
+            const builtin = getChatTemplatePresetByBuiltinName(values.chat_template);
+            if (builtin) selectedChatTemplatePresetValue = builtin.value;
+        }
+        const fitCtx = values.fit_ctx;
+        const ctxSize = values.ctx_size;
         quickLaunchFitCtxLinked = fitCtx === undefined || fitCtx === ctxSize;
-    }
-
-    if (Object.prototype.hasOwnProperty.call(options, "quickLaunchGpuCustomSelected")) {
-        quickLaunchGpuCustomSelected = options.quickLaunchGpuCustomSelected;
-    } else if (Object.prototype.hasOwnProperty.call(patch || {}, "gpu_layers")) {
-        const gpuLayers = String(flagValues.gpu_layers ?? "auto");
-        quickLaunchGpuCustomSelected = gpuLayers !== "auto" && gpuLayers !== "0" && gpuLayers !== "all";
-    }
-
-    syncUiAfterSharedStateChange();
-}
+    },
+    postUpdate: syncUiAfterSharedStateChange,
+});
 
 function getPathPickerRequest(flag) {
     return {
@@ -717,6 +747,7 @@ function syncQuickLaunchModelOptions() {
     const preferredValue = mainSelect.value || currentQuickValue || "";
     const hasPreferredValue = Array.from(quickSelect.options).some((opt) => opt.value === preferredValue);
     quickSelect.value = hasPreferredValue ? preferredValue : "";
+    flagCore.setSelectedModelValue(mainSelect.value || "");
 }
 
 function applyQuickTemplatePack(templateValue) {
@@ -935,9 +966,9 @@ async function finishHfDownload(prog) {
         applyPresetModel(prog.model_name);
     }
     if (prog.mmproj_path) {
-        setPathFlagValue("mmproj", prog.mmproj_path);
+        flagCore.setPathFlagValue("mmproj", prog.mmproj_path);
     }
-    updateCommandPreview();
+    flagCore.updateCommandPreview();
     refreshQuickLaunchUI();
 }
 
@@ -1004,8 +1035,8 @@ function applyQuickProfile(profileId) {
     const profile = QUICK_PROFILES[profileId];
     if (!profile) return;
 
-    setCurrentTool(profile.tool || "llama-server");
-    setMultipleFlagValues(profile.flags || {}, { quickLaunchFitCtxLinked: true });
+    flagCore.setCurrentTool(profile.tool || "llama-server");
+    flagCore.setMultipleFlagValues(profile.flags || {}, { quickLaunchFitCtxLinked: true });
 
     if (profile.samplerPresetName) {
         const preset = getAllSamplerPresets().find((entry) => entry.name === profile.samplerPresetName);
@@ -1039,26 +1070,27 @@ function getChatTemplatePresetByPath(path) {
 }
 
 function getSelectedChatTemplateDropdownValue() {
+    const values = flagCore.getFlagValues();
     if (selectedChatTemplatePresetValue === "__koboldcpp_automatic__"
-        && !flagValues.chat_template
-        && !flagValues.chat_template_custom) {
+        && !values.chat_template
+        && !values.chat_template_custom) {
         return selectedChatTemplatePresetValue;
     }
 
-    const bundledPreset = getChatTemplatePresetByPath(flagValues.chat_template_custom);
+    const bundledPreset = getChatTemplatePresetByPath(values.chat_template_custom);
     if (bundledPreset) {
         selectedChatTemplatePresetValue = bundledPreset.value;
         return bundledPreset.value;
     }
 
-    const builtinPreset = getChatTemplatePresetByBuiltinName(flagValues.chat_template);
+    const builtinPreset = getChatTemplatePresetByBuiltinName(values.chat_template);
     if (builtinPreset) {
         selectedChatTemplatePresetValue = builtinPreset.value;
         return builtinPreset.value;
     }
 
     selectedChatTemplatePresetValue = "";
-    return isSupportedChatTemplateValue(flagValues.chat_template) ? String(flagValues.chat_template ?? "") : "";
+    return isSupportedChatTemplateValue(values.chat_template) ? String(values.chat_template ?? "") : "";
 }
 
 function getQuickTemplateSummaryText() {
@@ -1078,8 +1110,9 @@ function getQuickTemplateSummaryText() {
     if (selectedTemplateValue) {
         return `Using llama.cpp built-in template: ${selectedTemplateValue}`;
     }
-    if (flagValues.chat_template_custom) {
-        return `Using custom template file: ${flagValues.chat_template_custom}`;
+    const values = flagCore.getFlagValues();
+    if (values.chat_template_custom) {
+        return `Using custom template file: ${values.chat_template_custom}`;
     }
     return "Use the template embedded in the model metadata when available.";
 }
@@ -1090,7 +1123,7 @@ function setChatTemplateValue(value, options = {}) {
 
     if (preset && preset.mode === "bundled") {
         selectedChatTemplatePresetValue = preset.value;
-        setMultipleFlagValues({
+        flagCore.setMultipleFlagValues({
             chat_template: undefined,
             chat_template_custom: preset.path,
         });
@@ -1099,7 +1132,7 @@ function setChatTemplateValue(value, options = {}) {
 
     if (preset && (preset.mode === "auto" || preset.mode === "auto_alias")) {
         selectedChatTemplatePresetValue = preset.value;
-        setMultipleFlagValues({
+        flagCore.setMultipleFlagValues({
             chat_template: undefined,
             chat_template_custom: undefined,
         });
@@ -1108,7 +1141,7 @@ function setChatTemplateValue(value, options = {}) {
 
     if (preset && preset.mode === "builtin") {
         selectedChatTemplatePresetValue = preset.value;
-        setMultipleFlagValues({
+        flagCore.setMultipleFlagValues({
             chat_template: preset.builtin,
             chat_template_custom: undefined,
         });
@@ -1122,12 +1155,12 @@ function setChatTemplateValue(value, options = {}) {
     if (!options.preserveCustomTemplateFile) {
         patch.chat_template_custom = undefined;
     }
-    setMultipleFlagValues(patch);
+    flagCore.setMultipleFlagValues(patch);
 }
 
 function setReasoningMode(value, options = {}) {
     const normalized = value === "on" || value === "off" ? value : "auto";
-    setFlagValue("reasoning", normalized, options);
+    flagCore.setFlagValue("reasoning", normalized, options);
 }
 
 function setQuickLaunchContextValue(rawValue, options = {}) {
@@ -1141,7 +1174,7 @@ function setQuickLaunchContextValue(rawValue, options = {}) {
         patch.fit_ctx = nextCtxSize;
     }
 
-    setMultipleFlagValues(patch);
+    flagCore.setMultipleFlagValues(patch);
 }
 
 function setQuickLaunchGpuLayers(value) {
@@ -1149,13 +1182,13 @@ function setQuickLaunchGpuLayers(value) {
         const customInput = document.getElementById("quick-gpu-custom");
         const customValue = String(customInput && customInput.value ? customInput.value : "").trim();
         if (customValue) {
-            setFlagValue("gpu_layers", customValue, { quickLaunchGpuCustomSelected: true });
+            flagCore.setFlagValue("gpu_layers", customValue, { quickLaunchGpuCustomSelected: true });
         } else {
             quickLaunchGpuCustomSelected = true;
             refreshQuickLaunchUI();
         }
     } else {
-        setFlagValue("gpu_layers", value || "auto", { quickLaunchGpuCustomSelected: false });
+        flagCore.setFlagValue("gpu_layers", value || "auto", { quickLaunchGpuCustomSelected: false });
     }
 }
 
@@ -1173,9 +1206,11 @@ function updateQuickLaunchActionButtons() {
 function refreshQuickLaunchUI() {
     const quickCommand = document.getElementById("quick-command-preview");
     if (!quickCommand) return;
+    const values = flagCore.getFlagValues();
+    const tool = flagCore.getCurrentTool();
 
     if (quickLaunchFitCtxLinked !== false) {
-        quickLaunchFitCtxLinked = flagValues.fit_ctx === undefined || flagValues.fit_ctx === flagValues.ctx_size;
+        quickLaunchFitCtxLinked = values.fit_ctx === undefined || values.fit_ctx === values.ctx_size;
     }
     syncQuickLaunchModelOptions();
     refreshQuickSamplerPresetSelect();
@@ -1184,20 +1219,21 @@ function refreshQuickLaunchUI() {
     const quickModelSelect = document.getElementById("quick-model-select");
     if (quickModelSelect && mainModelSelect) {
         quickModelSelect.value = mainModelSelect.value || "";
+        flagCore.setSelectedModelValue(mainModelSelect.value || "");
     }
 
     for (const radio of document.querySelectorAll('input[name="quick-launch-mode"]')) {
-        radio.checked = radio.value === currentTool;
+        radio.checked = radio.value === tool;
     }
 
     const modeSummary = document.getElementById("quick-mode-summary");
     if (modeSummary) {
-        modeSummary.textContent = currentTool === "llama-server"
+        modeSummary.textContent = tool === "llama-server"
             ? "API Server is selected. This exposes the web UI and OpenAI-compatible endpoints."
             : "Chat mode is selected. The process runs as an interactive local terminal chat.";
     }
 
-    const ctxValue = flagValues.ctx_size ?? 16000;
+    const ctxValue = values.ctx_size ?? 16000;
     const contextPreset = document.getElementById("quick-context-preset");
     const contextCustom = document.getElementById("quick-context-custom");
     if (contextPreset && contextCustom) {
@@ -1215,7 +1251,7 @@ function refreshQuickLaunchUI() {
 
     const gpuMode = document.getElementById("quick-gpu-mode");
     const gpuCustom = document.getElementById("quick-gpu-custom");
-    const gpuLayers = String(flagValues.gpu_layers ?? "auto");
+    const gpuLayers = String(values.gpu_layers ?? "auto");
     if (gpuMode && gpuCustom) {
         const hasCustomGpuValue = gpuLayers !== "auto" && gpuLayers !== "0" && gpuLayers !== "all";
         if (hasCustomGpuValue) {
@@ -1238,14 +1274,14 @@ function refreshQuickLaunchUI() {
     const fitToggle = document.getElementById("quick-fit-toggle");
     const fitTarget = document.getElementById("quick-fit-target");
     const fitCtx = document.getElementById("quick-fit-ctx");
-    if (fitToggle) fitToggle.value = String(flagValues.fit ?? "on");
-    if (fitTarget) fitTarget.value = String(flagValues.fit_target ?? "1024");
-    if (fitCtx) fitCtx.value = flagValues.fit_ctx ?? "";
+    if (fitToggle) fitToggle.value = String(values.fit ?? "on");
+    if (fitTarget) fitTarget.value = String(values.fit_target ?? "1024");
+    if (fitCtx) fitCtx.value = values.fit_ctx ?? "";
 
     const fitSummary = document.getElementById("quick-fit-summary");
     if (fitSummary) {
-        fitSummary.textContent = String(flagValues.fit ?? "on") === "on"
-            ? `Auto Fit will leave about ${flagValues.fit_target ?? "1024"} MiB free and will not shrink below ${flagValues.fit_ctx ?? ctxValue} context.`
+        fitSummary.textContent = String(values.fit ?? "on") === "on"
+            ? `Auto Fit will leave about ${values.fit_target ?? "1024"} MiB free and will not shrink below ${values.fit_ctx ?? ctxValue} context.`
             : "Auto Fit is off, so llama.cpp will use your manual memory settings as-is.";
     }
 
@@ -1265,11 +1301,11 @@ function refreshQuickLaunchUI() {
     const topP = document.getElementById("quick-top-p");
     const minP = document.getElementById("quick-min-p");
     const repeatPenalty = document.getElementById("quick-repeat-penalty");
-    if (temperature) temperature.value = flagValues.temperature ?? "";
-    if (topK) topK.value = flagValues.top_k ?? "";
-    if (topP) topP.value = flagValues.top_p ?? "";
-    if (minP) minP.value = flagValues.min_p ?? "";
-    if (repeatPenalty) repeatPenalty.value = flagValues.repeat_penalty ?? "";
+    if (temperature) temperature.value = values.temperature ?? "";
+    if (topK) topK.value = values.top_k ?? "";
+    if (topP) topP.value = values.top_p ?? "";
+    if (minP) minP.value = values.min_p ?? "";
+    if (repeatPenalty) repeatPenalty.value = values.repeat_penalty ?? "";
 
     const profileSummary = document.getElementById("quick-profile-summary");
     const profileSelect = document.getElementById("quick-profile-select");
@@ -1281,7 +1317,7 @@ function refreshQuickLaunchUI() {
     }
 
     const quickMetricsToggle = document.getElementById("quick-metrics-toggle");
-    if (quickMetricsToggle) quickMetricsToggle.checked = flagValues.metrics === true;
+    if (quickMetricsToggle) quickMetricsToggle.checked = values.metrics === true;
 
     quickCommand.textContent = document.getElementById("command-preview-text").textContent || "";
     updateQuickServerAddressPreview();
@@ -1313,13 +1349,13 @@ function initQuickLaunch() {
 
     on("quick-model-select", "change", (e) => {
         applyPresetModel(e.target.value);
-        updateCommandPreview();
+        flagCore.updateCommandPreview();
     });
 
     for (const radio of document.querySelectorAll('input[name="quick-launch-mode"]')) {
         radio.addEventListener("change", () => {
             if (radio.checked) {
-                setCurrentTool(radio.value);
+                flagCore.setCurrentTool(radio.value);
             }
         });
     }
@@ -1363,21 +1399,22 @@ function initQuickLaunch() {
     });
 
     on("quick-fit-toggle", "change", (e) => {
-        setFlagValue("fit", e.target.value || "on");
+        flagCore.setFlagValue("fit", e.target.value || "on");
     });
 
     on("quick-fit-target", "input", (e) => {
-        setFlagValue("fit_target", e.target.value.trim() || undefined);
+        flagCore.setFlagValue("fit_target", e.target.value.trim() || undefined);
     });
 
     on("quick-fit-ctx", "input", (e) => {
         const rawValue = e.target.value.trim();
         const nextFitCtx = rawValue === "" ? undefined : parseInt(rawValue, 10);
-        setFlagValue("fit_ctx", nextFitCtx, { quickLaunchFitCtxLinked: false });
+        flagCore.setFlagValue("fit_ctx", nextFitCtx, { quickLaunchFitCtxLinked: false });
     });
 
     on("btn-quick-fit-sync", "click", () => {
-        setFlagValue("fit_ctx", flagValues.ctx_size ?? 16000, { quickLaunchFitCtxLinked: true });
+        const values = flagCore.getFlagValues();
+        flagCore.setFlagValue("fit_ctx", values.ctx_size ?? 16000, { quickLaunchFitCtxLinked: true });
     });
 
     on("quick-template-pack", "change", (e) => {
@@ -1407,6 +1444,7 @@ function initQuickLaunch() {
         saveSamplerPresetStore(store);
         nameInput.value = "";
         refreshQuickSamplerPresetSelect();
+        configFlagsUi.renderFlags();
         const samplerSelect = document.getElementById("quick-sampler-select");
         if (samplerSelect) samplerSelect.value = `custom|${name}`;
     });
@@ -1430,6 +1468,7 @@ function initQuickLaunch() {
         delete store[selected.name];
         saveSamplerPresetStore(store);
         refreshQuickSamplerPresetSelect();
+        configFlagsUi.renderFlags();
     });
 
     const quickSamplerFieldMap = {
@@ -1451,14 +1490,14 @@ function initQuickLaunch() {
             } else {
                 nextValue = parseFloat(rawValue);
             }
-            setFlagValue(flagId, nextValue);
+            flagCore.setFlagValue(flagId, nextValue);
         }, 200));
     }
 
     on("btn-copy-quick-server-url", "click", copyQuickServerUrl);
 
     on("quick-metrics-toggle", "change", (e) => {
-        setFlagValue("metrics", e.target.checked);
+        flagCore.setFlagValue("metrics", e.target.checked);
     });
 
     on("btn-quick-launch", "click", async () => {
@@ -1481,17 +1520,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     initPresetLibraryControls();
     initQuickLaunch();
     initChatTab();
-    renderFlags();
+    configFlagsUi.renderFlags();
     refreshModels();
     fetchReleases();
-    updateCommandPreview();
+    flagCore.updateCommandPreview();
     updateApiEndpoints();
 
     document.getElementById("btn-launch").addEventListener("click", launchLlama);
     document.getElementById("btn-stop").addEventListener("click", stopLlama);
     document.getElementById("model-select").addEventListener("change", () => {
+        flagCore.setSelectedModelValue(document.getElementById("model-select").value || "");
         syncQuickLaunchModelOptions();
-        updateCommandPreview();
+        flagCore.updateCommandPreview();
     });
 
     const btnRefreshModels = document.getElementById("btn-refresh-models");
@@ -1537,7 +1577,7 @@ function switchTab(tabId) {
     if (tabId === "presets") loadPresets();
     if (tabId === "quick-launch") refreshQuickLaunchUI();
     if (tabId === "chat") { refreshChatSidebarUI(); updateChatStatusBadge(); }
-    if (tabId === "configure") updateCommandPreview();
+    if (tabId === "configure") flagCore.updateCommandPreview();
     if (tabId === "api") {
         Promise.resolve(checkStatus()).finally(() => {
             updateApiEndpoints();
@@ -1548,9 +1588,9 @@ function switchTab(tabId) {
 
 function initToolSelect() {
     const toolSel = document.getElementById("tool-select");
-    toolSel.value = currentTool;
+    toolSel.value = flagCore.getCurrentTool();
     toolSel.addEventListener("change", () => {
-        setCurrentTool(toolSel.value);
+        flagCore.setCurrentTool(toolSel.value);
     });
 }
 
@@ -1672,12 +1712,13 @@ async function refreshRemoteTunnelStatus() {
 async function startRemoteTunnel() {
     renderRemoteTunnelStatus({ status: "starting", message: "Starting Cloudflare tunnel..." });
     try {
+        const values = flagCore.getFlagValues();
         const state = await fetchJson("/api/remote-tunnel/start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                host: flagValues.host || "127.0.0.1",
-                port: flagValues.port || 8080,
+                host: values.host || "127.0.0.1",
+                port: values.port || 8080,
             }),
         });
         renderRemoteTunnelStatus(state);
@@ -1701,118 +1742,26 @@ async function stopRemoteTunnel() {
 }
 
 function initConfigControls() {
-    const search = document.getElementById("config-search");
-
-    const clearSearch = () => {
-        search.value = "";
-        configSearchQuery = "";
-        renderFlags();
-        search.focus();
-    };
-
-    search.addEventListener("input", debounce(() => {
-        configSearchQuery = search.value.trim().toLowerCase();
-        if (configSearchQuery) {
-            const groups = getFlagsByCategory(currentTool);
-            openCategories = new Set(Object.keys(groups));
-        }
-        renderFlags();
-    }, 200));
-
-    search.addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && (search.value || configSearchQuery)) {
-            e.preventDefault();
-            clearSearch();
-        }
-    });
-
-    document.getElementById("btn-clear-search").addEventListener("click", () => {
-        clearSearch();
-    });
-
-    document.getElementById("btn-configure-hf-download").addEventListener("click", () => {
-        switchTab("quick-launch");
-        const repoInput = document.getElementById("hf-repo-input");
-        if (repoInput) repoInput.focus();
-    });
-
-    document.getElementById("btn-expand-all").addEventListener("click", () => {
-        const groups = getFlagsByCategory(currentTool);
-        openCategories = new Set(Object.keys(groups));
-        openSubmenus.clear();
-        for (const [catId, group] of Object.entries(groups)) {
-            for (const flag of group.flags) {
-                const submenu = String(flag.submenu || "").trim();
-                if (submenu) {
-                    openSubmenus.add(`${catId}::${submenu}`);
-                }
-            }
-        }
-        renderFlags();
-    });
-
-    document.getElementById("btn-collapse-all").addEventListener("click", () => {
-        openCategories.clear();
-        openSubmenus.clear();
-        renderFlags();
-    });
+    return configFlagsUi.initConfigControls();
 }
 
 function flagMatchesSearch(flag, query) {
-    if (!query) return true;
-
-    const terms = [
-        flag.flag,
-        flag.label,
-        flag.id,
-        flag.desc,
-        flag.short_desc,
-        flag.beginner_tip,
-        flag.submenu,
-    ];
-
-    if (Array.isArray(flag.options)) {
-        for (const opt of flag.options) {
-            terms.push(opt.label, opt.value);
-        }
-    }
-
-    return terms
-        .filter(Boolean)
-        .some(v => String(v).toLowerCase().includes(query));
+    return configFlagsUi.flagMatchesSearch(flag, query);
 }
 
 function getFlagDescriptionParts(flag) {
-    const full = String((flag && flag.desc) || "").trim();
-    const short = String((flag && flag.short_desc) || "").trim();
-
-    if (short) {
-        return {
-            summary: short,
-            details: full && full !== short ? full : "",
-        };
-    }
-    if (!full) return { summary: "", details: "" };
-
-    const sentenceMatch = full.match(/^(.+?[.!?])(?:\s|$)/);
-    let summary = sentenceMatch ? sentenceMatch[1].trim() : full;
-
-    if (summary.length > 140) {
-        summary = summary.slice(0, 137).trimEnd() + "...";
-    }
-
-    const details = full !== summary ? full : "";
-    return { summary, details };
+    return configFlagsUi.getFlagDescriptionParts(flag);
 }
 
 function updateServerAddressPreview() {
     const el = document.getElementById("server-address");
-    if (currentTool !== "llama-server") {
+    if (flagCore.getCurrentTool() !== "llama-server") {
         el.classList.add("hidden");
         return;
     }
-    const host = flagValues.host || "127.0.0.1";
-    const port = flagValues.port || 8080;
+    const values = flagCore.getFlagValues();
+    const host = values.host || "127.0.0.1";
+    const port = values.port || 8080;
     const baseUrl = `http://${host}:${port}`;
     document.getElementById("server-url").href = baseUrl;
     document.getElementById("server-url").textContent = baseUrl;
@@ -1824,7 +1773,7 @@ function updateQuickServerAddressPreview() {
     const el = document.getElementById("quick-server-address");
     if (!el) return;
 
-    if (currentTool !== "llama-server") {
+    if (flagCore.getCurrentTool() !== "llama-server") {
         el.classList.add("hidden");
         return;
     }
@@ -1837,18 +1786,19 @@ function updateQuickServerAddressPreview() {
 }
 
 function getServerBaseUrl() {
-    const host = String(flagValues.host || "127.0.0.1").trim() || "127.0.0.1";
-    const parsedPort = Number(flagValues.port);
+    const values = flagCore.getFlagValues();
+    const host = String(values.host || "127.0.0.1").trim() || "127.0.0.1";
+    const parsedPort = Number(values.port);
     const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 8080;
     return `http://${host}:${port}`;
 }
 
 function getPreferredApiModelName() {
-    const alias = String(flagValues.alias || "").split(",")[0].trim();
+    const values = flagCore.getFlagValues();
+    const alias = String(values.alias || "").split(",")[0].trim();
     if (alias) return alias;
 
-    const modelSel = document.getElementById("model-select");
-    const selectedModel = modelSel && modelSel.value ? String(modelSel.value).trim() : "";
+    const selectedModel = String(flagCore.getSelectedModel() || "").trim();
     if (selectedModel) return selectedModel;
 
     return "your-model";
@@ -1867,8 +1817,9 @@ function updateApiEndpoints() {
     baseLink.textContent = baseUrl;
 
     const isRunning = !!(latestStatus && latestStatus.running);
-    const hasApiKey = String(flagValues.api_key || "").trim().length > 0;
-    const modeText = currentTool === "llama-server"
+    const values = flagCore.getFlagValues();
+    const hasApiKey = String(values.api_key || "").trim().length > 0;
+    const modeText = flagCore.getCurrentTool() === "llama-server"
         ? "Tool mode is set to llama-server."
         : "Tool mode is set to llama-cli. Switch to llama-server to expose HTTP endpoints.";
     const runningText = isRunning
@@ -1975,486 +1926,6 @@ function initPresetImport() {
     });
 }
 
-function renderFlags() {
-    const container = document.getElementById("flags-container");
-    container.innerHTML = "";
-    const groups = getFlagsByCategory(currentTool);
-
-    let visibleGroups = 0;
-
-    for (const [catId, group] of Object.entries(groups)) {
-        const categoryMatches = group.name.toLowerCase().includes(configSearchQuery);
-        const visibleFlags = configSearchQuery
-            ? group.flags.filter(f => categoryMatches || flagMatchesSearch(f, configSearchQuery))
-            : group.flags;
-
-        if (visibleFlags.length === 0) {
-            continue;
-        }
-
-        visibleGroups += 1;
-
-        const acc = document.createElement("div");
-        acc.className = "accordion";
-        acc.dataset.categoryId = catId;
-
-        const header = document.createElement("div");
-        header.className = "accordion-header";
-        const countText = visibleFlags.length === group.flags.length
-            ? String(group.flags.length)
-            : `${visibleFlags.length}/${group.flags.length}`;
-        header.innerHTML = `
-            <span class="arrow">&#x25B6;</span>
-            <h3>${group.name}</h3>
-            <span class="count">${countText}</span>
-        `;
-
-        const body = document.createElement("div");
-        body.className = "accordion-body";
-
-        if (openCategories.has(catId)) {
-            header.classList.add("open");
-            body.classList.add("open");
-        }
-
-        header.addEventListener("click", () => {
-            header.classList.toggle("open");
-            body.classList.toggle("open");
-            if (body.classList.contains("open")) {
-                openCategories.add(catId);
-            } else {
-                openCategories.delete(catId);
-            }
-        });
-
-        if (catId === "sampling") {
-            body.appendChild(createSamplerPresetControls());
-        }
-
-        const topLevelFlags = visibleFlags.filter(f => !String(f.submenu || "").trim());
-        const submenuMap = new Map();
-        for (const f of visibleFlags) {
-            const submenu = String(f.submenu || "").trim();
-            if (!submenu) continue;
-            if (!submenuMap.has(submenu)) submenuMap.set(submenu, []);
-            submenuMap.get(submenu).push(f);
-        }
-
-        for (const f of topLevelFlags) {
-            const row = createFlagRow(f);
-            body.appendChild(row);
-        }
-
-        for (const [submenuName, submenuFlags] of submenuMap.entries()) {
-            body.appendChild(createSubmenuBlock(catId, submenuName, submenuFlags));
-        }
-
-        acc.appendChild(header);
-        acc.appendChild(body);
-        container.appendChild(acc);
-    }
-
-    if (visibleGroups === 0) {
-        const empty = document.createElement("div");
-        empty.className = "flags-empty";
-        empty.textContent = "No configuration options match your search.";
-        container.appendChild(empty);
-    }
-
-    restoreFlagInputs();
-    refreshQuickLaunchUI();
-}
-
-function createSubmenuBlock(categoryId, submenuName, submenuFlags) {
-    const wrap = document.createElement("div");
-    wrap.className = "flag-submenu";
-
-    const header = document.createElement("button");
-    header.type = "button";
-    header.className = "flag-submenu-header";
-
-    const arrow = document.createElement("span");
-    arrow.className = "arrow";
-    arrow.innerHTML = "&#x25B6;";
-
-    const title = document.createElement("span");
-    title.className = "submenu-title";
-    title.textContent = submenuName;
-
-    const count = document.createElement("span");
-    count.className = "count";
-    count.textContent = String(submenuFlags.length);
-
-    header.appendChild(arrow);
-    header.appendChild(title);
-    header.appendChild(count);
-
-    const body = document.createElement("div");
-    body.className = "flag-submenu-body";
-
-    const key = `${categoryId}::${submenuName}`;
-    if (openSubmenus.has(key)) {
-        header.classList.add("open");
-        body.classList.add("open");
-    }
-
-    header.addEventListener("click", () => {
-        header.classList.toggle("open");
-        body.classList.toggle("open");
-        if (body.classList.contains("open")) {
-            openSubmenus.add(key);
-        } else {
-            openSubmenus.delete(key);
-        }
-    });
-
-    for (const flag of submenuFlags) {
-        body.appendChild(createFlagRow(flag));
-    }
-
-    wrap.appendChild(header);
-    wrap.appendChild(body);
-    return wrap;
-}
-
-function createFlagRow(f) {
-    const row = document.createElement("div");
-    row.className = "flag-row";
-    row.dataset.flagId = f.id;
-
-    const label = document.createElement("div");
-    label.className = "flag-label";
-    let defaultText = "";
-    if (f.default !== undefined) defaultText = ` [default: ${f.default}]`;
-
-    const titleRow = document.createElement("div");
-    titleRow.className = "flag-title-row";
-
-    const flagName = document.createElement("span");
-    flagName.className = "flag-name";
-    flagName.textContent = f.flag;
-    titleRow.appendChild(flagName);
-
-    if (f.beginner_tip) {
-        const tipDetails = document.createElement("details");
-        tipDetails.className = "flag-tip-details";
-
-        const tipSummary = document.createElement("summary");
-        tipSummary.className = "flag-tip";
-        tipSummary.textContent = "Beginner tip";
-
-        const tipText = document.createElement("div");
-        tipText.className = "flag-tip-text";
-        tipText.textContent = f.beginner_tip;
-
-        tipDetails.appendChild(tipSummary);
-        tipDetails.appendChild(tipText);
-        titleRow.appendChild(tipDetails);
-    }
-
-    const { summary, details } = getFlagDescriptionParts(f);
-    const flagDesc = document.createElement("span");
-    flagDesc.className = "flag-desc";
-    flagDesc.textContent = summary;
-
-    label.appendChild(titleRow);
-    label.appendChild(flagDesc);
-
-    if (details) {
-        const more = document.createElement("details");
-        more.className = "flag-more";
-
-        const moreSummary = document.createElement("summary");
-        moreSummary.textContent = "More info";
-
-        const moreText = document.createElement("div");
-        moreText.className = "flag-more-text";
-        moreText.textContent = details;
-
-        more.appendChild(moreSummary);
-        more.appendChild(moreText);
-        label.appendChild(more);
-    }
-
-    if (defaultText) {
-        const flagDefault = document.createElement("span");
-        flagDefault.className = "flag-default";
-        flagDefault.textContent = defaultText;
-        label.appendChild(flagDefault);
-    }
-
-    if (f.type === "bool" && f.false_flag) {
-        const toggleHint = document.createElement("span");
-        toggleHint.className = "flag-toggle-hint";
-        toggleHint.textContent = `Off -> ${f.false_flag}`;
-        label.appendChild(toggleHint);
-    }
-
-    const input = document.createElement("div");
-    input.className = "flag-input";
-
-    if (f.type === "bool") {
-        const cb = document.createElement("div");
-        cb.className = "checkbox-group";
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.id = "flag-" + f.id;
-        checkbox.dataset.flagId = f.id;
-        checkbox.dataset.flagType = "bool";
-        checkbox.checked = flagValues[f.id] === true;
-        checkbox.addEventListener("change", () => {
-            setFlagValue(f.id, checkbox.checked);
-        });
-        const lbl = document.createElement("label");
-        lbl.htmlFor = "flag-" + f.id;
-        lbl.textContent = checkbox.checked ? "Enabled" : "Disabled";
-        checkbox.addEventListener("change", () => {
-            lbl.textContent = checkbox.checked ? "Enabled" : "Disabled";
-        });
-        cb.appendChild(checkbox);
-        cb.appendChild(lbl);
-        input.appendChild(cb);
-    } else if (f.type === "enum") {
-        const sel = document.createElement("select");
-        sel.id = "flag-" + f.id;
-        sel.dataset.flagId = f.id;
-        sel.dataset.flagType = "enum";
-        for (const opt of f.options) {
-            const o = document.createElement("option");
-            o.value = opt.value;
-            o.textContent = opt.label;
-            o.selected = String(flagValues[f.id] || "") === opt.value;
-            sel.appendChild(o);
-        }
-        sel.addEventListener("change", () => {
-            if (f.id === "chat_template") {
-                setChatTemplateValue(sel.value);
-            } else {
-                setFlagValue(f.id, sel.value || undefined);
-            }
-        });
-        input.appendChild(sel);
-    } else if (f.type === "multi_enum") {
-        const selected = normalizeMultiEnumValue(flagValues[f.id]);
-        const optionWrap = document.createElement("div");
-        optionWrap.className = "flag-multi-options";
-        const hasHighRiskOptions = (f.options || []).some(opt => opt.risk === "high");
-        const warning = document.createElement("div");
-        warning.className = "flag-multi-warning hidden";
-        warning.dataset.flagWarningId = f.id;
-        warning.textContent = "High-risk tools selected. Only enable on trusted/local environments.";
-
-        const updateWarning = (selectedValues) => {
-            if (!hasHighRiskOptions) return;
-            warning.classList.toggle("hidden", !hasSelectedHighRiskOption(f.options, selectedValues));
-        };
-
-        const setValueAndRefresh = (arr) => {
-            const unique = [...new Set(arr.filter(Boolean))];
-            const val = unique.length > 0 ? unique : undefined;
-            setFlagValue(f.id, val);
-        };
-
-        for (const opt of f.options || []) {
-            const row = document.createElement("label");
-            row.className = "flag-multi-option";
-
-            const cb = document.createElement("input");
-            cb.type = "checkbox";
-            cb.dataset.flagId = f.id;
-            cb.dataset.flagType = "multi_enum";
-            cb.dataset.optionValue = opt.value;
-            cb.checked = selected.includes(opt.value);
-
-            cb.addEventListener("change", () => {
-                const current = normalizeMultiEnumValue(flagValues[f.id]);
-                if (opt.value === "all" && cb.checked) {
-                    setValueAndRefresh(["all"]);
-                } else {
-                    const next = cb.checked
-                        ? [...current.filter(v => v !== "all"), opt.value]
-                        : current.filter(v => v !== opt.value);
-                    setValueAndRefresh(next);
-                }
-
-                const nextSelected = normalizeMultiEnumValue(flagValues[f.id]);
-                for (const other of optionWrap.querySelectorAll('input[type="checkbox"]')) {
-                    other.checked = nextSelected.includes(other.dataset.optionValue);
-                }
-                updateWarning(nextSelected);
-            });
-
-            const text = document.createElement("span");
-            text.textContent = opt.label;
-
-            row.appendChild(cb);
-            row.appendChild(text);
-            if (opt.risk === "high") {
-                const badge = document.createElement("span");
-                badge.className = "flag-risk-badge";
-                badge.textContent = "High risk";
-                row.appendChild(badge);
-            }
-            optionWrap.appendChild(row);
-        }
-
-        input.appendChild(optionWrap);
-        if (hasHighRiskOptions) {
-            updateWarning(selected);
-            input.appendChild(warning);
-        }
-    } else if (f.type === "path") {
-        const textField = document.createElement("input");
-        textField.type = "text";
-        textField.id = "flag-" + f.id;
-        textField.dataset.flagId = f.id;
-        textField.dataset.flagType = "path";
-        textField.placeholder = f.placeholder || "Path...";
-        textField.value = flagValues[f.id] || "";
-        textField.addEventListener("input", () => {
-            setPathFlagValue(f.id, textField.value || undefined);
-        });
-        const browseBtn = document.createElement("button");
-        browseBtn.className = "btn btn-sm";
-        browseBtn.textContent = "Browse";
-        browseBtn.addEventListener("click", async () => {
-            try {
-                const selectedPath = await browseForPathFlag(f);
-                if (!selectedPath) return;
-                textField.value = selectedPath;
-                setPathFlagValue(f.id, selectedPath);
-            } catch (e) {
-                showStatus("error", "Failed to select file: " + e.message);
-            }
-        });
-        input.appendChild(textField);
-        input.appendChild(browseBtn);
-    } else if (f.type === "int") {
-        const numField = document.createElement("input");
-        numField.type = "number";
-        numField.id = "flag-" + f.id;
-        numField.dataset.flagId = f.id;
-        numField.dataset.flagType = "int";
-        numField.placeholder = f.placeholder || String(f.default ?? "");
-        numField.value = flagValues[f.id] ?? "";
-        if (f.min !== undefined) numField.min = f.min;
-        if (f.max !== undefined) numField.max = f.max;
-        if (f.step !== undefined) numField.step = f.step;
-        numField.addEventListener("input", () => {
-            const v = numField.value === "" ? undefined : parseInt(numField.value, 10);
-            setFlagValue(f.id, v);
-        });
-        input.appendChild(numField);
-    } else if (f.type === "float") {
-        const numField = document.createElement("input");
-        numField.type = "number";
-        numField.id = "flag-" + f.id;
-        numField.dataset.flagId = f.id;
-        numField.dataset.flagType = "float";
-        numField.placeholder = f.placeholder || String(f.default ?? "");
-        numField.value = flagValues[f.id] ?? "";
-        numField.step = f.step || "0.01";
-        if (f.min !== undefined) numField.min = f.min;
-        if (f.max !== undefined) numField.max = f.max;
-        numField.addEventListener("input", () => {
-            const v = numField.value === "" ? undefined : parseFloat(numField.value);
-            setFlagValue(f.id, v);
-        });
-        input.appendChild(numField);
-    } else {
-        const textField = document.createElement("input");
-        textField.type = "text";
-        textField.id = "flag-" + f.id;
-        textField.dataset.flagId = f.id;
-        textField.dataset.flagType = "text";
-        textField.placeholder = f.placeholder || "";
-        textField.value = flagValues[f.id] || "";
-        textField.addEventListener("input", () => {
-            setFlagValue(f.id, textField.value || undefined);
-        });
-        input.appendChild(textField);
-    }
-
-    row.appendChild(label);
-    row.appendChild(input);
-    return row;
-}
-
-function collectFlagValues() {
-    const values = {};
-    for (const [k, v] of Object.entries(flagValues)) {
-        values[k] = Array.isArray(v) ? [...v] : v;
-    }
-    return values;
-}
-
-function applyFlagValues(data) {
-    flagValues = { ...getDefaultValues(), ...data };
-    selectedChatTemplatePresetValue = "";
-    if (flagValues.chat_template_custom) {
-        const bundled = getChatTemplatePresetByPath(flagValues.chat_template_custom);
-        if (bundled) selectedChatTemplatePresetValue = bundled.value;
-    } else if (flagValues.chat_template) {
-        const builtin = getChatTemplatePresetByBuiltinName(flagValues.chat_template);
-        if (builtin) selectedChatTemplatePresetValue = builtin.value;
-    }
-    const fitCtx = flagValues.fit_ctx;
-    const ctxSize = flagValues.ctx_size;
-    quickLaunchFitCtxLinked = fitCtx === undefined || fitCtx === ctxSize;
-    syncUiAfterSharedStateChange();
-}
-
-function restoreFlagInputs() {
-    for (const f of FLAGS) {
-        const el = document.getElementById("flag-" + f.id);
-        const val = flagValues[f.id];
-        if (f.type === "multi_enum") {
-            const selected = normalizeMultiEnumValue(val);
-            const multiInputs = document.querySelectorAll(`input[data-flag-id="${f.id}"][data-flag-type="multi_enum"]`);
-            for (const input of multiInputs) {
-                input.checked = selected.includes(input.dataset.optionValue);
-            }
-            const warning = document.querySelector(`.flag-multi-warning[data-flag-warning-id="${f.id}"]`);
-            if (warning) {
-                warning.classList.toggle("hidden", !hasSelectedHighRiskOption(f.options, selected));
-            }
-            continue;
-        }
-        if (!el) continue;
-        if (f.type === "bool") {
-            el.checked = val === true;
-            const lbl = el.parentElement.querySelector("label");
-            if (lbl) lbl.textContent = val === true ? "Enabled" : "Disabled";
-        } else if (f.type === "enum") {
-            if (f.id === "chat_template") {
-                el.value = getSelectedChatTemplateDropdownValue();
-            } else {
-                el.value = val !== undefined ? String(val) : "";
-            }
-        } else {
-            el.value = val !== undefined ? String(val) : "";
-        }
-    }
-}
-
-function normalizeMultiEnumValue(value) {
-    if (Array.isArray(value)) return value.map(v => String(v)).filter(Boolean);
-    if (typeof value === "string" && value.trim()) {
-        return value
-            .split(",")
-            .map(v => v.trim())
-            .filter(Boolean);
-    }
-    return [];
-}
-
-function hasSelectedHighRiskOption(options, selectedValues) {
-    const highRiskValues = new Set((options || [])
-        .filter(opt => opt && opt.risk === "high")
-        .map(opt => String(opt.value)));
-    return selectedValues.some(v => highRiskValues.has(String(v)));
-}
-
 function getExecutableSuffix() {
     if (typeof latestStatus !== "undefined" && latestStatus && typeof latestStatus.executable_suffix === "string") {
         return latestStatus.executable_suffix;
@@ -2467,118 +1938,19 @@ function getToolBinaryName(tool) {
     return tool + getExecutableSuffix();
 }
 
-function updateCommandPreview() {
-    const result = getLaunchArgs();
-    const args = result.args;
-    const parts = [getToolBinaryName(currentTool)];
-    for (const entry of args) {
-        if (Array.isArray(entry)) {
-            parts.push(...entry);
-        } else {
-            parts.push(String(entry));
-        }
-    }
-    const cmd = parts.join(" ");
-    document.getElementById("command-preview-text").textContent = cmd;
-    updateServerAddressPreview();
-    updateApiEndpoints();
-    refreshQuickLaunchUI();
-}
-
-function shouldOmitFlagValue(f, value) {
-    const inertDefaultValues = {
-        n_predict: -1,
-        keep: 0,
-        threads: -1,
-        top_n_sigma: -1,
-        typical_p: 1.0,
-        repeat_penalty: 1.0,
-        presence_penalty: 0,
-        frequency_penalty: 0,
-        dry_multiplier: 0,
-        dynatemp_range: 0,
-        seed: -1,
-        yarn_orig_ctx: 0,
-        yarn_ext_factor: -1,
-        yarn_attn_factor: -1,
-        yarn_beta_slow: -1,
-        yarn_beta_fast: -1,
-        reasoning_budget: -1,
-        cache_reuse: 0,
-        ctx_checkpoints: 32,
-        checkpoint_every_n_tokens: 8192,
-    };
-
-    if (!Object.prototype.hasOwnProperty.call(inertDefaultValues, f.id)) {
-        return false;
-    }
-
-    const expected = inertDefaultValues[f.id];
-    if (typeof expected === "number") {
-        return Number(value) === expected;
-    }
-    return String(value) === String(expected);
-}
-
-function getLaunchArgs() {
-    const modelSel = document.getElementById("model-select");
-    const args = [];
-    const toolBase = currentTool.replace("llama-", "");
-
-    for (const f of FLAGS) {
-        if (f.tool !== "both" && f.tool !== toolBase) continue;
-        if (typeof shouldOmitSpeculativeFlag === "function" && shouldOmitSpeculativeFlag(f, flagValues)) continue;
-        const val = flagValues[f.id];
-        if (val === undefined || val === null || val === "") continue;
-
-        if (f.type === "bool") {
-            if (val === true && !f.flag.startsWith("--no-")) {
-                if (f.id === "preserve_thinking") {
-                    args.push([f.flag, '{"preserve_thinking":true}']);
-                } else {
-                    args.push([f.flag]);
-                }
-            } else if (val === false && f.false_flag) {
-                args.push([f.false_flag]);
-            } else if (val === true && f.flag.startsWith("--no-")) {
-                args.push([f.flag]);
-            }
-        } else if (f.type === "multi_enum") {
-            const values = normalizeMultiEnumValue(val);
-            if (values.length > 0) {
-                args.push([f.flag, values.join(",")]);
-            }
-        } else {
-            if (f.id === "chat_template" && typeof isSupportedChatTemplateValue === "function" && !isSupportedChatTemplateValue(val)) {
-                continue;
-            }
-            if (shouldOmitFlagValue(f, val)) continue;
-            args.push([f.flag, String(val)]);
-        }
-    }
-
-    if (modelSel.value) {
-        const modelName = modelSel.value;
-        if (modelName.includes("..") || modelName.includes("/") || modelName.includes("\\")) {
-            return { args, error: "Invalid model filename." };
-        }
-        args.push(["-m", "models/" + modelName]);
-    }
-
-    return { args, error: null };
-}
-
 function restoreRunningState(status) {
     if (!status || !status.running) return;
 
     const tool = status.active_process_tool || "llama-server";
-    currentTool = tool;
+    flagCore.setCurrentTool(tool);
     const toolSelect = document.getElementById("tool-select");
     if (toolSelect) toolSelect.value = tool;
 
     if (status.api_target) {
-        if (status.api_target.host) setFlagValue("host", status.api_target.host);
-        if (status.api_target.port) setFlagValue("port", status.api_target.port);
+        const patch = {};
+        if (status.api_target.host) patch.host = status.api_target.host;
+        if (status.api_target.port) patch.port = status.api_target.port;
+        if (Object.keys(patch).length > 0) flagCore.setMultipleFlagValues(patch);
     }
 
     document.getElementById("btn-launch").classList.add("hidden");
@@ -2606,12 +1978,14 @@ function restoreRunningState(status) {
 }
 
 async function launchLlama() {
-    const result = getLaunchArgs();
+    const result = flagCore.getLaunchArgs();
     if (result.error) {
         alert(result.error);
         return;
     }
     const args = result.args;
+    const tool = flagCore.getCurrentTool();
+    const values = flagCore.getFlagValues();
     const hasModel = args.some(a => a[0] === "-m" || a[0] === "-hf");
     if (!hasModel) {
         alert("Select a model or provide an HF repo before launching.");
@@ -2623,7 +1997,7 @@ async function launchLlama() {
     document.getElementById("output-section").classList.remove("hidden");
     updateQuickLaunchActionButtons();
 
-    if (currentTool === "llama-cli") {
+    if (tool === "llama-cli") {
         document.getElementById("input-row").classList.remove("hidden");
     } else {
         document.getElementById("input-row").classList.add("hidden");
@@ -2635,7 +2009,7 @@ async function launchLlama() {
         const launchResult = await fetchJson("/api/launch", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tool: currentTool, args }),
+            body: JSON.stringify({ tool, args }),
         });
         if (launchResult.error) {
             appendOutput("ERROR: " + launchResult.error);
@@ -2643,15 +2017,15 @@ async function launchLlama() {
             document.getElementById("btn-stop").classList.add("hidden");
             updateQuickLaunchActionButtons();
         } else {
-            appendOutput("Started " + currentTool + " (PID: " + launchResult.pid + ")");
+            appendOutput("Started " + tool + " (PID: " + launchResult.pid + ")");
             appendOutput(launchResult.command);
             appendOutput("---");
             startOutputPolling();
             updateServerAddressPreview();
 
-            if (currentTool === "llama-server") {
-                const host = flagValues.host || "127.0.0.1";
-                const port = flagValues.port || 8080;
+            if (tool === "llama-server") {
+                const host = values.host || "127.0.0.1";
+                const port = values.port || 8080;
                 const baseUrl = `http://${host}:${port}`;
                 appendOutput(`Server running at ${baseUrl}`);
                 appendOutput(`Web UI: ${baseUrl}/`);
@@ -2731,8 +2105,9 @@ async function pollStats() {
     if (pollStatsActive) return;
     pollStatsActive = true;
     try {
-        const host = String(flagValues.host || "127.0.0.1").trim() || "127.0.0.1";
-        const parsedPort = Number(flagValues.port);
+        const values = flagCore.getFlagValues();
+        const host = String(values.host || "127.0.0.1").trim() || "127.0.0.1";
+        const parsedPort = Number(values.port);
         const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 8080;
         const params = new URLSearchParams({ host, port: String(port) });
         const resp = await fetch(`/api/llama/metrics?${params.toString()}`);
@@ -2943,11 +2318,12 @@ function renderMarkdown(text) {
 }
 
 function refreshChatSidebarUI() {
+    const values = flagCore.getFlagValues();
     for (const [sliderId, meta] of Object.entries(CHAT_SAMPLER_SLIDER_MAP)) {
         const slider = document.getElementById(sliderId);
         const display = document.getElementById(sliderId.replace("slider", "val"));
         if (!slider || !display) continue;
-        const val = flagValues[meta.flag];
+        const val = values[meta.flag];
         if (val !== undefined && val !== null && val !== "") {
             slider.value = val;
             display.textContent = parseFloat(val).toFixed(meta.decimals);
@@ -2956,7 +2332,7 @@ function refreshChatSidebarUI() {
     const maxTokensSlider = document.getElementById("chat-slider-max-tokens");
     const maxTokensDisplay = document.getElementById("chat-val-max-tokens");
     if (maxTokensSlider && maxTokensDisplay) {
-        const nPredict = flagValues.n_predict;
+        const nPredict = values.n_predict;
         if (nPredict !== undefined && nPredict !== null && nPredict !== "" && nPredict !== -1) {
             maxTokensSlider.value = nPredict;
             maxTokensDisplay.textContent = parseInt(nPredict, 10);
@@ -2968,16 +2344,18 @@ function refreshChatSidebarUI() {
 }
 
 function getChatModelName() {
-    const modelSel = document.getElementById("model-select");
-    const alias = String(flagValues.alias || "").split(",")[0].trim();
+    const values = flagCore.getFlagValues();
+    const alias = String(values.alias || "").split(",")[0].trim();
     if (alias) return alias;
-    if (modelSel && modelSel.value) return modelSel.value;
+    const selectedModel = flagCore.getSelectedModel();
+    if (selectedModel) return selectedModel;
     return "local-model";
 }
 
 function getChatApiUrl() {
-    const host = String(flagValues.host || "127.0.0.1").trim() || "127.0.0.1";
-    const parsedPort = Number(flagValues.port);
+    const values = flagCore.getFlagValues();
+    const host = String(values.host || "127.0.0.1").trim() || "127.0.0.1";
+    const parsedPort = Number(values.port);
     const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 8080;
     return `http://${host}:${port}/v1/chat/completions`;
 }
@@ -3124,19 +2502,20 @@ function showChatSendButton(show) {
 
 function getChatSamplerParams() {
     const params = {};
-    const temp = flagValues.temperature;
+    const values = flagCore.getFlagValues();
+    const temp = values.temperature;
     if (temp !== undefined && temp !== null) params.temperature = temp;
-    const topP = flagValues.top_p;
+    const topP = values.top_p;
     if (topP !== undefined && topP !== null) params.top_p = topP;
-    const topK = flagValues.top_k;
+    const topK = values.top_k;
     if (topK !== undefined && topK !== null && topK !== 0) params.top_k = topK;
-    const minP = flagValues.min_p;
+    const minP = values.min_p;
     if (minP !== undefined && minP !== null) params.min_p = minP;
-    const repeatPenalty = flagValues.repeat_penalty;
+    const repeatPenalty = values.repeat_penalty;
     if (repeatPenalty !== undefined && repeatPenalty !== null && repeatPenalty !== 1.0) {
         params.repeat_penalty = repeatPenalty;
     }
-    const nPredict = flagValues.n_predict;
+    const nPredict = values.n_predict;
     if (nPredict !== undefined && nPredict !== null && nPredict !== -1) {
         params.max_tokens = nPredict;
     }
@@ -3164,12 +2543,14 @@ async function sendChatMessage(userText) {
     }
     messages.push(...getChatRequestMessages(chatMessages));
 
+    const values = flagCore.getFlagValues();
+    const parsedPort = Number(values.port);
     const body = {
         model: getChatModelName(),
         messages,
         stream: true,
-        host: String(flagValues.host || "127.0.0.1").trim() || "127.0.0.1",
-        port: (() => { const p = Number(flagValues.port); return Number.isFinite(p) && p > 0 ? p : 8080; })(),
+        host: String(values.host || "127.0.0.1").trim() || "127.0.0.1",
+        port: Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 8080,
         ...getChatSamplerParams(),
     };
     const webSearchEnabled = isChatWebSearchEnabled();
@@ -3650,7 +3031,7 @@ function initChatTab() {
             const raw = parseFloat(slider.value);
             display.textContent = raw.toFixed(meta.decimals);
             const val = meta.flag === "top_k" ? parseInt(slider.value, 10) : parseFloat(slider.value);
-            setFlagValue(meta.flag, val);
+            flagCore.setFlagValue(meta.flag, val);
         });
     }
 
