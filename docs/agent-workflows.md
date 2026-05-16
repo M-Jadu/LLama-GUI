@@ -15,7 +15,10 @@ Do not modify `ui/js/flags.js` during the audit unless the user explicitly asks 
 | File | Role |
 |---|---|
 | `ui/js/flags.js` | Single source of truth for all CLI flags exposed in the UI |
-| `ui/js/app.js` | Shared setter/state and launch-arg generation logic that consumes `FLAGS` |
+| `ui/js/flag-core.js` | Shared flag state, setters, selected model/tool state, command preview, and launch-arg generation that consumes `FLAGS` |
+| `ui/js/config-flags-ui.js` | Configure tab rendering for all flag input types, search/filtering, input restore, and high-risk multi-select warnings |
+| `ui/js/flag-validation.js` | Startup validation for flag definition shape, duplicate ids, duplicate CLI flags, enum options, and defaults |
+| `ui/js/app.js` | App orchestration and tab-specific behavior that calls into `flagCore` and `configFlagsUi` |
 
 **Upstream**
 
@@ -145,7 +148,7 @@ Check:
 | Description | Significant behavior changes |
 | Deprecation | Warnings or deprecation notes in handler/help text |
 
-Important: local defaults may intentionally differ as GUI safe defaults. Still report them, because this app initializes `flagValues` from `getDefaultValues()` and launch args may emit those values.
+Important: local defaults may intentionally differ as GUI safe defaults. Still report them, because this app initializes `flagCore` state from `getDefaultValues()` and launch args may emit those values.
 
 ##### D. Chat template changes
 
@@ -181,6 +184,22 @@ Scan `tools/server/server.cpp` and `examples/server/README.md` for `--flag` stri
 | `grammar` | grammar, JSON schema, constraints, sampling backend |
 | `logging` | verbose, log, timestamps, colors, timings |
 | `advanced` | override, tensor check, warmup, offline, host buffer, shortcut presets |
+
+### Implementation Map
+
+When the user asks to implement flag audit findings:
+
+| Change type | Primary file |
+|---|---|
+| Add, remove, rename, or change a llama.cpp flag | `ui/js/flags.js` |
+| Change launch-argument emission or shared state behavior | `ui/js/flag-core.js` |
+| Change Configure tab rendering/search/input behavior | `ui/js/config-flags-ui.js` |
+| Change Quick Launch, Chat, API, or tab-specific summaries | `ui/js/app.js` |
+| Change preset save/load/import/export behavior | `ui/js/presets.js` |
+| Strengthen local flag definition checks | `ui/js/flag-validation.js` |
+| Verify mirrored controls and command preview | `tests/frontend/flag_sync_smoke.cjs` |
+
+Keep the AGENTS.md state sync rule in mind: duplicated controls must read from the same `flagCore` state and write through the shared setter path.
 
 ### Output Format
 
@@ -234,6 +253,7 @@ These examples came up in a recent audit and are useful as calibration points:
 ### Reminders
 
 - Prefer `rg` for local search.
+- On Windows/PowerShell, prefer safe `rg` patterns such as `rg -n "pattern" ui/js` or `rg -n -g "*.js" "pattern" ui/js`; avoid path globs like `ui/js/*.js`.
 - Keep the audit read-only unless the user asks for edits.
 - Always include the upstream commit SHA.
 - Report default differences even if they are intentional.
@@ -257,7 +277,9 @@ Use this workflow when updating bundled chat templates under `ui/templates/`, es
 1. Find all current app references:
    - Template files: `ui/templates/*`
    - Preset definitions: `CHAT_TEMPLATE_PRESETS` in `ui/js/flags.js`
-   - Shared state helpers in `ui/js/app.js` if new behavior is needed
+   - Shared state and launch helpers in `ui/js/flag-core.js` if new launch-state behavior is needed
+   - Configure rendering behavior in `ui/js/config-flags-ui.js` if a new flag input type or rendering rule is needed
+   - Tab-specific dropdown/summary helpers in `ui/js/app.js` if new template UI behavior is needed
 2. Download the official template files and compare variants by size/hash/content.
 3. Add or replace bundled `.jinja` files with the upstream content.
 4. Keep backward-compatible template paths when saved presets may already reference them.
@@ -289,6 +311,7 @@ Use this workflow when updating bundled chat templates under `ui/templates/`, es
 - Confirm every new preset appears in both Configure and Quick Launch.
 - Confirm mirrored controls stay synced when either one changes.
 - Confirm command preview uses `--chat-template-file` for bundled templates and does not also emit `--chat-template`.
+- Run `tests/frontend/flag_sync_smoke.cjs` after flag or mirrored-control changes when Playwright is available.
 - Render representative samples through each template:
   - plain user/assistant turns
   - system/developer prompts

@@ -32,6 +32,12 @@ If a shared control becomes unreliable, prefer removing the duplicate UI over ke
 
 ## How the program works
 
+### Companion Repositories
+- **Pinokio launcher:** `https://github.com/thomas9120/llama-gui-pinokio`
+- The Pinokio launcher clones this repo into its `app/` directory, installs `requirements.txt`, starts `python server.py`, and may apply launcher-specific patches.
+- For large changes to startup/shutdown behavior, `server.py`, backend lifecycle routes, static asset loading, dependency installation, ports, cache busting, or frontend script loading, check the Pinokio launcher for compatibility.
+- Frontend-only internal refactors, such as changes inside `ui/js/flag-core.js` or `ui/js/config-flags-ui.js`, are usually compatible as long as `ui/index.html` script loading and the `python server.py` entrypoint still work.
+
 ### Architecture
 - A static web UI served by a Python `http.server` backend on port 5240.
 - The backend handles `llama.cpp` installation, process management, API proxying, model downloading, remote tunnels, and web search.
@@ -55,8 +61,11 @@ If a shared control becomes unreliable, prefer removing the duplicate UI over ke
 
 ### Frontend
 - **`ui/index.html`**: HTML template defining the tabbed layout and UI structure.
-- **`ui/js/app.js`**: Core frontend logic (~3600 lines). Manages tab switching, flag collection, server launch/stop, output polling, stats polling, chat (streaming, web search, conversation history), quick launch (profiles, HF download, sampler presets), remote tunnel, toasts, and cache-busting reload.
-- **`ui/js/flags.js`**: Defines CLI flag categories, data types, built-in chat templates, chat template presets, sampler presets, and quick launch profiles.
+- **`ui/js/app.js`**: Main UI orchestration. Manages tab switching, server launch/stop, output polling, stats polling, chat (streaming, web search, conversation history), Quick Launch profiles/HF download/sampler presets, remote tunnel, toasts, and cache-busting reload.
+- **`ui/js/flags.js`**: Single source of truth for exposed `llama.cpp` flags, flag categories, data types, built-in chat templates, chat template presets, sampler presets, and quick launch profiles.
+- **`ui/js/flag-core.js`**: Shared frontend flag state and launch-argument core. Owns `currentTool`, selected model, `flagValues`, shared setters, preset apply/collect helpers, `getLaunchArgs()`, and command preview generation.
+- **`ui/js/config-flags-ui.js`**: Configure tab flag rendering, search/filtering, expand/collapse state, type-specific flag input builders, input restoration, and high-risk `multi_enum` warnings.
+- **`ui/js/flag-validation.js`**: Non-blocking startup validation for `flags.js` definitions (duplicate ids, invalid categories/tools/types, enum options, default value shape, duplicate CLI flags).
 - **`ui/js/manager.js`**: Handles GitHub release fetching, backend selection, installation progress UI, app update (git status/pull/restart), and the shared `fetchJson()` utility.
 - **`ui/js/presets.js`**: Manages preset normalization, validation, saving, loading, updating, deleting, exporting, importing, and group-by-model rendering with search and collapsible groups.
 - **`ui/css/style.css`**: Stylesheet implementing the dark theme (Tokyo Night) and responsive layout.
@@ -71,9 +80,10 @@ If a shared control becomes unreliable, prefer removing the duplicate UI over ke
 6. **Presets**: Save, load, import, export, and manage preset configurations grouped by model.
 
 ### Data Flow
-- UI changes route through a shared setter (`setFlagValue`/`setMultipleFlagValues`) to update state.
-- All mirrored controls read from the same underlying `flagValues` object.
-- Command preview and launch args are generated from shared state (`getLaunchArgs()`), never per-tab copies.
+- Launch-relevant UI changes route through `window.LlamaGui.flagCore` shared setters (`setFlagValue`/`setMultipleFlagValues`) to update state.
+- All mirrored controls read from the same underlying `flagCore` state object (`flagValues`, selected model, and current tool).
+- Configure flag rendering lives in `window.LlamaGui.configFlagsUi`, but rendered controls still read from `flagCore` and write through the shared setter path.
+- Command preview and launch args are generated from shared state (`flagCore.getLaunchArgs()`), never per-tab copies.
 - Server output is polled via HTTP endpoint and streamed to the terminal panel.
 - Chat completions are streamed via SSE from `/api/chat/completions` (backend proxies to `llama-server`).
 - Stats are polled from `llama-server`'s Prometheus `/metrics` endpoint.
@@ -103,6 +113,7 @@ If a shared control becomes unreliable, prefer removing the duplicate UI over ke
 - Test that toggling a flag in the UI produces the correct argument in the final launch command.
 - Verify that enum dropdowns only contain values still recognized by the current `llama.cpp` version.
 - Check that chat template names in `flags.js` match templates bundled with the installed `llama.cpp` release.
+- Run `tests/frontend/flag_sync_smoke.cjs` after mirrored-control, flag-state, or command-preview changes when Playwright is available.
 
 ## Flag Types
 
@@ -153,7 +164,7 @@ Quick Launch does not maintain its own template list. It clones the shared optio
 
 ### State Mapping
 
-Shared selection/state logic is in `ui/js/app.js`.
+Template dropdown mapping helpers live in `ui/js/app.js`, while launch-relevant template values are stored in `window.LlamaGui.flagCore`.
 
 Important helpers:
 - `getChatTemplatePresetByValue(...)`
@@ -177,7 +188,7 @@ Behavior:
   - keeps the path in `chat_template_custom`
   - only shows a named preset if the chosen path exactly matches one of the bundled preset files
 
-This keeps Configure and Quick Launch synchronized while still ensuring launch args are generated from launch-relevant state only.
+This keeps Configure and Quick Launch synchronized while still ensuring launch args are generated from `flagCore` launch-relevant state only.
 
 ### Bundled Templates
 
@@ -301,7 +312,7 @@ Quick Launch renders simplified controls for:
 - Metrics toggle
 - Profile selector with summary text
 
-All controls write through `setFlagValue()` / `setMultipleFlagValues()`, keeping Configure and Quick Launch in sync.
+All controls write through `window.LlamaGui.flagCore` setters (`setFlagValue()` / `setMultipleFlagValues()`), keeping Configure and Quick Launch in sync.
 
 ### Hugging Face Download Integration
 
@@ -352,7 +363,7 @@ When the web search toggle is enabled:
 
 ### Sampler Sliders
 
-Chat sidebar has sliders for temperature, top-p, top-k, min-p, repeat-penalty, and max-tokens. Changes write through `setFlagValue()` and sync with Configure/Quick Launch.
+Chat sidebar has sliders for temperature, top-p, top-k, min-p, repeat-penalty, and max-tokens. Changes write through `window.LlamaGui.flagCore.setFlagValue()` and sync with Configure/Quick Launch.
 
 ## Hugging Face Model Downloader
 
@@ -450,7 +461,7 @@ Defined in `BUILTIN_SAMPLER_PRESETS` in `app.js`:
 - Configure tab: Sampler Preset controls appear at the top of the Sampling accordion.
 - Quick Launch tab: Sampler Preset controls in the sampler section.
 - Quick profiles reference preset names (e.g., `samplerPresetName: "Balanced"`).
-- Loading a preset calls `applySamplerPresetValues()` which writes through `setMultipleFlagValues()`.
+- Loading a preset calls `applySamplerPresetValues()` which writes through `window.LlamaGui.flagCore.setMultipleFlagValues()`.
 
 ## Server Stats & Metrics
 
@@ -515,6 +526,20 @@ The Configure tab has a search input that filters visible flags in real-time.
 - "Collapse All" closes all categories and submenus.
 - Individual categories remember their open/closed state via `openCategories` Set.
 - Individual submenus remember their state via `openSubmenus` Set.
+
+## Frontend Smoke Tests
+
+`tests/frontend/flag_sync_smoke.cjs` serves the static `ui/` directory, stubs backend API calls with Playwright routes, and verifies the shared-state contract:
+- Quick Launch context syncs to Configure and command preview.
+- Configure GPU and metrics controls sync back to Quick Launch.
+- Chat temperature accepts two-decimal values such as `0.31`.
+- Quick Launch sampler edits sync to Chat, Configure, shared flag state, and launch args.
+
+When running local browser smoke checks manually, serve `ui/` as the web root. Serving from the repo root will break root-relative assets such as `/js/app.js`.
+
+## Local Search Notes
+
+Prefer `rg` for local search. On this Windows/PowerShell environment, use patterns like `rg -n "pattern" ui/js` or `rg -n -g "*.js" "pattern" ui/js`; avoid path globs like `rg "pattern" ui/js/*.js` because they can produce `os error 123`.
 
 ## Native File Picker
 

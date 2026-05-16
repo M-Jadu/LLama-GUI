@@ -723,6 +723,9 @@ async function refreshModels() {
             sel.appendChild(opt);
         }
         if (current) sel.value = current;
+        if (window.LlamaGui && window.LlamaGui.flagCore) {
+            window.LlamaGui.flagCore.setSelectedModelValue(sel.value || "");
+        }
         if (typeof syncQuickLaunchModelOptions === "function") {
             syncQuickLaunchModelOptions();
         }

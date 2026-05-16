@@ -12,12 +12,21 @@ function normalizePresetData(data) {
     return { tool: null, model: "", flags: data };
 }
 
+function getPresetFlagCore() {
+    if (!window.LlamaGui || !window.LlamaGui.flagCore) {
+        throw new Error("Flag core is not available.");
+    }
+    return window.LlamaGui.flagCore;
+}
+
 function applyPresetModel(modelName) {
     const modelSelect = document.getElementById("model-select");
     const target = String(modelName || "");
+    const flagCore = getPresetFlagCore();
 
     if (!target) {
         modelSelect.value = "";
+        if (flagCore) flagCore.setSelectedModelValue("");
         return;
     }
 
@@ -30,15 +39,18 @@ function applyPresetModel(modelName) {
     }
 
     modelSelect.value = target;
+    if (flagCore) flagCore.setSelectedModelValue(target);
     if (typeof syncQuickLaunchModelOptions === "function") {
         syncQuickLaunchModelOptions();
     }
 }
 
 function buildCurrentPresetData() {
-    const values = collectFlagValues();
-    const selectedModel = document.getElementById("model-select").value || "";
-    return { tool: currentTool, model: selectedModel, flags: values };
+    const flagCore = getPresetFlagCore();
+    const values = flagCore.collectFlagValues();
+    const selectedModel = flagCore.getSelectedModel();
+    const tool = flagCore.getCurrentTool();
+    return { tool, model: selectedModel, flags: values };
 }
 
 function getPresetWarnings(presetData) {
@@ -406,15 +418,15 @@ async function loadPreset(name) {
         const presets = await fetchJson("/api/presets");
         const preset = presets.find(p => p.name === name);
         if (preset) {
+            const flagCore = getPresetFlagCore();
             const presetData = normalizePresetData(preset.data);
             const warnings = getPresetWarnings(presetData);
             if (presetData.tool === "llama-cli" || presetData.tool === "llama-server") {
-                currentTool = presetData.tool;
+                flagCore.setCurrentTool(presetData.tool);
                 document.getElementById("tool-select").value = presetData.tool;
-                renderFlags();
             }
             applyPresetModel(presetData.model);
-            applyFlagValues(presetData.flags);
+            flagCore.applyFlagValues(presetData.flags);
             if (warnings.length > 0) {
                 showPresetStatus(`Loaded "${name}" with warning: ${warnings[0]}`, "warning", 5000);
             } else {

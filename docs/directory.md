@@ -24,8 +24,11 @@
 | `backend/routing.py` | Dispatch-table route matching for API routes |
 | `backend/routes/` | 14 route handler modules grouped by feature (status, models, presets, metrics, chat, search, hf_download, file_picker, process, install, tunnel, git_update, lifecycle) |
 | `backend/services/` | 10 service modules (llama_manager, process_manager, hf_download, web_search, tunnel, git_update, lifecycle, file_picker, chat) |
-| `ui/js/app.js` | Main UI logic (~3600 lines): shared state, tab switching, flags, launch, chat (streaming, web search, history), Quick Launch (profiles, HF download, sampler presets), remote tunnel, stats polling, toasts |
-| `ui/js/flags.js` | All llama.cpp flag definitions (14 categories, ~135 flags), flag types (`bool`/`int`/`float`/`text`/`path`/`enum`/`multi_enum`), chat template presets (51 built-in templates), command builder |
+| `ui/js/app.js` | Main UI orchestration: tab switching, launch/stop flow, chat (streaming, web search, history), Quick Launch profiles/HF download/sampler presets, remote tunnel, stats polling, toasts |
+| `ui/js/flags.js` | Single source of truth for exposed llama.cpp flag definitions, flag types (`bool`/`int`/`float`/`text`/`path`/`enum`/`multi_enum`), chat template presets, sampler presets, and Quick Launch profiles |
+| `ui/js/flag-core.js` | Shared frontend flag state and launch-argument core (`currentTool`, selected model, `flagValues`, setters, preset apply/collect helpers, command preview generation) |
+| `ui/js/config-flags-ui.js` | Configure tab flag rendering, search/filtering, expand/collapse state, type-specific flag input builders, input restoration, and high-risk `multi_enum` warnings |
+| `ui/js/flag-validation.js` | Non-blocking startup validation for `flags.js` definitions (duplicate ids, invalid categories/tools/types, enum options, default value shape, duplicate CLI flags) |
 | `ui/js/manager.js` | Install flow, GitHub release fetch, backend selection, status polling, app auto-update (git), confirmation modal |
 | `ui/js/presets.js` | Launcher preset save/load/update/delete with group-by-model rendering, collapsible groups, search/filter, warnings, import/export |
 | `ui/index.html` | Tabbed UI: Install, Quick Launch, Configure, Chat, API, Presets |
@@ -34,7 +37,8 @@
 | `config.json` | Persists installed version, backend type, and release tag |
 | `tools/cloudflared/` | Auto-downloaded Cloudflare tunnel binary |
 | `requirements.txt` | Python dependencies (certifi, ddgs, huggingface_hub) |
-| `tests/backend/` | 6 test files (~246 tests) covering baseline, HTTP adapters, routing, services, and extracted routes |
+| `tests/backend/` | Backend pytest coverage for baseline behavior, HTTP adapters, routing, services, and extracted routes |
+| `tests/frontend/flag_sync_smoke.cjs` | Playwright smoke test for shared flag state sync across Quick Launch, Configure, Chat sampler controls, launch args, and command preview |
 
 ## Tabs
 
@@ -47,7 +51,9 @@
 
 ## Shared State Pattern
 
-All settings flow through a single `flagValues` object in `app.js`. Quick Launch, Configure, Chat, and the command preview all read/write from this shared state via `setFlagValue()` / `setMultipleFlagValues()`, ensuring synchronization across tabs.
+All launch-relevant settings flow through the shared flag core in `ui/js/flag-core.js`. Quick Launch, Configure, Chat, Presets, launch/stop, API helpers, and metrics helpers read/write through `window.LlamaGui.flagCore`, which owns `currentTool`, selected model, and the single `flagValues` object.
+
+Configure flag rendering lives in `ui/js/config-flags-ui.js`, but rendered controls still read from `flagCore` and write through the shared setter path. Command preview and launch args are generated from `flagCore.getLaunchArgs()`, never from per-tab copies.
 
 ## Chat
 
@@ -92,6 +98,14 @@ Live Prometheus stats polled from `llama-server`:
 - Prompt/gen token counts and speeds, KV cache usage
 - Polling starts ~2s after launch, every 3s
 
+## Frontend Smoke Tests
+
+`tests/frontend/flag_sync_smoke.cjs` serves the static `ui/` directory, stubs backend API calls with Playwright routes, and verifies the shared-state contract:
+- Quick Launch context syncs to Configure and command preview
+- Configure GPU and metrics controls sync back to Quick Launch
+- Chat temperature accepts two-decimal values such as `0.31`
+- Quick Launch sampler edits sync to Chat, Configure, shared flag state, and launch args
+
 ## MCP / Agent Tools
 
 Configure tab > Server category > MCP Settings submenu:
@@ -122,7 +136,6 @@ The `AGENTS.md` file enforces that any setting appearing in multiple UI location
 | `docs/archive/backend_architecture_plan.md` | Plan for the completed backend refactor |
 | `docs/archive/backend_progress.md` | Progress tracker for the completed backend refactor |
 | `docs/flag_report.md` | One-time flag audit report (May 2026) |
+| `docs/frontend_flag_core_plan.md` | Completed phased plan for extracting flag state, launch args, Configure rendering, caller migration, and smoke coverage |
 | `docs/frontend_modularization.md` | Plan for future frontend modularization |
-| `docs/long-term-plans.md` | Architectural improvement roadmap |
-| `docs/potential_improvements.md` | Feature improvement ideas |
 | `docs/images/` | 6 screenshots used by README.md |
