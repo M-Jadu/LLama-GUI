@@ -32,6 +32,12 @@ If a shared control becomes unreliable, prefer removing the duplicate UI over ke
 
 ## How the program works
 
+### Companion Repositories
+- **Pinokio launcher:** `https://github.com/thomas9120/llama-gui-pinokio`
+- The Pinokio launcher clones this repo into its `app/` directory, installs `requirements.txt`, starts `python server.py`, and may apply launcher-specific patches.
+- For large changes to startup/shutdown behavior, `server.py`, backend lifecycle routes, static asset loading, dependency installation, ports, cache busting, or frontend script loading, check the Pinokio launcher for compatibility.
+- Frontend-only internal refactors, such as changes inside `ui/js/flag-core.js` or `ui/js/config-flags-ui.js`, are usually compatible as long as `ui/index.html` script loading and the `python server.py` entrypoint still work.
+
 ### Architecture
 - A static web UI served by a Python `http.server` backend on port 5240.
 - The backend handles `llama.cpp` installation, process management, API proxying, model downloading, remote tunnels, and web search.
