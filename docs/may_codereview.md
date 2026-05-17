@@ -159,13 +159,9 @@ Direct tests were added for `backend/services/web_search.py::web_search()`, cove
 
 ## 6. Dependencies & Configuration
 
-### `requirements.txt` - No version pins (HIGH)
-```
-certifi
-ddgs
-huggingface_hub
-```
-All three dependencies are completely unpinned. Any install could pull a breaking version. Minimum recommendation: `certifi>=2024.2.2`, `ddgs>=7.0.0`, `huggingface_hub>=0.20.0`.
+### ~~`requirements.txt` - No version pins (HIGH)~~ FIXED
+~~All three dependencies are completely unpinned. Any install could pull a breaking version. Minimum recommendation: `certifi>=2024.2.2`, `ddgs>=7.0.0`, `huggingface_hub>=0.20.0`.~~
+`requirements.txt` now pins minimum versions: `certifi>=2024.2.2`, `ddgs>=7.0.0`, `huggingface_hub>=0.24.0`.
 
 ### `config.json` not committed - claim retracted (LOW)
 ~~Listed in `.gitignore` but tracked in git.~~ `config.json` is correctly listed in `.gitignore` and is not tracked. It is a local runtime file. This item is a false positive.
@@ -182,7 +178,7 @@ No `pyproject.toml`, `setup.py`, or `setup.cfg`. The `.gitignore` references `.r
 
 1. ~~**Add Content-Length cap** in `read_body()` - simple fix, prevents memory exhaustion~~ **FIXED**
 2. ~~**Validate `tool` parameter** against `LLAMA_TOOLS` allowlist in process launch~~ **FIXED**
-3. **Pin dependencies** in `requirements.txt` with minimum versions
+3. ~~**Pin dependencies** in `requirements.txt` with minimum versions~~ **FIXED**
 4. **Add retry/error feedback to polling** for `pollOutput`, install progress, and HF download progress
 5. **Fix accessibility basics**: icon button `aria-label`s, chat slider labels, keyboard-accessible toggles, suggestion chips, and modal focus management
 6. **Consolidate host validation** into a single shared function
