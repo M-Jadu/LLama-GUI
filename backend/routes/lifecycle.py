@@ -1,5 +1,6 @@
 """Routes for server lifecycle: shutdown, restart, open-folder."""
 
+from ..http import sanitize_error
 from ..services import lifecycle as lifecycle_service
 
 
@@ -23,4 +24,4 @@ def post_open_folder(request, response, ctx):
         lifecycle_service.open_folder_in_file_manager(target)
         response.json({"opened": True})
     except Exception as e:
-        response.error(str(e), 500)
+        response.error(sanitize_error(e, 500), 500)

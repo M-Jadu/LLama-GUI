@@ -1,5 +1,6 @@
 """Routes for app update management."""
 
+from ..http import sanitize_error
 from ..services import git_update
 
 
@@ -7,7 +8,7 @@ def get_status(request, response, ctx):
     try:
         response.json(git_update.get_app_update_status(ctx, fetch=True))
     except Exception as e:
-        response.error(str(e), 500)
+        response.error(sanitize_error(e, 500), 500)
 
 
 def start_update(request, response, ctx):
@@ -22,4 +23,4 @@ def start_update(request, response, ctx):
         else:
             response.json(result)
     except Exception as e:
-        response.error(str(e), 500)
+        response.error(sanitize_error(e, 500), 500)

@@ -1,5 +1,6 @@
 """Backend status API route."""
 
+from ..http import sanitize_error
 from ..config import LLAMA_HOST, LLAMA_PORT
 
 
@@ -54,4 +55,4 @@ def get_status(request, response, ctx):
             }
         )
     except Exception as exc:
-        response.error(f"Failed to read backend status: {exc}", 500)
+        response.error(sanitize_error(exc, 500), 500)

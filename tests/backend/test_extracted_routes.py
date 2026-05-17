@@ -272,7 +272,7 @@ class ExtractedRouteTests(unittest.TestCase):
             status.get_status(Request("GET", "/api/status", "", {}), response, ctx)
 
             self.assertEqual(response.status, 500)
-            self.assertEqual(response.payload["error"], "Failed to read backend status: boom")
+            self.assertEqual(response.payload["error"], "Internal server error")
 
     def test_process_output_route_reads_buffer_and_running_state(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -934,7 +934,7 @@ class InstallRouteTests(unittest.TestCase):
                 Request("GET", "/api/releases", "", {}), response, self.ctx
             )
         self.assertEqual(response.status, 500)
-        self.assertIn("API down", response.payload["error"])
+        self.assertEqual(response.payload["error"], "Internal server error")
 
     def test_install_get_download_progress_returns_snapshot(self):
         self.ctx.state.download_progress.update(status="downloading", downloaded=50, total=100)
@@ -1725,7 +1725,7 @@ class GitUpdateRouteTests(unittest.TestCase):
                 self.ctx,
             )
         self.assertEqual(response.status, 500)
-        self.assertIn("boom", response.payload["error"])
+        self.assertEqual(response.payload["error"], "Internal server error")
 
     def test_app_update_route_returns_error_when_update_fails(self):
         from backend.services import git_update as srv

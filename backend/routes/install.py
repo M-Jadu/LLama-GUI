@@ -2,6 +2,7 @@
 
 import threading
 
+from ..http import sanitize_error
 from ..services import llama_manager
 from ..services import process_manager
 
@@ -21,7 +22,7 @@ def get_releases(request, response, ctx):
             )
         response.json(result)
     except Exception as e:
-        response.error(str(e), 500)
+        response.error(sanitize_error(e, 500), 500)
 
 
 def get_download_progress(request, response, ctx):
@@ -101,4 +102,4 @@ def start_update(request, response, ctx):
     except Exception as e:
         with ctx.state.install_lock:
             ctx.state.install_in_progress = False
-        response.error(str(e), 500)
+        response.error(sanitize_error(e, 500), 500)

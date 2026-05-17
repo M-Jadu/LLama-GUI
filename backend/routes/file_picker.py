@@ -1,5 +1,6 @@
 """Routes for native file selection."""
 
+from backend.http import sanitize_error
 from backend.services import file_picker
 
 
@@ -25,4 +26,4 @@ def select_file(request, response, ctx):
             }
         )
     except Exception as exc:
-        response.error(str(exc), 500)
+        response.error(sanitize_error(exc, 500), 500)

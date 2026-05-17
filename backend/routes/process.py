@@ -1,5 +1,6 @@
 """Routes for llama.cpp process management."""
 
+from ..http import sanitize_error
 from ..services import process_manager
 
 
@@ -38,4 +39,4 @@ def cleanup_llama(request, response, ctx):
     try:
         response.json({"removed_files": process_manager.remove_llama_files(ctx)})
     except Exception as e:
-        response.error(str(e), 500)
+        response.error(sanitize_error(e, 500), 500)
