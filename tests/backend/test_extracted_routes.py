@@ -386,6 +386,7 @@ class ExtractedRouteTests(unittest.TestCase):
                 current_platform="darwin",
                 find_tool_executable=lambda tool: ctx.paths.llama_bin / tool,
                 get_tool_filename=lambda tool: tool,
+                llama_tools=["llama-cli", "llama-server"],
                 validate_runtime_dependencies=lambda tools=None: {
                     "ok": False,
                     "checked": True,
@@ -409,6 +410,7 @@ class ExtractedRouteTests(unittest.TestCase):
                 current_platform="darwin",
                 find_tool_executable=lambda tool: ctx.paths.llama_bin / tool,
                 get_tool_filename=lambda tool: tool,
+                llama_tools=["llama-cli", "llama-server"],
                 validate_runtime_dependencies=lambda tools=None: {
                     "ok": False,
                     "checked": True,
@@ -433,6 +435,31 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertEqual(response.status, 400)
             self.assertIn("libllama-common.0.dylib", response.payload["error"])
             mock_popen.assert_not_called()
+
+    def test_process_launch_route_rejects_unknown_tool(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.services = BackendServices(
+                llama_tools=["llama-cli", "llama-server"],
+            )
+            response = DummyResponse()
+
+            with mock.patch.object(process_manager, "launch_process") as mock_launch_process:
+                process.launch(
+                    Request(
+                        "POST",
+                        "/api/launch",
+                        "",
+                        {},
+                        body={"tool": "../../cmd", "args": []},
+                    ),
+                    response,
+                    ctx,
+                )
+
+            self.assertEqual(response.status, 400)
+            self.assertEqual(response.payload["error"], "Unknown tool: '../../cmd'")
+            mock_launch_process.assert_not_called()
 
     def test_hf_download_status_route_reads_context_state(self):
         with tempfile.TemporaryDirectory() as tmp:

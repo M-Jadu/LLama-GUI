@@ -11,6 +11,10 @@ def launch(request, response, ctx):
     body = request.body or {}
     tool = body.get("tool", "llama-cli")
     args = body.get("args", [])
+    allowed_tools = ctx.services.llama_tools or []
+    if tool not in allowed_tools:
+        response.error(f"Unknown tool: {tool!r}", 400)
+        return
     result = process_manager.launch_process(ctx, tool, args)
     if "error" in result:
         response.error(result.get("error", "Launch failed"), 400)

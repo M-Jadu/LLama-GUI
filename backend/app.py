@@ -78,6 +78,10 @@ def create_ssl_context():
 
 SSL_CONTEXT = create_ssl_context()
 
+# Sentinel returned by read_body() when a 413 response has already been sent.
+# Callers must treat this the same as None (abort without sending another response).
+_BODY_TOO_LARGE = object()
+
 
 def urlopen_with_ssl(request, timeout):
     return urllib.request.urlopen(request, timeout=timeout, context=SSL_CONTEXT)
@@ -575,9 +579,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         Response(self).bytes(body, content_type="text/html; charset=utf-8")
 
     def read_body(self):
+        MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
         length = int(self.headers.get("Content-Length", 0))
         if length == 0:
             return {}
+        if length > MAX_BODY_SIZE:
+            self.send_error_json(f"Request body too large (max {MAX_BODY_SIZE // (1024 * 1024)} MB)", 413)
+            return _BODY_TOO_LARGE
         try:
             return json.loads(self.rfile.read(length))
         except (json.JSONDecodeError, UnicodeDecodeError):
@@ -760,6 +768,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         body = self.read_body()
 
+        if body is _BODY_TOO_LARGE:
+            return
+
         if body is None:
             self.send_error_json("Invalid or malformed JSON body", 400)
             return
@@ -773,6 +784,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_DELETE(self):
         parsed = urllib.parse.urlparse(self.path)
         body = self.read_body()
+
+        if body is _BODY_TOO_LARGE:
+            return
 
         if not self.is_safe_request_origin():
             self.send_error_json("Request origin not allowed", 403)

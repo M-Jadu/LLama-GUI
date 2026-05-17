@@ -8,19 +8,19 @@ The codebase is well-structured with a clean backend separation (routes/services
 
 ## 1. Security Issues
 
-### HIGH: No Content-Length upper bound — memory exhaustion DoS
-`backend/app.py:577-584` — `read_body()` accepts arbitrary Content-Length without a cap. A malicious client can send a multi-GB body and OOM the server.
-**Fix:** Add a max body size check (e.g., 10 MB) and return 413.
+### ~~HIGH: No Content-Length upper bound — memory exhaustion DoS~~ FIXED
+~~`backend/app.py:577-584` — `read_body()` accepts arbitrary Content-Length without a cap. A malicious client can send a multi-GB body and OOM the server.~~
+`read_body()` now enforces a 10 MB cap and returns 413 on oversized requests. A `_BODY_TOO_LARGE` sentinel prevents double-responses in `do_POST` and `do_DELETE`.
 
-### HIGH: Path traversal via `tool` parameter in `/api/launch`
-`backend/services/process_manager.py:96-118` — The `tool` parameter from the request body is never validated against the `LLAMA_TOOLS` allowlist. A value like `../../Windows/System32/cmd` could resolve outside the bin directory.
-**Fix:** Validate `tool` against the allowlist before constructing the path.
+### ~~HIGH: Path traversal via `tool` parameter in `/api/launch`~~ FIXED
+~~`backend/services/process_manager.py:96-118` — The `tool` parameter from the request body is never validated against the `LLAMA_TOOLS` allowlist. A value like `../../Windows/System32/cmd` could resolve outside the bin directory.~~
+`backend/routes/process.py` now validates `tool` against `ctx.services.llama_tools` before calling `launch_process()`. Unknown tool values are rejected with a 400.
 
 ### MEDIUM: Unrestricted subprocess arguments
 `backend/routes/process.py:10-18` — The `args` list is passed verbatim to `subprocess.Popen`. Any local client can pass arbitrary CLI flags. Intentional for a local GUI tool, but should be documented clearly, especially for wildcard-bind/tunnel scenarios.
 
 ### MEDIUM: Exception details leaked to clients
-Multiple routes return raw `str(e)` in error responses (`routes/process.py:36`, `routes/lifecycle.py:25`, `routes/chat.py:126`, etc.). If exposed via tunnel, this reveals filesystem paths, Python versions, and package info.
+Multiple routes return raw `str(e)` in error responses (`routes/process.py:37`, `routes/lifecycle.py:26`, `routes/chat.py:126`, `routes/install.py:24,104`, `routes/git_update.py:10,25`, `routes/tunnel.py:15`, etc.). If exposed via tunnel, this reveals filesystem paths, Python versions, and package info.
 
 ### MEDIUM: `do_DELETE` reads body before origin check
 `backend/app.py:773-781` — Body is read from the socket before the CORS origin check, wasting resources on unauthorized requests. Compare with `do_POST` which checks validity first.
@@ -30,12 +30,11 @@ Multiple routes return raw `str(e)` in error responses (`routes/process.py:36`, 
 ## 2. Architecture & Backend Quality
 
 ### Duplicated host validation logic (MEDIUM)
-Three nearly identical functions validate local hosts:
+Two nearly identical functions independently validate local hosts:
 - `backend/app.py:453-466` (`get_metrics_host`)
-- `backend/app.py:226-233` (`normalize_local_proxy_host`)
 - `backend/services/chat.py:72-85` (`get_local_proxy_host`)
 
-Each does DNS resolution + local interface checks. Should be consolidated into one shared function.
+Both do DNS resolution + local interface checks. `backend/app.py:226-233` (`normalize_local_proxy_host`) is a thin wrapper around `get_metrics_host`, not a third independent implementation. Should be consolidated into one shared function.
 
 ### Duplicated `get_local_interface_addresses` (MEDIUM)
 `backend/app.py:441-450` and `backend/services/chat.py:59-69` — Two implementations of the same function. The `chat.py` version correctly uses `@lru_cache`; the `app.py` version does not.
@@ -73,8 +72,8 @@ These work today but are fragile if files are ever wrapped in IIFEs.
 ### `normalizeMultiEnumValue` defined twice (LOW)
 `flag-core.js:13` has a stub (arrays only), `config-flags-ui.js:638-647` has the full implementation. The stub is injected at runtime, but the duplication is a maintenance risk.
 
-### Host/port extraction repeated 4 times (LOW)
-`app.js:1867`, `:2191`, `:2554`, `:2769` — Each extracts host+port from flag values with identical logic. Should be a shared helper.
+### Host/port extraction repeated 6–7 times (LOW)
+`app.js` contains at least 6–7 inline host+port extractions from flag values (in `updateServerAddressPreview`, `getServerBaseUrl`, post-launch banner, `pollStats`, `getChatApiUrl`, `sendChatMessage`, `startRemoteTunnel`). A shared helper `getServerBaseUrl()` was partially added but is not reused by most call sites. Should be used consistently throughout.
 
 ### `pollOutput` stops on single transient error (MEDIUM)
 `app.js:2268-2278` — A single network blip permanently kills output polling. Should retry 2-3 times before giving up.
@@ -97,7 +96,7 @@ No conversation count or size limit. Practical conversations are unlikely to hit
 ## 4. HTML & CSS Issues
 
 ### Accessibility: Missing aria-labels on icon-only buttons (HIGH)
-~15+ buttons across `index.html` have only SVG icons with `title` (or nothing). Screen readers cannot identify them. Each needs `aria-label`.
+~13 buttons across `index.html` have only SVG icons with `title` (or nothing). Screen readers cannot identify them. Each needs `aria-label`.
 
 ### Accessibility: Toggle checkbox hidden with `display:none` (MEDIUM)
 `style.css:406` — `.toggle input { display: none; }` removes the checkbox from keyboard navigation entirely. Use the visually-hidden pattern instead.
@@ -164,8 +163,8 @@ huggingface_hub
 ```
 All three dependencies are completely unpinned. Any install could pull a breaking version. Minimum recommendation: `certifi>=2024.2.2`, `ddgs>=7.0.0`, `huggingface_hub>=0.20.0`.
 
-### `config.json` committed with hardcoded `cuda-13.1` (LOW)
-Listed in `.gitignore` but tracked in git. Every clone starts with a CUDA 13.1 backend config, which is wrong for non-CUDA users.
+### `config.json` not committed — claim retracted (LOW)
+~~Listed in `.gitignore` but tracked in git.~~ `config.json` is correctly listed in `.gitignore` and is not tracked. It is a local runtime file. This item is a false positive.
 
 ### No `npm test` script (LOW)
 `package.json` only has `test:frontend`. `npm test` fails with missing script error.
@@ -177,13 +176,13 @@ No `pyproject.toml`, `setup.py`, or `setup.cfg`. The `.gitignore` references `.r
 
 ## Prioritized Recommendations
 
-1. **Add Content-Length cap** in `read_body()` — simple fix, prevents memory exhaustion
-2. **Validate `tool` parameter** against `LLAMA_TOOLS` allowlist in process launch
+1. ~~**Add Content-Length cap** in `read_body()` — simple fix, prevents memory exhaustion~~ **FIXED**
+2. ~~**Validate `tool` parameter** against `LLAMA_TOOLS` allowlist in process launch~~ **FIXED**
 3. **Pin dependencies** in `requirements.txt` with minimum versions
 4. **Wrap `manager.js`/`presets.js`/`app.js` in IIFEs** attached to `window.LlamaGui` — biggest frontend architectural improvement
 5. **Add retry logic to `pollOutput`** — single transient errors shouldn't kill the output stream
 6. **Add `aria-label` to all icon-only buttons** — highest-impact accessibility fix
 7. **Write tests for `install_release()` and `download_file()`** — core flow with zero coverage
 8. **Consolidate host validation** into a single shared function
-9. **Extract host/port helper** to eliminate 4x duplication in `app.js`
+9. **Extract host/port helper** to eliminate 6–7x duplication in `app.js`
 10. **Make toggle checkbox keyboard-accessible** via visually-hidden pattern
