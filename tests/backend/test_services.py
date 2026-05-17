@@ -18,7 +18,8 @@ from backend.services import web_search as web_search_service
 
 class FakeDownloadResponse:
     def __init__(self, chunks, content_length=None):
-        self._chunks = list(chunks)
+        self._body = b"".join(chunks)
+        self._offset = 0
         self.headers = {}
         if content_length is not None:
             self.headers["Content-Length"] = str(content_length)
@@ -30,9 +31,24 @@ class FakeDownloadResponse:
         return False
 
     def read(self, size=-1):
-        if not self._chunks:
+        if self._offset >= len(self._body):
             return b""
-        return self._chunks.pop(0)
+        if size is None or size < 0:
+            size = len(self._body) - self._offset
+        end = min(self._offset + size, len(self._body))
+        chunk = self._body[self._offset:end]
+        self._offset = end
+        return chunk
+
+
+class FakeDownloadResponseTests(unittest.TestCase):
+    def test_read_respects_requested_size(self):
+        resp = FakeDownloadResponse([b"abc", b"def"])
+
+        self.assertEqual(resp.read(2), b"ab")
+        self.assertEqual(resp.read(3), b"cde")
+        self.assertEqual(resp.read(10), b"f")
+        self.assertEqual(resp.read(10), b"")
 
 
 def make_service_context(root):
@@ -47,7 +63,7 @@ def make_service_context(root):
             presets=root / "presets",
             config_file=root / "config.json",
             ui=root / "ui",
-            app_logo=root / "ui" / "assets" / "app-logo.png",
+            app_logo=root / "Llama-GUI Logo.png",
             tools=root / "tools",
             cloudflared=root / "tools" / "cloudflared",
         ),
@@ -347,7 +363,7 @@ class LlamaManagerDownloadTests(unittest.TestCase):
 
             self.assertEqual(downloaded, 8)
             self.assertEqual(dest.read_bytes(), b"abcdefgh")
-            self.assertEqual(progress, [(3, 8), (7, 8), (8, 8)])
+            self.assertEqual(progress, [(8, 8)])
             request = ctx.services.urlopen_with_ssl.call_args.args[0]
             self.assertEqual(request.full_url, "https://example.test/file.bin")
 
