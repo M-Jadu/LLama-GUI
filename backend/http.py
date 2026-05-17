@@ -4,10 +4,13 @@ from dataclasses import dataclass, field
 from email.message import Message
 import ipaddress
 import json
+import sys
 from typing import Any, Mapping, Optional, Sequence
 import urllib.parse
 
 from . import config
+
+GENERIC_SERVER_ERROR = "Internal server error"
 
 WILDCARD_BIND_HOSTS = {"0.0.0.0", "::", "*"}
 LOCAL_BROWSER_HOSTS = ("127.0.0.1", "localhost", "::1")
@@ -132,6 +135,35 @@ def get_cors_methods(path: str) -> str:
 
 def is_static_ui_path(path: str) -> bool:
     return path in {"/", "/index.html"} or path.startswith("/js/") or path.startswith("/css/")
+
+
+def sanitize_error(exc: BaseException, status: int = 500) -> str:
+    """Return a client-safe error message, logging the original exception.
+
+    For 5xx errors the client receives a generic placeholder so filesystem
+    paths, Python tracebacks, and host details are never leaked through the
+    tunnel.  For 4xx errors the message is preserved because those are
+    intentional validation/business-logic responses.
+    """
+    detail = str(exc)
+    if status >= 500:
+        print(f"[sanitize_error] {type(exc).__name__}: {detail}", file=sys.stderr)
+        return GENERIC_SERVER_ERROR
+    return detail
+
+
+def sanitize_sse_error(exc: BaseException, tunnel_active: bool) -> str:
+    """Return a client-safe SSE error message.
+
+    When the tunnel is active, internal details are hidden.  When the
+    request is local the raw detail is kept so users can debug connection
+    issues.
+    """
+    detail = str(exc)
+    if tunnel_active:
+        print(f"[sanitize_sse_error] {type(exc).__name__}: {detail}", file=sys.stderr)
+        return "Chat request failed."
+    return detail
 
 
 class Response:

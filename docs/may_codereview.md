@@ -21,8 +21,9 @@ Validation note: this report has been spot-checked against the current repo. The
 ### MEDIUM: Unrestricted subprocess arguments
 `backend/routes/process.py:10-18` / `backend/services/process_manager.py:118` - The `args` list is flattened and passed through to `subprocess.Popen`. This is intentional for a local GUI tool because users need direct llama.cpp flag access, but it should be documented clearly and treated as sensitive when wildcard-bound or exposed through a tunnel.
 
-### MEDIUM: Exception details leaked to clients
-Multiple routes return raw `str(e)` in error responses (`routes/process.py`, `routes/lifecycle.py`, `routes/chat.py`, `routes/install.py`, `routes/git_update.py`, `routes/tunnel.py`, etc.). If exposed via tunnel, this can reveal filesystem paths, Python versions, package details, or host-specific configuration. Prefer generic client-facing errors plus server-side logging.
+### ~~MEDIUM: Exception details leaked to clients~~ FIXED
+~~Multiple routes return raw `str(e)` in error responses (`routes/process.py`, `routes/lifecycle.py`, `routes/chat.py`, `routes/install.py`, `routes/git_update.py`, `routes/tunnel.py`, etc.). If exposed via tunnel, this can reveal filesystem paths, Python versions, package details, or host-specific configuration.~~
+`sanitize_error()` in `backend/http.py` now returns a generic `"Internal server error"` for 5xx responses while logging the original detail to stderr. 4xx validation messages are preserved. The chat SSE path uses `sanitize_sse_error()` which hides details only when a tunnel is active.
 
 ### LOW-MEDIUM: `do_DELETE` reads body before origin check
 `backend/app.py:784` - Body is read from the socket before the CORS origin check, wasting resources on unauthorized requests. The impact is lower now that `read_body()` has a 10 MB cap, but the origin check should still happen first for consistency with the intended request validation flow.
@@ -182,7 +183,7 @@ No `pyproject.toml`, `setup.py`, or `setup.cfg`. The `.gitignore` references `.r
 4. **Add retry/error feedback to polling** for `pollOutput`, install progress, and HF download progress
 5. **Fix accessibility basics**: icon button `aria-label`s, chat slider labels, keyboard-accessible toggles, suggestion chips, and modal focus management
 6. **Consolidate host validation** into a single shared function
-7. **Sanitize exception responses** so client-facing messages do not expose local internals
+7. ~~**Sanitize exception responses** so client-facing messages do not expose local internals~~ **FIXED**
 8. ~~**Write direct tests for `install_release()` and `download_file()`** in `backend/services/llama_manager.py~~ **FIXED**
 9. **Wrap `manager.js`/`presets.js`/`app.js` in IIFEs** attached to `window.LlamaGui`
 10. **Extract host/port helper usage** to eliminate repeated host+port parsing in `app.js`

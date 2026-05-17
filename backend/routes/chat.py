@@ -1,12 +1,13 @@
 """Routes for streaming chat completions through llama-server."""
 
 import json
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 
 from backend import config
-from backend.http import SseWriter
+from backend.http import SseWriter, sanitize_sse_error
 from backend.services import chat as chat_service
 from backend.services import web_search
 
@@ -120,10 +121,16 @@ def completions(request, response, ctx):
             err = exc.read().decode("utf-8", errors="replace")
         except Exception:
             err = str(exc)
-        writer.write({"error": {"message": f"llama-server returned HTTP {exc.code}: {err}"}})
+        tunnel_active = bool(ctx.state.remote_tunnel.snapshot().get("url"))
+        if tunnel_active:
+            print(f"[sanitize_sse_error] HTTPError {exc.code}: {err}", file=sys.stderr)
+            writer.write({"error": {"message": "Chat request failed."}})
+        else:
+            writer.write({"error": {"message": f"llama-server returned HTTP {exc.code}: {err}"}})
         writer.write("[DONE]")
     except Exception as exc:
-        writer.write({"error": {"message": str(exc)}})
+        tunnel_active = bool(ctx.state.remote_tunnel.snapshot().get("url"))
+        writer.write({"error": {"message": sanitize_sse_error(exc, tunnel_active)}})
         writer.write("[DONE]")
     finally:
         response.handler.close_connection = True

@@ -1,5 +1,6 @@
 """Routes for Cloudflare remote tunnel management."""
 
+from ..http import sanitize_error
 from ..services import tunnel as tunnel_service
 
 
@@ -12,7 +13,7 @@ def start(request, response, ctx):
     try:
         ctx.services.set_llama_api_target(body.get("host"), body.get("port"))
     except Exception as e:
-        response.error(str(e), 400)
+        response.error(sanitize_error(e, 400), 400)
         return
     response.json(tunnel_service.start_remote_tunnel(ctx))
 
