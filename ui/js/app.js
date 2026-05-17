@@ -2291,7 +2291,7 @@ async function pollOutput() {
         pollOutputFailCount = 0;
     } catch (e) {
         pollOutputFailCount++;
-        if (pollOutputFailCount < 5) {
+        if (pollOutputFailCount <= 5) {
             appendOutput("Output polling error (retry " + pollOutputFailCount + "/5): " + e.message);
         } else {
             appendOutput("Connection to server lost: " + e.message);
