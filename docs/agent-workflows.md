@@ -19,7 +19,12 @@ Do not modify the flag modules during the audit unless the user explicitly asks 
 | `ui/js/flag-core.js` | Shared flag state, setters, selected model/tool state, command preview, and launch-arg generation that consumes `FLAGS` |
 | `ui/js/config-flags-ui.js` | Configure tab rendering for all flag input types, search/filtering, input restore, and high-risk multi-select warnings |
 | `ui/js/flag-validation.js` | Startup validation for flag definition shape, duplicate ids, duplicate CLI flags, enum options, and defaults |
-| `ui/js/app.js` | App orchestration and tab-specific behavior that calls into `flagCore` and `configFlagsUi` |
+| `ui/js/app.js` | App orchestration/bootstrap, launch/stop wiring, shared polling, toasts, and cross-module initialization |
+| `ui/js/quick-launch-ui.js` | Quick Launch controls, profiles, summaries, and mirrored sampler/template UI |
+| `ui/js/chat-ui.js` / `chat-rendering.js` | Chat tab state, streaming UI, conversation history, markdown/source rendering |
+| `ui/js/api-tab.js` / `remote-tunnel-ui.js` | API endpoint helpers and Cloudflare tunnel controls |
+| `ui/js/hf-download-ui.js` | Hugging Face model downloader UI in Quick Launch |
+| `ui/js/sampler-presets.js` | Shared sampler preset store and apply/save/delete behavior |
 
 **Upstream**
 
@@ -202,7 +207,14 @@ When the user asks to implement flag audit findings:
 | Add, remove, rename, or change a llama.cpp flag | `ui/js/flags/definitions.js` |
 | Change launch-argument emission or shared state behavior | `ui/js/flag-core.js` |
 | Change Configure tab rendering/search/input behavior | `ui/js/config-flags-ui.js` |
-| Change Quick Launch, Chat, API, or tab-specific summaries | `ui/js/app.js` |
+| Change Quick Launch controls, profiles, or summaries | `ui/js/quick-launch-ui.js` |
+| Change Chat tab behavior, streaming UI, history, or sidebar controls | `ui/js/chat-ui.js` |
+| Change markdown or chat source rendering | `ui/js/chat-rendering.js` |
+| Change API tab endpoint helpers | `ui/js/api-tab.js` |
+| Change remote tunnel UI | `ui/js/remote-tunnel-ui.js` |
+| Change Hugging Face downloader UI | `ui/js/hf-download-ui.js` |
+| Change sampler preset store/apply/save/delete behavior | `ui/js/sampler-presets.js` |
+| Change app bootstrap, launch/stop wiring, shared polling, or cross-module initialization | `ui/js/app.js` |
 | Change preset save/load/import/export behavior | `ui/js/presets.js` |
 | Strengthen local flag definition checks | `ui/js/flag-validation.js` |
 | Verify mirrored controls and command preview | `tests/frontend/flag_sync_smoke.cjs` |
@@ -287,7 +299,8 @@ Use this workflow when updating bundled chat templates under `ui/templates/`, es
    - Preset definitions: `CHAT_TEMPLATE_PRESETS` in `ui/js/flags/chat-templates.js`
    - Shared state and launch helpers in `ui/js/flag-core.js` if new launch-state behavior is needed
    - Configure rendering behavior in `ui/js/config-flags-ui.js` if a new flag input type or rendering rule is needed
-   - Tab-specific dropdown/summary helpers in `ui/js/app.js` if new template UI behavior is needed
+   - Quick Launch dropdown/summary helpers in `ui/js/quick-launch-ui.js` if new template UI behavior is needed there
+   - Chat sidebar template/sampler behavior in `ui/js/chat-ui.js` if chat-specific UI behavior is needed
 2. Download the official template files and compare variants by size/hash/content.
 3. Add or replace bundled `.jinja` files with the upstream content.
 4. Keep backward-compatible template paths when saved presets may already reference them.

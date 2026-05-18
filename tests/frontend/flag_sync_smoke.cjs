@@ -222,6 +222,13 @@ async function main() {
         assert.equal(sourceSecurity[1].tag, "A");
         assert.equal(sourceSecurity[1].href, "https://example.com/path");
 
+        await page.selectOption("#quick-profile-select", "low-memory");
+        await page.dispatchEvent("#quick-profile-select", "change");
+        await page.waitForFunction(() => window.LlamaGui.flagCore.getFlagValues().ctx_size === 8192);
+        await page.waitForFunction(() => window.LlamaGui.flagCore.getFlagValues().batch_size === 1024);
+        await page.waitForFunction(() => document.querySelector("#command-preview-text")?.textContent.includes("-c 8192"));
+        assert.match(await page.textContent("#quick-profile-summary"), /lighter setup/i);
+
         await page.selectOption("#quick-context-preset", "custom");
         await page.fill("#quick-context-custom", "12345");
         await page.dispatchEvent("#quick-context-custom", "input");
@@ -309,6 +316,95 @@ async function main() {
         assert.ok(launchArgs.includes("--temp") && launchArgs.includes("0.96"));
         assert.ok(launchArgs.includes("--repeat-penalty") && launchArgs.includes("1.02"));
 
+        await selectSection(page, "quick-launch");
+        await page.fill("#quick-temperature", "0.64");
+        await page.dispatchEvent("#quick-temperature", "input");
+        await page.fill("#quick-repeat-penalty", "1.07");
+        await page.dispatchEvent("#quick-repeat-penalty", "input");
+        await page.waitForTimeout(250);
+        await page.fill("#quick-sampler-name", "Smoke Sampler");
+        await page.click("#btn-quick-sampler-save");
+        await page.waitForFunction(() => {
+            const raw = localStorage.getItem("llama_gui_sampler_presets_v1");
+            return raw && JSON.parse(raw)["Smoke Sampler"]?.temperature === 0.64;
+        });
+        await page.fill("#quick-temperature", "0.91");
+        await page.dispatchEvent("#quick-temperature", "input");
+        await page.fill("#quick-repeat-penalty", "1.19");
+        await page.dispatchEvent("#quick-repeat-penalty", "input");
+        await page.waitForTimeout(250);
+        await page.selectOption("#quick-sampler-select", "custom|Smoke Sampler");
+        await page.click("#btn-quick-sampler-load");
+        await page.waitForFunction(() => window.LlamaGui.flagCore.getFlagValues().temperature === 0.64);
+        await page.waitForFunction(() => document.querySelector("#chat-slider-temp")?.value === "0.64");
+        await selectSection(page, "configure");
+        await page.fill("#config-search", "temperature");
+        await page.waitForSelector("#flag-temperature", { state: "visible" });
+        await page.waitForFunction(() => document.querySelector("#flag-temperature")?.value === "0.64");
+        await selectSection(page, "quick-launch");
+        await page.selectOption("#quick-sampler-select", "custom|Smoke Sampler");
+        const deletePromise = page.waitForFunction(() => {
+            const raw = localStorage.getItem("llama_gui_sampler_presets_v1");
+            return raw && !Object.prototype.hasOwnProperty.call(JSON.parse(raw), "Smoke Sampler");
+        });
+        await page.click("#btn-quick-sampler-delete");
+        await page.click("#confirm-modal-ok");
+        await deletePromise;
+
+        await page.evaluate(() => {
+            window.LlamaGui.flagCore.setMultipleFlagValues({
+                host: "0.0.0.0",
+                port: 9099,
+                alias: "smoke-alias",
+                api_key: "secret",
+            });
+            window.LlamaGui.apiTab.updateEndpoints();
+        });
+        await selectSection(page, "api");
+        await page.waitForFunction(() => document.querySelector("#api-base-url")?.textContent === "http://0.0.0.0:9099");
+        assert.match(await page.textContent("#api-endpoints-list"), /http:\/\/0\.0\.0\.0:9099\/v1\/chat\/completions/);
+        assert.match(await page.textContent("#api-snippets-list"), /smoke-alias/);
+        assert.match(await page.textContent("#api-snippets-list"), /Authorization: Bearer YOUR_API_KEY/);
+
+        const tunnelStates = await page.evaluate(() => {
+            const readState = () => ({
+                badge: document.querySelector("#remote-tunnel-badge")?.textContent,
+                badgeClasses: Array.from(document.querySelector("#remote-tunnel-badge")?.classList || []),
+                status: document.querySelector("#remote-tunnel-status")?.textContent,
+                urlHidden: document.querySelector("#remote-tunnel-url-row")?.classList.contains("hidden"),
+                url: document.querySelector("#remote-tunnel-url")?.textContent,
+                openAiUrl: document.querySelector("#remote-openai-url")?.textContent,
+                startDisabled: document.querySelector("#btn-start-remote-tunnel")?.disabled,
+                stopHidden: document.querySelector("#btn-stop-remote-tunnel")?.classList.contains("hidden"),
+            });
+            const states = {};
+            window.LlamaGui.remoteTunnelUi.renderStatus({ status: "idle", message: "Remote tunnel is not running." });
+            states.idle = readState();
+            window.LlamaGui.remoteTunnelUi.renderStatus({ status: "starting", message: "Starting Cloudflare tunnel..." });
+            states.starting = readState();
+            window.LlamaGui.remoteTunnelUi.renderStatus({
+                status: "running",
+                message: "Remote tunnel is running.",
+                url: "https://smoke.trycloudflare.com/",
+            });
+            states.running = readState();
+            window.LlamaGui.remoteTunnelUi.renderStatus({ status: "error", message: "Tunnel failed" });
+            states.error = readState();
+            return states;
+        });
+        assert.equal(tunnelStates.idle.badge, "idle");
+        assert.equal(tunnelStates.idle.urlHidden, true);
+        assert.equal(tunnelStates.starting.startDisabled, true);
+        assert.equal(tunnelStates.starting.stopHidden, false);
+        assert.ok(tunnelStates.starting.badgeClasses.includes("working"));
+        assert.equal(tunnelStates.running.urlHidden, false);
+        assert.equal(tunnelStates.running.url, "https://smoke.trycloudflare.com/");
+        assert.equal(tunnelStates.running.openAiUrl, "https://smoke.trycloudflare.com/v1");
+        assert.ok(tunnelStates.running.badgeClasses.includes("running"));
+        assert.equal(tunnelStates.error.status, "Tunnel failed");
+        assert.ok(tunnelStates.error.badgeClasses.includes("error"));
+
+        await selectSection(page, "configure");
         await page.fill("#custom-launch-args", "--threads 8\n--chat-template-kwargs '{\"preserve_thinking\":true}'");
         await page.dispatchEvent("#custom-launch-args", "input");
         await page.waitForFunction(() => document.querySelector("#command-preview-text")?.textContent.includes("--threads 8"));

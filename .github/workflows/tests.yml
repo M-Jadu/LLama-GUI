@@ -10,6 +10,9 @@ on:
   pull_request:
     branches: [main, master]
     paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - 'docs/images/**'
       - 'README.md'
 
 jobs:
