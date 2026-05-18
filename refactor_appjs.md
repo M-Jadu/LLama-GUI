@@ -188,9 +188,11 @@ Remote tunnel controls are a good next extraction because they own a distinct ti
 - Confirm copy buttons still use the same public URL and OpenAI-compatible base URL formats.
 - Confirm no unrelated API tab or launch logic moved with this phase.
 
-## Phase 5: Extract Quick Launch UI
+## Phase 5: Extract Quick Launch UI - Done
 
 Quick Launch is high-value but riskier because it touches mirrored controls, shared flag state, sampler presets, profiles, templates, command preview, and launch buttons.
+
+Status: Completed. `ui/js/quick-launch-ui.js` now owns Quick Launch local UI state, profile/context/GPU/template/sampler controls, command preview mirroring, action button sync, and event wiring through `window.LlamaGui.quickLaunchUi`. `app.js` keeps small compatibility wrappers and shared sampler/template helpers for now.
 
 ### Implementation
 

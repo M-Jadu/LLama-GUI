@@ -151,7 +151,7 @@ If a shared control becomes unreliable, prefer removing the duplicate UI over ke
 
 ### Adding a New Quick Launch Profile
 
-1. Add an entry to `QUICK_PROFILES` in `app.js`.
+1. Add an entry to `QUICK_PROFILES` in `ui/js/app-data.js`.
 2. Set `tool`, `flagValues`, `fitLinked`, and `samplerPresetName`.
 3. Verify applying the profile updates Configure, Chat, and command preview.
 4. Verify the profile summary text is accurate.
@@ -186,11 +186,11 @@ with the primary file and only touch secondary files if the change requires it.
 | Shared flag state | `ui/js/flag-core.js` | `ui/js/app.js` (callbacks) |
 | Launch args / command preview | `ui/js/flag-core.js` | `ui/js/app.js` (render) |
 | Configure tab rendering | `ui/js/config-flags-ui.js` | `ui/js/flag-core.js` (state) |
-| Quick Launch controls | `ui/js/app.js` | `ui/js/flag-core.js` (state) |
+| Quick Launch controls | `ui/js/quick-launch-ui.js` | `ui/js/app.js` (init/callbacks), `ui/js/flag-core.js` (state) |
 | Chat sidebar samplers | `ui/js/app.js` | `ui/js/flag-core.js` (state) |
 | Chat markdown/rendering helpers | `ui/js/chat-rendering.js` | `ui/js/app.js` (chat state/controller) |
 | API tab docs/snippets | `ui/js/api-tab.js` | `ui/js/app.js` (status/init), `ui/js/flag-core.js` (state reads) |
-| HF download UI | `ui/js/hf-download-ui.js` | `ui/js/app.js` (callbacks), `ui/js/manager.js` (fetchJson) |
+| HF download UI | `ui/js/hf-download-ui.js` | `ui/js/quick-launch-ui.js` (init), `ui/js/app.js` (callbacks), `ui/js/manager.js` (fetchJson) |
 | Remote tunnel UI | `ui/js/remote-tunnel-ui.js` | `ui/js/app.js` (init), `ui/js/api-tab.js` (endpoint config), `ui/js/manager.js` (fetchJson) |
 | Chat template presets | `ui/js/flags.js` | `ui/js/app.js` (mapping helpers) |
 | Sampler presets | `ui/js/app.js` | `ui/js/flag-core.js` (apply) |
@@ -218,7 +218,8 @@ The frontend loads scripts in a strict dependency order via `ui/index.html`:
 9. `api-tab.js` — API endpoint/snippet rendering helpers (`window.LlamaGui.apiTab`)
 10. `hf-download-ui.js` — Quick Launch Hugging Face downloader UI (`window.LlamaGui.hfDownloadUi`)
 11. `remote-tunnel-ui.js` — API tab Cloudflare tunnel UI (`window.LlamaGui.remoteTunnelUi`)
-12. `app.js` — main orchestration (wires everything together)
+12. `quick-launch-ui.js` — Quick Launch controls and shared-state UI sync (`window.LlamaGui.quickLaunchUi`)
+13. `app.js` — main orchestration (wires everything together)
 
 **Do not change this order.** Each file depends on the ones above it. If you
 add a new module, place it after its dependencies and before its consumers.
@@ -280,11 +281,12 @@ private closure variables.
 
 ### Frontend
 - **`ui/index.html`**: HTML template defining the tabbed layout and UI structure.
-- **`ui/js/app.js`**: Main UI orchestration. Manages tab switching, server launch/stop, output polling, stats polling, chat state/controller (streaming, web search, conversation history), Quick Launch profiles/sampler presets, toasts, and cache-busting reload.
+- **`ui/js/app.js`**: Main UI orchestration. Manages tab switching, server launch/stop, output polling, stats polling, chat state/controller (streaming, web search, conversation history), shared sampler/template helpers, toasts, and cache-busting reload.
 - **`ui/js/chat-rendering.js`**: Markdown and low-level chat DOM rendering helpers exposed as `window.LlamaGui.chatRendering`.
 - **`ui/js/api-tab.js`**: API tab endpoint/snippet data, base URL helpers, and rendering exposed as `window.LlamaGui.apiTab`; reads shared state through injected `flagCore`.
 - **`ui/js/hf-download-ui.js`**: Quick Launch Hugging Face downloader controls, status rendering, progress polling, cancel handling, and completion flow exposed as `window.LlamaGui.hfDownloadUi`; receives shared utilities and `flagCore` from `app.js`.
 - **`ui/js/remote-tunnel-ui.js`**: API tab Cloudflare tunnel controls, status rendering, URL rendering, copy wiring, start/stop actions, and polling exposed as `window.LlamaGui.remoteTunnelUi`; receives shared utilities and endpoint helpers from `app.js`.
+- **`ui/js/quick-launch-ui.js`**: Quick Launch profile, context, GPU, template, sampler, metrics, command preview mirror, action buttons, and event wiring exposed as `window.LlamaGui.quickLaunchUi`; reads and writes launch state through injected `flagCore`.
 - **`ui/js/flags.js`**: Single source of truth for exposed `llama.cpp` flags, flag categories, data types, built-in chat templates, chat template presets, sampler presets, and quick launch profiles.
 - **`ui/js/flag-core.js`**: Shared frontend flag state and launch-argument core. Owns `currentTool`, selected model, `flagValues`, shared setters, custom launch args parsing, preset apply/collect helpers, `getLaunchArgs()`, and command preview generation.
 - **`ui/js/config-flags-ui.js`**: Configure tab flag rendering, search/filtering, expand/collapse state, type-specific flag input builders, input restoration, and high-risk `multi_enum` warnings.
@@ -515,7 +517,7 @@ The Quick Launch tab (`section-quick-launch`) provides a simplified launch inter
 
 ### Profiles
 
-`QUICK_PROFILES` in `app.js` provides preconfigured setups:
+`QUICK_PROFILES` in `ui/js/app-data.js` provides preconfigured setups consumed by `ui/js/quick-launch-ui.js`:
 - `safe-defaults` / `balanced`: 16K context, auto GPU, auto-fit, Balanced sampler preset
 - `low-memory`: 8K context, smaller batch sizes, Precise sampler preset
 - `long-context`: 32K context, auto-fit
@@ -541,7 +543,7 @@ All controls write through `window.LlamaGui.flagCore` setters (`setFlagValue()` 
 
 ### Hugging Face Download Integration
 
-The Quick Launch tab includes a full HF model downloader section:
+The Quick Launch tab includes a full HF model downloader section initialized by `ui/js/quick-launch-ui.js` and implemented in `ui/js/hf-download-ui.js`:
 - Repo ID + revision + token inputs
 - "Find Files" button fetches GGUF file listing from `/api/hf/repo-files`
 - Model and mmproj file selectors

@@ -24,12 +24,13 @@
 | `backend/routing.py` | Dispatch-table route matching for API routes |
 | `backend/routes/` | 14 route handler modules grouped by feature (status, models, presets, metrics, chat, search, hf_download, file_picker, process, install, tunnel, git_update, lifecycle) |
 | `backend/services/` | 10 service modules (llama_manager, process_manager, hf_download, web_search, tunnel, git_update, lifecycle, file_picker, chat) |
-| `ui/js/app-data.js` | Shared Quick Launch profile, context preset, sampler preset, and chat sampler slider data consumed by `app.js` |
+| `ui/js/app-data.js` | Shared Quick Launch profile, context preset, sampler preset, and chat sampler slider data |
 | `ui/js/chat-rendering.js` | Markdown and low-level chat DOM rendering helpers exposed as `window.LlamaGui.chatRendering` |
 | `ui/js/api-tab.js` | API tab endpoint/snippet data, base URL helpers, and rendering exposed as `window.LlamaGui.apiTab` |
 | `ui/js/hf-download-ui.js` | Quick Launch Hugging Face downloader controls, status rendering, progress polling, cancel handling, and completion flow exposed as `window.LlamaGui.hfDownloadUi` |
 | `ui/js/remote-tunnel-ui.js` | API tab Cloudflare tunnel controls, status rendering, URL rendering, copy wiring, start/stop actions, and polling exposed as `window.LlamaGui.remoteTunnelUi` |
-| `ui/js/app.js` | Main UI orchestration: tab switching, launch/stop flow, chat state/controller (streaming, web search, history), Quick Launch/sampler preset behavior, stats polling, toasts |
+| `ui/js/quick-launch-ui.js` | Quick Launch profile, context, GPU, template, sampler, metrics, command preview mirror, action buttons, and event wiring exposed as `window.LlamaGui.quickLaunchUi` |
+| `ui/js/app.js` | Main UI orchestration: tab switching, launch/stop flow, chat state/controller (streaming, web search, history), shared sampler/template helpers, stats polling, toasts |
 | `ui/js/flags/` | Ordered flag modules for exposed llama.cpp flag categories, option lists, chat template presets, flag definitions, and flag helpers |
 | `ui/js/flag-core.js` | Shared frontend flag state and launch-argument core (`currentTool`, selected model, `flagValues`, setters, preset apply/collect helpers, command preview generation) |
 | `ui/js/config-flags-ui.js` | Configure tab flag rendering, search/filtering, expand/collapse state, type-specific flag input builders, input restoration, and high-risk `multi_enum` warnings |
@@ -80,6 +81,7 @@ Frontend modules are still loaded as ordered global scripts rather than ES modul
 
 Integrated model downloader in the Quick Launch tab:
 - Frontend controls, status rendering, progress polling, cancel handling, and completion flow live in `ui/js/hf-download-ui.js`
+- Quick Launch initializes the downloader from `ui/js/quick-launch-ui.js`
 - Browse HF repos for GGUF files via `/api/hf/repo-files`
 - Download models + optional mmproj files with progress bar and cancel support
 - Path/filename validation prevents traversal attacks
