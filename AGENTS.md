@@ -318,7 +318,7 @@ private closure variables.
 - Custom launch args are parsed and appended only by `flagCore.getLaunchArgs()`, after UI-managed flags and before the selected model arg.
 - Server output is polled via HTTP endpoint and streamed to the terminal panel.
 - Chat completions are streamed via SSE from `/api/chat/completions` (backend proxies to `llama-server`).
-- Stats are polled from `llama-server`'s Prometheus `/metrics` endpoint.
+- Stats are polled from `llama-server`'s Prometheus `/metrics` endpoint, with KV/context usage falling back through the local `/slots` proxy when `llamacpp:kv_cache_usage_ratio` is unavailable.
 - Remote tunnel status is polled from `/api/remote-tunnel/status`.
 - Model download progress is polled from `/api/hf/download-status`.
 - After app update, the page reloads with a cache-busting `appReload` timestamp parameter.

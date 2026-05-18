@@ -54,6 +54,7 @@ class BackendServices:
     current_platform: str = "unknown"
     find_tool_executable: Callable[[str], Path] = _missing_service
     get_local_llama_metrics: Callable[[str, str], Tuple[Optional[str], str]] = _missing_service
+    get_local_llama_slots: Callable[[str, str], Tuple[Optional[str], str]] = _missing_service
     get_platform_label: Callable[[], str] = _missing_service
     get_runtime_files: Callable[[], Sequence[Path]] = _missing_service
     get_tool_filename: Callable[[str], str] = _missing_service

@@ -206,6 +206,7 @@ def configure_services(ctx=APP_CONTEXT):
     ctx.services.get_llama_api_target = get_llama_api_target
     ctx.services.set_llama_api_target = set_llama_api_target
     ctx.services.get_local_llama_metrics = get_local_llama_metrics
+    ctx.services.get_local_llama_slots = get_local_llama_slots
     ctx.services.validate_runtime_dependencies = validate_runtime_dependencies
 
 
@@ -493,6 +494,31 @@ def get_local_llama_metrics(host, port):
         return None, f"llama-server metrics returned HTTP {exc.code}."
     except Exception as exc:
         return None, f"Failed to fetch llama-server metrics: {exc}"
+
+
+def get_local_llama_slots(host, port):
+    try:
+        parsed_port = int(port or LLAMA_PORT)
+    except (TypeError, ValueError):
+        return None, "Invalid llama-server slots port."
+    if parsed_port < 1 or parsed_port > 65535:
+        return None, "Invalid llama-server slots port."
+
+    metrics_host, host_error = get_metrics_host(host)
+    if not metrics_host:
+        return None, host_error
+
+    url = f"http://{metrics_host}:{parsed_port}/slots"
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            raw = resp.read(WEB_SEARCH_FETCH_BYTES)
+            charset = resp.headers.get_content_charset() or "utf-8"
+            return raw.decode(charset, errors="replace"), ""
+    except urllib.error.HTTPError as exc:
+        return None, f"llama-server slots returned HTTP {exc.code}."
+    except Exception as exc:
+        return None, f"Failed to fetch llama-server slots: {exc}"
 
 
 def write_sse(wfile, data):
@@ -809,6 +835,7 @@ API_ROUTER = (
     .add("GET", "/api/hf/download-status", hf_download_routes.get_download_status)
     .add("GET", "/api/remote-tunnel/status", tunnel_routes.get_status)
     .add("GET", "/api/llama/metrics", metrics_routes.get_metrics)
+    .add("GET", "/api/llama/slots", metrics_routes.get_slots)
     .add("GET", "/api/models", models_routes.list_models)
     .add("GET", "/api/app-update-status", git_update_routes.get_status)
     .add("GET", "/api/presets", presets_routes.list_presets)

@@ -381,9 +381,9 @@ When `llama-server` is running, a live stats bar appears at the bottom of the sc
 - **tok/s prompt** - prompt processing throughput
 - **gen tokens** - total tokens generated
 - **tok/s gen** - generation throughput
-- **KV %** - KV cache utilization
+- **KV %** - KV cache utilization, or active slot/context occupancy when the running `llama-server` build does not expose a direct KV metric
 
-The bar polls the `/metrics` endpoint every 3 seconds and updates automatically. It disappears when the server stops.
+The bar polls the `/metrics` endpoint every 3 seconds and can fall back to `/slots` for KV/context usage when needed. It disappears when the server stops.
 
 The `--metrics` flag is enabled by default. You can toggle it from:
 - **Quick Launch** - "Show server stats bar" checkbox in the Launch Preview card

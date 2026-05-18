@@ -692,7 +692,10 @@ async function pollStats() {
         const promptSpeed = metrics["llamacpp:prompt_tokens_seconds"];
         const genTokens = metrics["llamacpp:tokens_predicted_total"];
         const genSpeed = metrics["llamacpp:predicted_tokens_seconds"];
-        const kvUsage = metrics["llamacpp:kv_cache_usage_ratio"];
+        let kvUsage = metrics["llamacpp:kv_cache_usage_ratio"];
+        if (kvUsage === undefined) {
+            kvUsage = await fetchSlotKvUsage(host, port);
+        }
         if (promptTokens !== undefined) chatStatsRaw.promptTokens = promptTokens;
         if (genTokens !== undefined) chatStatsRaw.genTokens = genTokens;
         const deltaPrompt = promptTokens !== undefined ? Math.max(0, promptTokens - chatStatsBaseline.promptTokens) : null;
@@ -720,6 +723,34 @@ async function pollStats() {
     } finally {
         pollStatsActive = false;
     }
+}
+
+async function fetchSlotKvUsage(host, port) {
+    try {
+        const params = new URLSearchParams({ host, port: String(port) });
+        const resp = await fetch(`/api/llama/slots?${params.toString()}`);
+        if (!resp.ok) return undefined;
+        const slots = await resp.json();
+        return getSlotKvUsage(slots);
+    } catch (e) {
+        console.debug("Failed to fetch llama-server slots for KV usage", e);
+        return undefined;
+    }
+}
+
+function getSlotKvUsage(slots) {
+    if (!Array.isArray(slots)) return undefined;
+    let maxUsage;
+    for (const slot of slots) {
+        const nCtx = Number(slot?.n_ctx);
+        if (!Number.isFinite(nCtx) || nCtx <= 0) continue;
+        const tokenState = Array.isArray(slot.next_token) ? slot.next_token[0] : null;
+        const nDecoded = Number(tokenState?.n_decoded);
+        if (!Number.isFinite(nDecoded) || nDecoded < 0) continue;
+        const usage = Math.max(0, Math.min(1, nDecoded / nCtx));
+        maxUsage = maxUsage === undefined ? usage : Math.max(maxUsage, usage);
+    }
+    return maxUsage;
 }
 
 async function pollOutput() {

@@ -118,6 +118,7 @@ Built-in (Neutral/Balanced/Creative/Precise) + custom presets:
 
 Live Prometheus stats polled from `llama-server`:
 - Prompt/gen token counts and speeds, KV cache usage
+- KV usage falls back to proxied `/slots` data when the active `llama-server` build does not expose `llamacpp:kv_cache_usage_ratio`
 - Polling starts ~2s after launch, every 3s
 
 ## Frontend Smoke Tests

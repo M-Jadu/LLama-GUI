@@ -204,6 +204,46 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertEqual(calls, [("localhost", "9090")])
             self.assertEqual(response.text_payload, "llama metrics")
 
+    def test_slots_route_uses_context_service(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            calls = []
+
+            def get_local_llama_slots(host, port):
+                calls.append((host, port))
+                return '[{"id":0,"n_ctx":4096}]', ""
+
+            ctx.services.get_local_llama_slots = get_local_llama_slots
+            response = DummyResponse()
+
+            metrics.get_slots(
+                Request("GET", "/api/llama/slots", "host=localhost&port=9090", {}),
+                response,
+                ctx,
+            )
+
+            self.assertEqual(calls, [("localhost", "9090")])
+            self.assertEqual(response.text_payload, '[{"id":0,"n_ctx":4096}]')
+
+    def test_slots_route_returns_proxy_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+
+            def get_local_llama_slots(host, port):
+                return None, "llama-server slots returned HTTP 404."
+
+            ctx.services.get_local_llama_slots = get_local_llama_slots
+            response = DummyResponse()
+
+            metrics.get_slots(
+                Request("GET", "/api/llama/slots", "host=localhost&port=9090", {}),
+                response,
+                ctx,
+            )
+
+            self.assertEqual(response.status, 502)
+            self.assertEqual(response.payload["error"], "llama-server slots returned HTTP 404.")
+
     def test_status_route_uses_context_services(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = make_context(tmp)

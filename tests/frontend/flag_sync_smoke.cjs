@@ -159,8 +159,24 @@ async function main() {
                     "llamacpp:prompt_tokens_seconds 0",
                     "llamacpp:tokens_predicted_total 0",
                     "llamacpp:predicted_tokens_seconds 0",
-                    "llamacpp:kv_cache_usage_ratio 0",
                 ].join("\n"),
+            });
+        });
+
+        await page.route("**/api/llama/slots**", async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify([
+                    { id: 0, n_ctx: 1000, speculative: false, is_processing: false },
+                    {
+                        id: 1,
+                        n_ctx: 1000,
+                        speculative: false,
+                        is_processing: false,
+                        next_token: [{ n_decoded: 125, n_remain: 875 }],
+                    },
+                ]),
             });
         });
 
@@ -239,6 +255,9 @@ async function main() {
         await page.waitForFunction(() => document.querySelector("#quick-metrics-toggle")?.checked === false);
         await page.click("#flag-metrics");
         await page.waitForFunction(() => document.querySelector("#quick-metrics-toggle")?.checked === true);
+        await page.evaluate(() => startStatsPolling());
+        await page.waitForFunction(() => document.querySelector("#stats-kv-usage")?.textContent === "13%");
+        await page.evaluate(() => stopStatsPolling());
 
         await selectSection(page, "chat");
         await page.evaluate(() => {
