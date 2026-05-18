@@ -187,8 +187,9 @@ with the primary file and only touch secondary files if the change requires it.
 | Launch args / command preview | `ui/js/flag-core.js` | `ui/js/app.js` (render) |
 | Configure tab rendering | `ui/js/config-flags-ui.js` | `ui/js/flag-core.js` (state) |
 | Quick Launch controls | `ui/js/quick-launch-ui.js` | `ui/js/app.js` (init/callbacks), `ui/js/flag-core.js` (state) |
-| Chat sidebar samplers | `ui/js/app.js` | `ui/js/flag-core.js` (state) |
-| Chat markdown/rendering helpers | `ui/js/chat-rendering.js` | `ui/js/app.js` (chat state/controller) |
+| Chat state/controller | `ui/js/chat-ui.js` | `ui/js/app.js` (init/status/stats callbacks), `ui/js/flag-core.js` (sampler state) |
+| Chat sidebar samplers | `ui/js/chat-ui.js` | `ui/js/flag-core.js` (state) |
+| Chat markdown/rendering helpers | `ui/js/chat-rendering.js` | `ui/js/chat-ui.js` (chat state/controller) |
 | API tab docs/snippets | `ui/js/api-tab.js` | `ui/js/app.js` (status/init), `ui/js/flag-core.js` (state reads) |
 | HF download UI | `ui/js/hf-download-ui.js` | `ui/js/quick-launch-ui.js` (init), `ui/js/app.js` (callbacks), `ui/js/manager.js` (fetchJson) |
 | Remote tunnel UI | `ui/js/remote-tunnel-ui.js` | `ui/js/app.js` (init), `ui/js/api-tab.js` (endpoint config), `ui/js/manager.js` (fetchJson) |
@@ -219,7 +220,8 @@ The frontend loads scripts in a strict dependency order via `ui/index.html`:
 10. `hf-download-ui.js` — Quick Launch Hugging Face downloader UI (`window.LlamaGui.hfDownloadUi`)
 11. `remote-tunnel-ui.js` — API tab Cloudflare tunnel UI (`window.LlamaGui.remoteTunnelUi`)
 12. `quick-launch-ui.js` — Quick Launch controls and shared-state UI sync (`window.LlamaGui.quickLaunchUi`)
-13. `app.js` — main orchestration (wires everything together)
+13. `chat-ui.js` — Chat tab state, streaming, history, web search, and sampler controls (`window.LlamaGui.chatUi`)
+14. `app.js` — main orchestration (wires everything together)
 
 **Do not change this order.** Each file depends on the ones above it. If you
 add a new module, place it after its dependencies and before its consumers.
@@ -281,8 +283,9 @@ private closure variables.
 
 ### Frontend
 - **`ui/index.html`**: HTML template defining the tabbed layout and UI structure.
-- **`ui/js/app.js`**: Main UI orchestration. Manages tab switching, server launch/stop, output polling, stats polling, chat state/controller (streaming, web search, conversation history), shared sampler/template helpers, toasts, and cache-busting reload.
+- **`ui/js/app.js`**: Main UI orchestration. Manages tab switching, server launch/stop, output polling, stats polling, shared sampler/template helpers, toasts, module initialization, and cache-busting reload.
 - **`ui/js/chat-rendering.js`**: Markdown and low-level chat DOM rendering helpers exposed as `window.LlamaGui.chatRendering`.
+- **`ui/js/chat-ui.js`**: Chat tab state, streaming/abort flow, web search settings, conversation history, sidebar controls, sampler sliders, and status badge updates exposed as `window.LlamaGui.chatUi`; reads and writes launch-relevant sampler state through injected `flagCore`.
 - **`ui/js/api-tab.js`**: API tab endpoint/snippet data, base URL helpers, and rendering exposed as `window.LlamaGui.apiTab`; reads shared state through injected `flagCore`.
 - **`ui/js/hf-download-ui.js`**: Quick Launch Hugging Face downloader controls, status rendering, progress polling, cancel handling, and completion flow exposed as `window.LlamaGui.hfDownloadUi`; receives shared utilities and `flagCore` from `app.js`.
 - **`ui/js/remote-tunnel-ui.js`**: API tab Cloudflare tunnel controls, status rendering, URL rendering, copy wiring, start/stop actions, and polling exposed as `window.LlamaGui.remoteTunnelUi`; receives shared utilities and endpoint helpers from `app.js`.

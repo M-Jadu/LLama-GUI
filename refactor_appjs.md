@@ -234,9 +234,11 @@ Status: Completed. `ui/js/quick-launch-ui.js` now owns Quick Launch local UI sta
 - Confirm command preview still comes only from `flagCore.getLaunchArgs()`.
 - Confirm all changed controls use shared setters.
 
-## Phase 6: Extract Chat Controller
+## Phase 6: Extract Chat Controller - Done
 
 The chat controller is the largest and most stateful extraction. Do it after the easier module boundaries have reduced noise in `app.js`.
+
+Status: Completed. `ui/js/chat-ui.js` now owns chat state, streaming/abort flow, web search settings, conversation history, sidebar sampler controls, chat status badge updates, and chat event wiring. `app.js` keeps thin wrappers plus the explicit stats baseline callback used by metrics polling.
 
 ### Implementation
 
