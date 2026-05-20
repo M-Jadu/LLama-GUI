@@ -179,7 +179,17 @@
 
             if (quote === "\"") {
                 if (ch === "\\") {
-                    escaping = true;
+                    const nextCh = input[i + 1];
+                    if (nextCh === undefined) {
+                        escaping = true;
+                        continue;
+                    }
+                    if (nextCh !== undefined && (/[\s'"\\]/.test(nextCh))) {
+                        escaping = true;
+                        continue;
+                    }
+                    token += ch;
+                    tokenStarted = true;
                     continue;
                 }
                 if (ch === "\"") {
@@ -350,7 +360,7 @@
         setCurrentTool,
         getSelectedModel: () => selectedModel,
         setSelectedModelValue,
-        getFlagValues: () => flagValues,
+        getFlagValues: collectFlagValues,
         replaceFlagValues,
         patchFlagValues,
         collectFlagValues,

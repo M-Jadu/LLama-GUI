@@ -87,6 +87,7 @@
 
     function resetOpenCategories() {
         openCategories.clear();
+        openSubmenus.clear();
     }
 
     function flagMatchesSearch(flag, query) {
@@ -467,16 +468,16 @@
 
             cb.addEventListener("change", () => {
                 const current = normalizeMultiEnumValue(getFlagValues()[f.id]);
+                let nextSelected;
                 if (opt.value === "all" && cb.checked) {
-                    setValueAndRefresh(["all"]);
+                    nextSelected = ["all"];
                 } else {
-                    const next = cb.checked
+                    nextSelected = cb.checked
                         ? [...current.filter(v => v !== "all"), opt.value]
                         : current.filter(v => v !== opt.value);
-                    setValueAndRefresh(next);
                 }
 
-                const nextSelected = normalizeMultiEnumValue(getFlagValues()[f.id]);
+                setValueAndRefresh(nextSelected);
                 for (const other of optionWrap.querySelectorAll('input[type="checkbox"]')) {
                     other.checked = nextSelected.includes(other.dataset.optionValue);
                 }

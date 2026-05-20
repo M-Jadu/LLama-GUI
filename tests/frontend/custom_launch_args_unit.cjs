@@ -25,11 +25,23 @@ assertTokens("--threads 8\n--flash-attn\n--parallel 4", ["--threads", "8", "--fl
 assertTokens("--chat-template-kwargs '{\"preserve_thinking\":true}'", ["--chat-template-kwargs", "{\"preserve_thinking\":true}"]);
 assertTokens('--log-prefix "my local test"', ["--log-prefix", "my local test"]);
 assertTokens('--label "say \\"hello\\""', ["--label", 'say "hello"']);
+assertTokens(String.raw`--label "say \"hello\" and \\bye"`, ["--label", String.raw`say "hello" and \bye`]);
 assertTokens('--empty ""', ["--empty", ""]);
 assertTokens(String.raw`--log-file C:\temp\llama.log`, ["--log-file", String.raw`C:\temp\llama.log`]);
+assertTokens(String.raw`--log-file "C:\Users\pegas\My Models\model.gguf"`, ["--log-file", String.raw`C:\Users\pegas\My Models\model.gguf`]);
 assertTokens(String.raw`--log-prefix my\ local\ test`, ["--log-prefix", "my local test"]);
 assertTokens(String.raw`--label say\"hello\"`, ["--label", 'say"hello"']);
 assertTokens("--path C:\\temp\\", ["--path", "C:\\temp\\"]);
+
+const state = context.window.LlamaGui.flagCore;
+state.replaceFlagValues({ tools: ["web_search"], temperature: 0.7 });
+const snapshot = state.getFlagValues();
+snapshot.tools.push("mutated");
+snapshot.temperature = 1.5;
+assert.equal(
+    JSON.stringify(state.getFlagValues()),
+    JSON.stringify({ tools: ["web_search"], temperature: 0.7 })
+);
 
 assert.match(parse("--flag 'unterminated").error, /unmatched single quote/);
 assert.match(parse('--flag "unterminated').error, /unmatched double quote/);
