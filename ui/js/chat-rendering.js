@@ -274,7 +274,21 @@
 
     function appendChatStreamToken(bubble, token) {
         bubble.dataset.rawText = (bubble.dataset.rawText || "") + token;
-        bubble.innerHTML = renderMarkdown(bubble.dataset.rawText);
+        if (!bubble.dataset.streamingTextInitialized) {
+            bubble.textContent = bubble.dataset.rawText;
+            bubble.dataset.streamingTextInitialized = "1";
+        } else {
+            bubble.textContent += token;
+        }
+        const container = document.getElementById("chat-messages");
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function finalizeChatStreamMarkdown(bubble) {
+        if (!bubble) return;
+        const rawText = bubble.dataset.rawText || "";
+        bubble.innerHTML = renderMarkdown(rawText);
+        delete bubble.dataset.streamingTextInitialized;
         const container = document.getElementById("chat-messages");
         container.scrollTop = container.scrollHeight;
     }
@@ -291,5 +305,6 @@
         renderChatTypingIndicator,
         removeChatTypingIndicator,
         appendChatStreamToken,
+        finalizeChatStreamMarkdown,
     };
 })();

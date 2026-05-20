@@ -4,6 +4,7 @@ import html
 import ipaddress
 import re
 import socket
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -89,7 +90,8 @@ def html_to_readable_text(raw_html: str) -> str:
         parser.feed(raw_html)
         parser.close()
         return parser.text()
-    except Exception:
+    except Exception as exc:
+        print(f"[web_search] HTML parser failed, using regex fallback: {exc}", file=sys.stderr)
         text = re.sub(r"(?is)<(script|style|noscript|svg).*?</\1>", " ", raw_html)
         text = re.sub(r"(?s)<[^>]+>", " ", text)
         text = html.unescape(text)

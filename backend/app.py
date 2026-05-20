@@ -8,7 +8,6 @@ import sys
 import urllib.request
 import urllib.parse
 import urllib.error
-import ipaddress
 
 from backend.config import (
     APP_LOGO_FILE,
@@ -444,31 +443,11 @@ def get_local_chat_api_url(body):
 
 
 def get_local_interface_addresses():
-    addresses = {LLAMA_HOST, "::1"}
-    hostnames = {socket.gethostname(), socket.getfqdn()}
-    for name in hostnames:
-        try:
-            for info in socket.getaddrinfo(name, None):
-                addresses.add(info[4][0])
-        except OSError:
-            pass
-    return addresses
+    return chat_service.get_local_interface_addresses()
 
 
 def get_metrics_host(host):
-    value = str(host or LLAMA_HOST).strip() or LLAMA_HOST
-    if value.lower() == "localhost" or value in {"0.0.0.0", "::", "*"}:
-        return LLAMA_HOST, ""
-    try:
-        infos = socket.getaddrinfo(value, None, type=socket.SOCK_STREAM)
-    except OSError as exc:
-        return "", f"Invalid llama-server metrics host: {exc}"
-    local_addresses = get_local_interface_addresses()
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if ip.is_loopback or info[4][0] in local_addresses:
-            return value, ""
-    return "", "Blocked: metrics proxy can only target this machine."
+    return chat_service.get_local_proxy_host(host)
 
 
 def get_local_llama_metrics(host, port):

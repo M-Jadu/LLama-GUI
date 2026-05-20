@@ -719,7 +719,7 @@ async function pollStats() {
             document.getElementById("stats-kv-usage").textContent = (kvUsage * 100).toFixed(0) + "%";
         }
     } catch (e) {
-        // server not ready yet or metrics unavailable
+        console.debug("Failed to fetch llama-server metrics", e);
     } finally {
         pollStatsActive = false;
     }

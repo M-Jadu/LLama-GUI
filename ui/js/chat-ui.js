@@ -18,6 +18,7 @@
     const CHAT_WEB_SEARCH_DEFAULT_MAX_RESULTS = 5;
     const CHAT_WEB_SEARCH_MIN_RESULTS = 1;
     const CHAT_WEB_SEARCH_MAX_RESULTS = 10;
+    const CHAT_MAX_STORED_CONVERSATIONS = 50;
 
     const chatRendering = window.LlamaGui.chatRendering;
     const {
@@ -27,6 +28,7 @@
         renderChatTypingIndicator,
         removeChatTypingIndicator,
         appendChatStreamToken,
+        finalizeChatStreamMarkdown,
     } = chatRendering;
 
     function configure(options) {
@@ -258,6 +260,7 @@
             }
             setChatWebStatus(bubble, "");
             if (fullContent) {
+                finalizeChatStreamMarkdown(bubble);
                 chatMessages.push({ role: "assistant", content: fullContent, sources: responseSources });
                 saveCurrentConversation();
             }
@@ -333,10 +336,14 @@
     }
 
     function saveConversationsToStorage(list) {
+        const pruned = Array.isArray(list) ? list.slice(0, CHAT_MAX_STORED_CONVERSATIONS) : [];
         try {
-            localStorage.setItem(CHAT_CONVERSATIONS_STORAGE_KEY, JSON.stringify(list));
+            localStorage.setItem(CHAT_CONVERSATIONS_STORAGE_KEY, JSON.stringify(pruned));
         } catch (e) {
             console.warn("Failed to save conversations to localStorage:", e);
+            if (typeof window.showToast === "function") {
+                window.showToast("Conversation history is full. Recent chat is still active, but history was not saved.", "warning");
+            }
         }
     }
 
