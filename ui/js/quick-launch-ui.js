@@ -300,11 +300,13 @@
         const topP = document.getElementById("quick-top-p");
         const minP = document.getElementById("quick-min-p");
         const repeatPenalty = document.getElementById("quick-repeat-penalty");
+        const presencePenalty = document.getElementById("quick-presence-penalty");
         if (temperature) temperature.value = values.temperature ?? "";
         if (topK) topK.value = values.top_k ?? "";
         if (topP) topP.value = values.top_p ?? "";
         if (minP) minP.value = values.min_p ?? "";
         if (repeatPenalty) repeatPenalty.value = values.repeat_penalty ?? "";
+        if (presencePenalty) presencePenalty.value = values.presence_penalty ?? "";
 
         const profileSummary = document.getElementById("quick-profile-summary");
         const profileSelect = document.getElementById("quick-profile-select");
@@ -496,6 +498,7 @@
             "quick-top-p": "top_p",
             "quick-min-p": "min_p",
             "quick-repeat-penalty": "repeat_penalty",
+            "quick-presence-penalty": "presence_penalty",
         };
 
         for (const [elementId, flagId] of Object.entries(quickSamplerFieldMap)) {
