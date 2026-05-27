@@ -45,7 +45,6 @@ function shouldOmitSpeculativeFlag(f, values) {
         "draft_min",
         "draft_p_min",
         "draft_p_split",
-        "ctx_size_draft",
         "gpu_layers_draft",
         "draft_device",
         "draft_cache_type_k",

@@ -336,6 +336,14 @@ async function main() {
         assert.ok(launchArgs.includes("--presence-penalty") && launchArgs.includes("0.3"));
         assert.ok(launchArgs.includes("-cms") && launchArgs.includes("0"));
 
+        await page.evaluate(() => {
+            window.LlamaGui.flagCore.setMultipleFlagValues({
+                model_draft: "models/draft-smoke.gguf",
+                ctx_size_draft: 4096,
+            });
+        });
+        await page.waitForFunction(() => !window.LlamaGui.flagCore.getLaunchArgs().args.flat().includes("-cd"));
+
         await selectSection(page, "quick-launch");
         await page.fill("#quick-temperature", "0.64");
         await page.dispatchEvent("#quick-temperature", "input");

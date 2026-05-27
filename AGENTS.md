@@ -141,6 +141,13 @@ If a shared control becomes unreliable, prefer removing the duplicate UI over ke
 8. Run `npm run test:frontend` to verify sync.
 9. Update `docs/flag_report.md` if doing a flag audit.
 
+### Known Omitted llama.cpp Flags
+
+- Do not expose `-cd` / `ctx_size_draft`. Current `llama-server` and
+  `llama-cli` builds do not advertise a draft context-size flag, and launching
+  with `-cd` fails as an unsupported argument. Keep stale preset values inert
+  rather than emitting this flag.
+
 ### Adding a New Chat Template Preset
 
 1. Decide: `builtin` (maps to upstream template name), `bundled` (new

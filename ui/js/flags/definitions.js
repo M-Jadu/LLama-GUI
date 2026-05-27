@@ -257,8 +257,6 @@ const FLAGS = [
       desc: "Minimum draft tokens", tool: "both", min: 0, placeholder: "llama.cpp default" },
     { id: "draft_p_min", flag: "--spec-draft-p-min", category: "speculative", type: "float", label: "Draft Min Probability",
       desc: "Minimum speculative decoding probability (greedy)", tool: "both", min: 0, max: 1, step: 0.01, placeholder: "llama.cpp default" },
-    { id: "ctx_size_draft", flag: "-cd", category: "speculative", type: "int", label: "Draft Context Size",
-      desc: "Context size for draft model", tool: "both", min: 0 },
     { id: "gpu_layers_draft", flag: "-ngld", category: "speculative", type: "text", label: "Draft GPU Layers",
       desc: "Max draft model layers in VRAM", tool: "both", placeholder: "auto" },
     { id: "spec_type", flag: "--spec-type", category: "speculative", type: "enum", label: "Speculative Type",
