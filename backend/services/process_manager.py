@@ -6,10 +6,165 @@ import signal
 import subprocess
 import sys
 import threading
+import re
 from typing import Any, Iterable, Optional
 
 from .. import config
 from ..context import AppContext
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+_ESTIMATE_VALUE_FLAGS = {
+    "-t",
+    "--threads",
+    "-tb",
+    "--threads-batch",
+    "-C",
+    "--cpu-mask",
+    "-Cr",
+    "--cpu-range",
+    "--cpu-strict",
+    "--prio",
+    "--poll",
+    "-Cb",
+    "--cpu-mask-batch",
+    "-Crb",
+    "--cpu-range-batch",
+    "--cpu-strict-batch",
+    "--prio-batch",
+    "--poll-batch",
+    "-c",
+    "--ctx-size",
+    "-n",
+    "--predict",
+    "--n-predict",
+    "-b",
+    "--batch-size",
+    "-ub",
+    "--ubatch-size",
+    "--keep",
+    "-fa",
+    "--flash-attn",
+    "-p",
+    "--prompt",
+    "-f",
+    "--file",
+    "-bf",
+    "--binary-file",
+    "--rope-scaling",
+    "--rope-scale",
+    "--rope-freq-base",
+    "--rope-freq-scale",
+    "--yarn-orig-ctx",
+    "--yarn-ext-factor",
+    "--yarn-attn-factor",
+    "--yarn-beta-slow",
+    "--yarn-beta-fast",
+    "-ctk",
+    "--cache-type-k",
+    "-ctv",
+    "--cache-type-v",
+    "-dt",
+    "--defrag-thold",
+    "-np",
+    "--parallel",
+    "--rpc",
+    "--numa",
+    "-dev",
+    "--device",
+    "-ot",
+    "--override-tensor",
+    "-ncmoe",
+    "--n-cpu-moe",
+    "-ngl",
+    "--gpu-layers",
+    "--n-gpu-layers",
+    "-sm",
+    "--split-mode",
+    "-ts",
+    "--tensor-split",
+    "-mg",
+    "--main-gpu",
+    "-fit",
+    "--fit",
+    "-fitt",
+    "--fit-target",
+    "-fitc",
+    "--fit-ctx",
+    "--override-kv",
+    "--lora",
+    "--lora-scaled",
+    "--control-vector",
+    "--control-vector-scaled",
+    "--control-vector-layer-range",
+    "-m",
+    "--model",
+    "-mu",
+    "--model-url",
+    "-dr",
+    "--docker-repo",
+    "-hf",
+    "-hfr",
+    "--hf-repo",
+    "-hff",
+    "--hf-file",
+    "-hfv",
+    "-hfrv",
+    "--hf-repo-v",
+    "-hffv",
+    "--hf-file-v",
+    "-hft",
+    "--hf-token",
+    "--log-file",
+    "--log-colors",
+    "-lv",
+    "--verbosity",
+    "--log-verbosity",
+    "--spec-draft-type-k",
+    "-ctkd",
+    "--cache-type-k-draft",
+    "--spec-draft-type-v",
+    "-ctvd",
+    "--cache-type-v-draft",
+}
+_ESTIMATE_BOOL_FLAGS = {
+    "--swa-full",
+    "--perf",
+    "--no-perf",
+    "-e",
+    "--escape",
+    "--no-escape",
+    "-kvo",
+    "--kv-offload",
+    "-nkvo",
+    "--no-kv-offload",
+    "--repack",
+    "-nr",
+    "--no-repack",
+    "--no-host",
+    "--mlock",
+    "--mmap",
+    "--no-mmap",
+    "-dio",
+    "--direct-io",
+    "-ndio",
+    "--no-direct-io",
+    "--list-devices",
+    "-cmoe",
+    "--cpu-moe",
+    "--check-tensors",
+    "--op-offload",
+    "--no-op-offload",
+    "--log-disable",
+    "-v",
+    "--verbose",
+    "--log-verbose",
+    "--offline",
+    "--log-prefix",
+    "--no-log-prefix",
+    "--log-timestamps",
+    "--no-log-timestamps",
+}
 
 
 def is_process_running(ctx: AppContext) -> bool:
@@ -44,6 +199,155 @@ def flatten_launch_args(args_list: Optional[Iterable[Any]]) -> list[str]:
         else:
             flat_args.append(str(entry))
     return flat_args
+
+
+def _fit_params_executable(ctx: AppContext) -> Any:
+    suffix = getattr(ctx.services, "binary_suffix", "") or ""
+    return ctx.paths.llama_bin / f"llama-fit-params{suffix}"
+
+
+def parse_memory_estimate_output(output: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for line in output.splitlines():
+        parts = line.strip().split()
+        if len(parts) != 4:
+            continue
+        device, model, context, compute = parts
+        if not re.match(r"^[A-Za-z][A-Za-z0-9_.:-]*$", device):
+            continue
+        try:
+            model_mib = int(model)
+            context_mib = int(context)
+            compute_mib = int(compute)
+        except ValueError:
+            continue
+        total_mib = model_mib + context_mib + compute_mib
+        rows.append(
+            {
+                "device": device,
+                "kind": "ram" if device.lower() == "host" else "accelerator",
+                "model_mib": model_mib,
+                "context_mib": context_mib,
+                "compute_mib": compute_mib,
+                "total_mib": total_mib,
+            }
+        )
+    return rows
+
+
+def _short_estimate_error(output: str) -> str:
+    cleaned = _ANSI_RE.sub("", output or "")
+    for line in cleaned.splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        if "error:" in text.lower() or "failed" in text.lower() or "invalid" in text.lower():
+            return text[-220:]
+    return cleaned.strip()[-220:]
+
+
+def _memory_estimate_args(args: list[str]) -> list[str]:
+    filtered_args: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        name = arg.split("=", 1)[0]
+        if name in ("-fitp", "--fit-print"):
+            if "=" not in arg and i + 1 < len(args) and not args[i + 1].startswith("-"):
+                i += 2
+                continue
+            i += 1
+            continue
+        if name == "-np" or name == "--parallel":
+            raw_value = arg.split("=", 1)[1] if "=" in arg else (args[i + 1] if i + 1 < len(args) else "")
+            try:
+                parallel = int(raw_value)
+            except ValueError:
+                parallel = 0
+            if 1 <= parallel <= 256:
+                filtered_args.append(arg)
+                if "=" not in arg and i + 1 < len(args):
+                    filtered_args.append(args[i + 1])
+                    i += 2
+                    continue
+            i += 1 if "=" in arg else 2
+            continue
+        if name in _ESTIMATE_VALUE_FLAGS:
+            filtered_args.append(arg)
+            if "=" not in arg and i + 1 < len(args):
+                filtered_args.append(args[i + 1])
+                i += 2
+                continue
+            i += 1
+            continue
+        if name in _ESTIMATE_BOOL_FLAGS:
+            filtered_args.append(arg)
+            i += 1
+            continue
+        if "=" in arg or i + 1 >= len(args) or args[i + 1].startswith("-"):
+            i += 1
+        else:
+            i += 2
+    return filtered_args
+
+
+def estimate_memory(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]]) -> dict[str, Any]:
+    allowed_tools = ctx.services.llama_tools or []
+    if tool not in allowed_tools:
+        return {"error": f"Unknown tool: {tool!r}"}
+
+    exe_path = _fit_params_executable(ctx)
+    if not exe_path.exists():
+        return {"error": "llama-fit-params not found. Install or repair llama.cpp first."}
+
+    runtime_health = dict(ctx.services.validate_runtime_dependencies([tool]))
+    missing_runtime_files = runtime_health.get("missing_runtime_files") or []
+    if missing_runtime_files:
+        missing = ", ".join(str(name) for name in missing_runtime_files)
+        plural = "libraries" if len(missing_runtime_files) != 1 else "library"
+        return {"error": f"Missing llama.cpp runtime {plural}: {missing}."}
+
+    args = flatten_launch_args(args_list)
+    filtered_args = _memory_estimate_args(args)
+
+    command = [str(exe_path), *filtered_args, "-fitp", "on"]
+    try:
+        completed = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=_build_process_env(ctx),
+            cwd=str(ctx.paths.root),
+            timeout=30,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {"error": "Memory estimate timed out."}
+    except Exception as e:
+        return {"error": str(e)}
+
+    combined_output = "\n".join(part for part in [completed.stdout, completed.stderr] if part)
+    rows = parse_memory_estimate_output(combined_output)
+    if not rows:
+        detail = _short_estimate_error(combined_output)
+        if completed.returncode != 0:
+            message = "Memory estimate failed."
+            if detail:
+                message = f"{message} {detail}"
+            return {"error": message, "detail": detail}
+        message = "Memory estimate output was not recognized."
+        if detail:
+            message = f"{message} {detail}"
+        return {"error": message, "detail": detail}
+
+    accelerator_mib = sum(row["total_mib"] for row in rows if row["kind"] == "accelerator")
+    ram_mib = sum(row["total_mib"] for row in rows if row["kind"] == "ram")
+    return {
+        "rows": rows,
+        "accelerator_mib": accelerator_mib,
+        "ram_mib": ram_mib,
+    }
 
 
 def parse_launch_api_target(ctx: AppContext, args_list: Optional[Iterable[Any]]) -> dict[str, Any]:
