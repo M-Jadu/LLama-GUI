@@ -131,6 +131,14 @@ async function main() {
                 });
                 return;
             }
+            if (pathName === "/api/llama/buffer-types") {
+                await route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({ buffers: ["CPU", "CUDA0"], default: "CUDA0" }),
+                });
+                return;
+            }
             if (pathName === "/api/releases") {
                 await route.fulfill({
                     status: 200,
@@ -222,12 +230,17 @@ async function main() {
         assert.equal(sourceSecurity[1].tag, "A");
         assert.equal(sourceSecurity[1].href, "https://example.com/path");
 
-        await page.selectOption("#quick-profile-select", "low-memory");
+        const quickProfileOptions = await page.$$eval("#quick-profile-select option", (options) =>
+            options.map((option) => option.value)
+        );
+        assert.ok(!quickProfileOptions.includes("low-memory"));
+
+        await page.selectOption("#quick-profile-select", "long-context");
         await page.dispatchEvent("#quick-profile-select", "change");
-        await page.waitForFunction(() => window.LlamaGui.flagCore.getFlagValues().ctx_size === 8192);
-        await page.waitForFunction(() => window.LlamaGui.flagCore.getFlagValues().batch_size === 1024);
-        await page.waitForFunction(() => document.querySelector("#command-preview-text")?.textContent.includes("-c 8192"));
-        assert.match(await page.textContent("#quick-profile-summary"), /lighter setup/i);
+        await page.waitForFunction(() => window.LlamaGui.flagCore.getFlagValues().ctx_size === 128000);
+        await page.waitForFunction(() => window.LlamaGui.flagCore.getFlagValues().fit_ctx === 128000);
+        await page.waitForFunction(() => document.querySelector("#command-preview-text")?.textContent.includes("-c 128000"));
+        assert.match(await page.textContent("#quick-profile-summary"), /128000 context/i);
 
         await page.selectOption("#quick-context-preset", "custom");
         await page.fill("#quick-context-custom", "12345");
@@ -255,6 +268,25 @@ async function main() {
         await page.dispatchEvent("#flag-gpu_layers", "input");
         await page.waitForFunction(() => window.LlamaGui.flagCore.getFlagValues().gpu_layers === "9");
         assert.match(await page.textContent("#command-preview-text"), /(?:-ngl|--gpu-layers) 9/);
+
+        await page.fill("#config-search", "expert");
+        await page.waitForSelector("#flag-override_tensor", { state: "visible" });
+        await page.waitForFunction(() => document.querySelector(".override-tensor-buffer-select")?.value === "CUDA0");
+        await page.evaluate(() => {
+            window.LlamaGui.flagCore.setMultipleFlagValues({ cpu_moe: true, n_cpu_moe: 2 });
+        });
+        await page.click(".override-tensor-helper .btn");
+        await page.waitForFunction(() => (
+            window.LlamaGui.flagCore.getFlagValues().override_tensor === "blk.*.ffn_.*_exps.weight=CUDA0"
+        ));
+        await page.waitForFunction(() => {
+            const values = window.LlamaGui.flagCore.getFlagValues();
+            return values.cpu_moe === undefined && values.n_cpu_moe === undefined;
+        });
+        assert.match(
+            await page.textContent("#command-preview-text"),
+            /-ot blk\.\*\.ffn_\.\*_exps\.weight=CUDA0/
+        );
 
         await page.fill("#config-search", "metrics");
         await page.waitForSelector("#flag-metrics", { state: "visible" });
