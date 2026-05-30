@@ -828,6 +828,7 @@ API_ROUTER = (
     .add("POST", "/api/install", install_routes.start_install)
     .add("POST", "/api/update", install_routes.start_update)
     .add("POST", "/api/launch", process_routes.launch)
+    .add("POST", "/api/estimate-memory", process_routes.estimate_memory)
     .add("POST", "/api/stop", process_routes.stop)
     .add("POST", "/api/shutdown", lifecycle_routes.post_shutdown)
     .add("POST", "/api/restart", lifecycle_routes.post_restart)

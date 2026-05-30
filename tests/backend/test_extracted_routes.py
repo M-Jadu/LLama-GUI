@@ -555,6 +555,171 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertEqual(response.payload["error"], "Unknown tool: '../../cmd'")
             mock_launch_process.assert_not_called()
 
+    def test_process_manager_parses_memory_estimate_rows(self):
+        rows = process_manager.parse_memory_estimate_output(
+            "CUDA0 1814 106 569\nHost 2152 0 57\nignored line\n"
+        )
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["device"], "CUDA0")
+        self.assertEqual(rows[0]["kind"], "accelerator")
+        self.assertEqual(rows[0]["total_mib"], 2489)
+        self.assertEqual(rows[1]["device"], "Host")
+        self.assertEqual(rows[1]["kind"], "ram")
+        self.assertEqual(rows[1]["total_mib"], 2209)
+
+    def test_process_estimate_memory_route_rejects_unknown_tool(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.services = BackendServices(llama_tools=["llama-cli"])
+            response = DummyResponse()
+
+            process.estimate_memory(
+                Request(
+                    "POST",
+                    "/api/estimate-memory",
+                    "",
+                    {},
+                    body={"tool": "../../cmd", "args": []},
+                ),
+                response,
+                ctx,
+            )
+
+            self.assertEqual(response.status, 400)
+            self.assertEqual(response.payload["error"], "Unknown tool: '../../cmd'")
+
+    def test_process_manager_estimate_memory_uses_fit_params_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.paths.llama_bin.mkdir(parents=True)
+            fit_params = ctx.paths.llama_bin / "llama-fit-params"
+            fit_params.write_text("binary")
+            ctx.services = BackendServices(
+                current_platform="linux",
+                find_tool_executable=lambda tool: ctx.paths.llama_bin / tool,
+                get_tool_filename=lambda tool: tool,
+                llama_tools=["llama-cli"],
+                validate_runtime_dependencies=lambda tools=None: {"missing_runtime_files": []},
+            )
+            completed = SimpleNamespace(
+                stdout="CUDA0 100 20 30\nHost 200 0 10\n",
+                stderr="",
+                returncode=0,
+            )
+
+            with mock.patch.object(process_manager.subprocess, "run", return_value=completed) as mock_run:
+                result = process_manager.estimate_memory(
+                    ctx,
+                    "llama-cli",
+                    [["-m", "models/model.gguf"], ["-fitp", "off"]],
+                )
+
+            self.assertEqual(result["accelerator_mib"], 150)
+            self.assertEqual(result["ram_mib"], 210)
+            command = mock_run.call_args.args[0]
+            self.assertEqual(command[-2:], ["-fitp", "on"])
+            self.assertNotIn("off", command)
+
+    def test_process_manager_estimate_memory_omits_server_only_args(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.paths.llama_bin.mkdir(parents=True)
+            (ctx.paths.llama_bin / "llama-fit-params").write_text("binary")
+            ctx.services = BackendServices(
+                current_platform="linux",
+                llama_tools=["llama-server"],
+                validate_runtime_dependencies=lambda tools=None: {"missing_runtime_files": []},
+            )
+            completed = SimpleNamespace(stdout="Host 200 0 10\n", stderr="", returncode=0)
+
+            with mock.patch.object(process_manager.subprocess, "run", return_value=completed) as mock_run:
+                result = process_manager.estimate_memory(
+                    ctx,
+                    "llama-server",
+                    [
+                        ["-m", "models/model.gguf"],
+                        ["--host", "127.0.0.1"],
+                        ["--port", "8080"],
+                        ["--metrics"],
+                        ["-cb"],
+                        ["-cram", "8192"],
+                        ["-cms", "1024"],
+                        ["-np", "-1"],
+                        ["-fitp", "off"],
+                    ],
+                )
+
+            self.assertEqual(result["ram_mib"], 210)
+            command = mock_run.call_args.args[0]
+            self.assertNotIn("--host", command)
+            self.assertNotIn("--port", command)
+            self.assertNotIn("--metrics", command)
+            self.assertNotIn("-cb", command)
+            self.assertNotIn("-cram", command)
+            self.assertNotIn("8192", command)
+            self.assertNotIn("-cms", command)
+            self.assertNotIn("1024", command)
+            self.assertNotIn("-np", command)
+            self.assertEqual(command[-2:], ["-fitp", "on"])
+
+    def test_process_manager_estimate_memory_keeps_positive_parallel(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.paths.llama_bin.mkdir(parents=True)
+            (ctx.paths.llama_bin / "llama-fit-params").write_text("binary")
+            ctx.services = BackendServices(
+                current_platform="linux",
+                llama_tools=["llama-server"],
+                validate_runtime_dependencies=lambda tools=None: {"missing_runtime_files": []},
+            )
+            completed = SimpleNamespace(stdout="Host 200 0 10\n", stderr="", returncode=0)
+
+            with mock.patch.object(process_manager.subprocess, "run", return_value=completed) as mock_run:
+                process_manager.estimate_memory(
+                    ctx,
+                    "llama-server",
+                    [["-m", "models/model.gguf"], ["-np", "4"]],
+                )
+
+            command = mock_run.call_args.args[0]
+            self.assertIn("-np", command)
+            self.assertIn("4", command)
+
+    def test_process_manager_estimate_memory_keeps_fit_params_supported_args(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.paths.llama_bin.mkdir(parents=True)
+            (ctx.paths.llama_bin / "llama-fit-params").write_text("binary")
+            ctx.services = BackendServices(
+                current_platform="linux",
+                llama_tools=["llama-server"],
+                validate_runtime_dependencies=lambda tools=None: {"missing_runtime_files": []},
+            )
+            completed = SimpleNamespace(stdout="Host 200 0 10\n", stderr="", returncode=0)
+
+            with mock.patch.object(process_manager.subprocess, "run", return_value=completed) as mock_run:
+                process_manager.estimate_memory(
+                    ctx,
+                    "llama-server",
+                    [
+                        ["-m", "models/model.gguf"],
+                        ["-c", "16000"],
+                        ["-ngl", "auto"],
+                        ["-ctk", "q8_0"],
+                        ["--no-mmap"],
+                        ["--host", "127.0.0.1"],
+                    ],
+                )
+
+            command = mock_run.call_args.args[0]
+            self.assertIn("-m", command)
+            self.assertIn("-c", command)
+            self.assertIn("-ngl", command)
+            self.assertIn("-ctk", command)
+            self.assertIn("--no-mmap", command)
+            self.assertNotIn("--host", command)
+
     def test_hf_download_status_route_reads_context_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = make_context(tmp)

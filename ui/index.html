@@ -77,6 +77,23 @@
                     <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></span>
                     Stop Python Server
                 </button>
+                <div class="sidebar-memory-estimate" id="sidebar-memory-estimate">
+                    <div class="sidebar-memory-head">
+                        <span>Memory Estimate</span>
+                        <span class="sidebar-memory-state" id="memory-estimate-state">Idle</span>
+                    </div>
+                    <div class="sidebar-memory-grid">
+                        <div>
+                            <span class="sidebar-memory-label">GPU / Accelerator</span>
+                            <strong id="memory-estimate-accelerator">--</strong>
+                        </div>
+                        <div>
+                            <span class="sidebar-memory-label">RAM</span>
+                            <strong id="memory-estimate-ram">--</strong>
+                        </div>
+                    </div>
+                    <div class="sidebar-memory-detail" id="memory-estimate-detail">Select a model to estimate.</div>
+                </div>
             </div>
         </nav>
 

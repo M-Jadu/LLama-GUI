@@ -23,6 +23,17 @@ def launch(request, response, ctx):
         response.json(result)
 
 
+def estimate_memory(request, response, ctx):
+    body = request.body or {}
+    tool = body.get("tool", "llama-cli")
+    args = body.get("args", [])
+    result = process_manager.estimate_memory(ctx, tool, args)
+    if "error" in result:
+        response.error(result.get("error", "Memory estimate failed"), 400, extra=result)
+    else:
+        response.json(result)
+
+
 def stop(request, response, ctx):
     response.json({"stopped": process_manager.stop_process(ctx)})
 

@@ -10,6 +10,7 @@ flagCore.replaceFlagValues(getDefaultValues());
 let outputTimer = null;
 let lastOutputLen = 0;
 let statsTimer = null;
+let memoryEstimateRequestId = 0;
 let pollOutputActive = false;
 let pollStatsActive = false;
 let pollOutputFailCount = 0;
@@ -19,6 +20,7 @@ let selectedChatTemplatePresetValue = "";
 
 let chatStatsBaseline = { promptTokens: 0, genTokens: 0 };
 let chatStatsRaw = { promptTokens: 0, genTokens: 0 };
+const scheduleMemoryEstimate = debounce(updateMemoryEstimate, 700);
 // Shared Quick Launch and sampler data is defined in app-data.js.
 const apiTab = window.LlamaGui.apiTab;
 apiTab.configure({
@@ -169,6 +171,7 @@ flagCore.configure({
         updateServerAddressPreview();
         updateApiEndpoints();
         refreshQuickLaunchUI();
+        scheduleMemoryEstimate();
     },
     afterToolChange: syncUiAfterToolChange,
     beforePathPatch(flagId, value, patch) {
@@ -692,6 +695,78 @@ function stopStatsPolling() {
     document.getElementById("stats-gen-speed").textContent = "--";
     document.getElementById("stats-context").textContent = "--";
     document.getElementById("stats-kv-usage").textContent = "--%";
+}
+
+function formatMiB(mib) {
+    const value = Number(mib);
+    if (!Number.isFinite(value) || value <= 0) return "--";
+    if (value >= 1024) return `${(value / 1024).toFixed(value >= 10240 ? 1 : 2)} GB`;
+    return `${Math.round(value)} MiB`;
+}
+
+function setMemoryEstimateState(state, detail, values) {
+    const stateEl = document.getElementById("memory-estimate-state");
+    const acceleratorEl = document.getElementById("memory-estimate-accelerator");
+    const ramEl = document.getElementById("memory-estimate-ram");
+    const detailEl = document.getElementById("memory-estimate-detail");
+    if (!stateEl || !acceleratorEl || !ramEl || !detailEl) return;
+
+    stateEl.textContent = state;
+    stateEl.classList.toggle("is-error", state === "Unavailable");
+    stateEl.classList.toggle("is-ready", state === "Ready");
+    acceleratorEl.textContent = values ? formatMiB(values.accelerator_mib) : "--";
+    ramEl.textContent = values ? formatMiB(values.ram_mib) : "--";
+    detailEl.textContent = detail || "";
+}
+
+function summarizeMemoryEstimate(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) return "";
+    return rows.map(row => {
+        const label = row.device || (row.kind === "ram" ? "Host" : "Device");
+        return `${label}: ${formatMiB(row.total_mib)}`;
+    }).join(" • ");
+}
+
+async function updateMemoryEstimate() {
+    const requestId = ++memoryEstimateRequestId;
+    const result = flagCore.getLaunchArgs();
+    if (result.error) {
+        setMemoryEstimateState("Unavailable", result.error);
+        return;
+    }
+    const args = result.args || [];
+    const hasModel = args.some(a => {
+        const entryValues = Array.isArray(a) ? a : [a];
+        return entryValues.some(value => {
+            const token = String(value || "");
+            return token === "-m" || token === "-hf" || token === "--model" || token === "--hf-repo"
+                || token.startsWith("-m=") || token.startsWith("-hf=")
+                || token.startsWith("--model=") || token.startsWith("--hf-repo=");
+        });
+    });
+    if (!hasModel) {
+        setMemoryEstimateState("Idle", "Select a model to estimate.");
+        return;
+    }
+
+    setMemoryEstimateState("Estimating", "Checking current command arguments...");
+    try {
+        const data = await fetchJson("/api/estimate-memory", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tool: flagCore.getCurrentTool(), args }),
+        });
+        if (requestId !== memoryEstimateRequestId) return;
+        if (!data || data.error) {
+            setMemoryEstimateState("Unavailable", data?.error || "Memory estimate failed.");
+            return;
+        }
+        const detail = summarizeMemoryEstimate(data.rows) || "Estimate complete.";
+        setMemoryEstimateState("Ready", detail, data);
+    } catch (e) {
+        if (requestId !== memoryEstimateRequestId) return;
+        setMemoryEstimateState("Unavailable", e.message || "Memory estimate failed.");
+    }
 }
 
 function snapshotStatsBaseline() {
