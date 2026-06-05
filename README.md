@@ -416,13 +416,13 @@ The bar polls the `/metrics` endpoint every 3 seconds and can fall back to `/slo
 
 The `--metrics` flag is enabled by default. You can toggle it from:
 - **Quick Launch** - "Show server stats bar" checkbox in the Launch Preview card
-- **Configure** - "Prometheus Metrics" checkbox in the Server and MCP Settings section
+- **Configure** - "Prometheus Metrics" checkbox in the Server Settings section
 
 Both controls stay in sync.
 
 ## MCP and Built-in Tools Notes
 
-The Server settings include a **Server and MCP Settings** submenu with:
+Configure has a separate **MCP Settings** section with:
 - `--webui-mcp-proxy`
 - `--tools` (checklist UI)
 

@@ -306,7 +306,6 @@
         init,
         getServerBaseUrl,
         getServerEndpointConfig,
-        getPreferredApiModelName,
         updateEndpoints,
     };
 })();
