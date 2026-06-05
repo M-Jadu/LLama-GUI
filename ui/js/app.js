@@ -330,21 +330,12 @@ function setChatTemplateValue(value, options = {}) {
     flagCore.setMultipleFlagValues(patch);
 }
 
-function setReasoningMode(value, options = {}) {
-    const normalized = value === "on" || value === "off" ? value : "auto";
-    flagCore.setFlagValue("reasoning", normalized, options);
-}
-
 function updateQuickLaunchActionButtons() {
     quickLaunchUi.updateActionButtons();
 }
 
 function syncQuickLaunchModelOptions() {
     quickLaunchUi.syncModelOptions();
-}
-
-function refreshQuickSamplerPresetSelect() {
-    quickLaunchUi.refreshSamplerPresetSelect();
 }
 
 function refreshQuickLaunchUI() {

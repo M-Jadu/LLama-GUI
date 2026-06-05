@@ -294,14 +294,10 @@
     }
 
     window.LlamaGui.chatRendering = {
-        escapeHtml,
-        processBlocks,
         renderMarkdown,
         renderChatMessage,
-        getChatMessageContentWrap,
         setChatWebStatus,
         renderChatSources,
-        getSafeExternalUrl,
         renderChatTypingIndicator,
         removeChatTypingIndicator,
         appendChatStreamToken,

@@ -790,12 +790,7 @@
         initConfigControls,
         resetOpenCategories,
         renderFlags,
-        createSubmenuBlock,
-        createFlagRow,
         restoreFlagInputs,
         normalizeMultiEnumValue,
-        hasSelectedHighRiskOption,
-        flagMatchesSearch,
-        getFlagDescriptionParts,
     };
 })();

@@ -4,7 +4,6 @@ import functools
 import ipaddress
 import re
 import socket
-import urllib.parse
 from typing import Any, Mapping, Sequence
 
 from backend import config

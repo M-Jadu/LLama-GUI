@@ -387,11 +387,6 @@ function renderPresetAuxiliaryPanels() {
     renderPresetBulkControls();
 }
 
-function setSelectedPreset(name) {
-    selectedPresetName = String(name || "");
-    renderPresetGroups(document.getElementById("presets-list"), currentPresetGroups);
-}
-
 function togglePresetChecked(name) {
     selectedPresetName = String(name || "");
     if (selectedPresetNames.has(name)) {
