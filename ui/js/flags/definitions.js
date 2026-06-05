@@ -1230,7 +1230,7 @@ const FLAGS = [
 		options: CACHE_TYPE_OPTIONS,
 	},
 
-	// Server and MCP Settings
+	// Server Settings
 	{
 		id: "host",
 		flag: "--host",
@@ -1356,8 +1356,7 @@ const FLAGS = [
 	{
 		id: "webui_mcp_proxy",
 		flag: "--webui-mcp-proxy",
-		category: "server",
-		submenu: "MCP Settings",
+		category: "mcp",
 		type: "bool",
 		label: "WebUI MCP Proxy",
 		short_desc: "Enable MCP CORS proxy support for the Web UI.",
@@ -1368,8 +1367,7 @@ const FLAGS = [
 	{
 		id: "tools",
 		flag: "--tools",
-		category: "server",
-		submenu: "MCP Settings",
+		category: "mcp",
 		type: "multi_enum",
 		label: "Built-in Tools",
 		short_desc: "Enable local file/shell tools for AI agents in the Web UI.",

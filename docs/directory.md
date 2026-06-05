@@ -210,8 +210,7 @@ The frontend loads scripts in a strict dependency order via `ui/index.html`:
 - `id`, `flag` (CLI name), `category`, `type`, `label`, `desc`, `tool`, `default`
 - `tool` field: `"both"`, `"server"`, `"cli"` — controls visibility
 - Types: `bool`, `int`, `float`, `text`, `path`, `enum`, `multi_enum`
-- Categories: model, context, cpu, gpu, sampling, rope, conversation, lora, kv, speculative, server, grammar, logging, advanced
-- Submenus within categories (e.g., "MCP Settings" in server)
+- Categories: model, context, cpu, gpu, auto_fit, sampling, rope, conversation, lora, kv, speculative, server, mcp, grammar, logging, advanced
 - `false_flag` for boolean negation (e.g., `--mmap` / `--no-mmap`)
 
 ### Flag Types
@@ -584,7 +583,7 @@ Metrics host validation restricts proxying to local addresses only for security.
 
 ## MCP / Agent Tools
 
-The Configure tab's "Server and MCP Settings" category includes an "MCP Settings" submenu with:
+The Configure tab's "MCP Settings" category (separate from "Server Settings") contains:
 - **WebUI MCP Proxy**: Enables CORS proxy support for MCP requests in the Web UI.
 - **Built-in Tools** (`multi_enum` type): Select from available agent tools exposed to the model:
   - `all`: Enable all tools (high risk)
