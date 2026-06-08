@@ -113,22 +113,50 @@ function flat(result) {
     const result = adapter.buildBenchmarkArgs({
         benchmarkType: "perplexity",
         flags,
-        source: { model: "", flags: { hf_repo: "owner/model-GGUF:Q4_K_M", mmap: false } },
+        source: { model: "ppl-model.gguf", flags: { hf_repo: "owner/model-GGUF:Q4_K_M", mmap: false, ctx_size: 100000 } },
         promptFile: "eval.txt",
-        chunks: 2,
+        pplContextSize: 4096,
+        pplBatchSize: 2048,
+        pplUbatchSize: 512,
+        pplThreads: -1,
+        pplGpuLayers: "auto",
+        pplFlashAttention: "auto",
+        pplCacheTypeK: "f16",
+        pplCacheTypeV: "f16",
+        chunks: 5,
         pplStride: 64,
         warmup: false,
     });
 
     assert.equal(result.error, null);
     assert.deepEqual(flat(result), [
-        "--no-mmap",
-        "-hf", "owner/model-GGUF:Q4_K_M",
+        "-m", "models/ppl-model.gguf",
+        "-c", "4096",
+        "-b", "2048",
+        "-ub", "512",
+        "-t", "-1",
+        "-ngl", "auto",
+        "-fa", "auto",
+        "-ctk", "f16",
+        "-ctv", "f16",
         "-f", "eval.txt",
-        "--chunks", "2",
+        "--chunks", "5",
         "--ppl-stride", "64",
         "--no-warmup",
     ]);
+    assert.ok(result.excluded.some((item) => item.label === "Configure/Preset Flags"));
+    assert.ok(!flat(result).includes("--no-mmap"));
+    assert.ok(!flat(result).includes("-hf"));
+}
+
+{
+    const result = adapter.buildBenchmarkArgs({
+        benchmarkType: "perplexity",
+        flags,
+        source: { model: "ppl-model.gguf", flags: {} },
+    });
+
+    assert.match(result.error, /prompt\/data file/);
 }
 
 console.log("benchmark adapter tests passed");

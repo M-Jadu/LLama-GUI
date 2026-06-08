@@ -199,37 +199,40 @@
             applied.push({ label: "Model", value: model });
         }
 
-        for (const flag of allFlags) {
-            if (!flag || !flag.id || !flag.flag) continue;
-            const value = flags[flag.id];
-            if (isEmptyFlagValue(value)) continue;
-
-            if (!BENCH_COMPATIBLE_IDS.has(flag.id)) {
-                if (!Object.prototype.hasOwnProperty.call(defaultFlags, flag.id) || !valuesEqual(value, defaultFlags[flag.id])) {
-                    excluded.push({ label: getFlagLabel(flag), reason: "Not used by benchmark tools" });
-                }
-                continue;
-            }
-
-            if (tool === "llama-bench" && flag.id === "threads_batch") {
-                if (!Object.prototype.hasOwnProperty.call(defaultFlags, flag.id) || !valuesEqual(value, defaultFlags[flag.id])) {
-                    excluded.push({ label: getFlagLabel(flag), reason: "llama-bench uses one thread setting" });
-                }
-                continue;
-            }
-
-            const before = args.length;
-            const didApply = pushFlagArg(args, tool, flag, value);
-            if (didApply && args.length > before) {
-                applied.push({ label: getFlagLabel(flag), value: Array.isArray(value) ? value.join(",") : String(value) });
-            } else {
-                if (!Object.prototype.hasOwnProperty.call(defaultFlags, flag.id) || !valuesEqual(value, defaultFlags[flag.id])) {
-                    excluded.push({ label: getFlagLabel(flag), reason: "Not supported for this benchmark" });
-                }
-            }
+        if (benchmarkType === "perplexity" && !hasSelectedModelArg(args)) {
+            return { tool, args, applied, excluded, error: "Select a manual model before running perplexity." };
         }
 
         if (benchmarkType === "bench") {
+            for (const flag of allFlags) {
+                if (!flag || !flag.id || !flag.flag) continue;
+                const value = flags[flag.id];
+                if (isEmptyFlagValue(value)) continue;
+
+                if (!BENCH_COMPATIBLE_IDS.has(flag.id)) {
+                    if (!Object.prototype.hasOwnProperty.call(defaultFlags, flag.id) || !valuesEqual(value, defaultFlags[flag.id])) {
+                        excluded.push({ label: getFlagLabel(flag), reason: "Not used by benchmark tools" });
+                    }
+                    continue;
+                }
+
+                if (flag.id === "threads_batch") {
+                    if (!Object.prototype.hasOwnProperty.call(defaultFlags, flag.id) || !valuesEqual(value, defaultFlags[flag.id])) {
+                        excluded.push({ label: getFlagLabel(flag), reason: "llama-bench uses one thread setting" });
+                    }
+                    continue;
+                }
+
+                const before = args.length;
+                const didApply = pushFlagArg(args, tool, flag, value);
+                if (didApply && args.length > before) {
+                    applied.push({ label: getFlagLabel(flag), value: Array.isArray(value) ? value.join(",") : String(value) });
+                } else {
+                    if (!Object.prototype.hasOwnProperty.call(defaultFlags, flag.id) || !valuesEqual(value, defaultFlags[flag.id])) {
+                        excluded.push({ label: getFlagLabel(flag), reason: "Not supported for this benchmark" });
+                    }
+                }
+            }
             const repetitions = options.repetitions || 5;
             const nPrompt = options.nPrompt || 512;
             const nGen = options.nGen || 128;
@@ -243,14 +246,45 @@
             applied.push({ label: "Generation Tokens", value: String(nGen) });
             applied.push({ label: "Output Format", value: outputFormat });
         } else {
-            if (options.promptFile) args.push(["-f", String(options.promptFile)]);
+            const contextSize = options.pplContextSize || 4096;
+            const batchSize = options.pplBatchSize || 2048;
+            const ubatchSize = options.pplUbatchSize || 512;
+            const threads = options.pplThreads ?? -1;
+            const gpuLayers = String(options.pplGpuLayers || "auto").trim();
+            const flashAttention = options.pplFlashAttention || "auto";
+            const cacheTypeK = options.pplCacheTypeK || "f16";
+            const cacheTypeV = options.pplCacheTypeV || "f16";
+            args.push(["-c", String(contextSize)]);
+            args.push(["-b", String(batchSize)]);
+            args.push(["-ub", String(ubatchSize)]);
+            args.push(["-t", String(threads)]);
+            if (gpuLayers) args.push(["-ngl", gpuLayers]);
+            if (flashAttention) args.push(["-fa", flashAttention]);
+            if (cacheTypeK) args.push(["-ctk", cacheTypeK]);
+            if (cacheTypeV) args.push(["-ctv", cacheTypeV]);
+            if (options.promptFile) {
+                args.push(["-f", String(options.promptFile)]);
+            } else {
+                return { tool, args, applied, excluded, error: "Choose a prompt/data file before running perplexity." };
+            }
             if (options.chunks !== undefined && options.chunks !== "") args.push(["--chunks", String(options.chunks)]);
             if (options.pplStride !== undefined && options.pplStride !== "") args.push(["--ppl-stride", String(options.pplStride)]);
             args.push([options.warmup === false ? "--no-warmup" : "--warmup"]);
+            applied.push({ label: "Context Size", value: String(contextSize) });
+            applied.push({ label: "Batch Size", value: String(batchSize) });
+            applied.push({ label: "Micro Batch Size", value: String(ubatchSize) });
+            applied.push({ label: "Threads", value: String(threads) });
+            if (gpuLayers) applied.push({ label: "GPU Layers", value: gpuLayers });
+            if (flashAttention) applied.push({ label: "Flash Attention", value: flashAttention });
+            if (cacheTypeK) applied.push({ label: "K Cache Type", value: cacheTypeK });
+            if (cacheTypeV) applied.push({ label: "V Cache Type", value: cacheTypeV });
             if (options.promptFile) applied.push({ label: "Prompt/Data File", value: String(options.promptFile) });
             applied.push({ label: "Chunks", value: options.chunks === undefined || options.chunks === "" ? "-1" : String(options.chunks) });
             applied.push({ label: "PPL Stride", value: options.pplStride === undefined || options.pplStride === "" ? "0" : String(options.pplStride) });
             applied.push({ label: "Warmup", value: options.warmup === false ? "Off" : "On" });
+            if (Object.keys(flags).length > 0) {
+                excluded.push({ label: "Configure/Preset Flags", reason: "Perplexity uses only the settings shown here" });
+            }
         }
 
         if (!hasSelectedModelArg(args)) {
@@ -306,6 +340,14 @@
 
     function getSourceSnapshot() {
         const sourceType = getSelectedSourceType();
+        if (getSelectedBenchmarkType() === "perplexity") {
+            return {
+                sourceType: "manual",
+                label: "Manual Model",
+                model: byId("benchmark-manual-model")?.value || "",
+                flags: {},
+            };
+        }
         if (sourceType === "preset") {
             const preset = cachedPresets.find((entry) => entry.name === selectedPresetName);
             const data = normalizePresetData(preset && preset.data);
@@ -338,6 +380,14 @@
             nGen: getNumberValue("benchmark-n-gen", 128),
             outputFormat: byId("benchmark-output-format")?.value || "md",
             promptFile: byId("benchmark-prompt-file")?.value || "",
+            pplContextSize: getNumberValue("benchmark-ppl-ctx", 4096),
+            pplBatchSize: getNumberValue("benchmark-ppl-batch", 2048),
+            pplUbatchSize: getNumberValue("benchmark-ppl-ubatch", 512),
+            pplThreads: getNumberValue("benchmark-ppl-threads", -1),
+            pplGpuLayers: byId("benchmark-ppl-gpu-layers")?.value || "auto",
+            pplFlashAttention: byId("benchmark-ppl-flash-attn")?.value || "auto",
+            pplCacheTypeK: byId("benchmark-ppl-cache-k")?.value || "f16",
+            pplCacheTypeV: byId("benchmark-ppl-cache-v")?.value || "f16",
             chunks: byId("benchmark-chunks")?.value || "-1",
             pplStride: byId("benchmark-ppl-stride")?.value || "0",
             warmup: Boolean(byId("benchmark-warmup")?.checked),
@@ -352,7 +402,11 @@
         const sourceLabel = byId("benchmark-source-summary");
         if (sourceLabel) {
             const source = getSourceSnapshot();
-            sourceLabel.textContent = `${BENCHMARK_SOURCE_LABELS[source.sourceType]} -> ${source.model || source.flags.hf_repo || "No model selected"}`;
+            if (getSelectedBenchmarkType() === "perplexity") {
+                sourceLabel.textContent = `Perplexity uses the manual model and settings below -> ${source.model || "No model selected"}`;
+            } else {
+                sourceLabel.textContent = `${BENCHMARK_SOURCE_LABELS[source.sourceType]} -> ${source.model || source.flags.hf_repo || "No model selected"}`;
+            }
         }
         if (command) {
             command.textContent = result.error ? `Cannot run: ${result.error}` : result.command;
@@ -402,15 +456,19 @@
 
     function syncModePanels() {
         const type = getSelectedBenchmarkType();
+        const source = byId("benchmark-source");
+        if (source) source.disabled = type === "perplexity";
         byId("benchmark-bench-controls")?.classList.toggle("hidden", type !== "bench");
         byId("benchmark-ppl-controls")?.classList.toggle("hidden", type !== "perplexity");
+        syncSourcePanels();
         renderCommand();
     }
 
     function syncSourcePanels() {
         const source = getSelectedSourceType();
-        byId("benchmark-preset-row")?.classList.toggle("hidden", source !== "preset");
-        byId("benchmark-manual-row")?.classList.toggle("hidden", source !== "manual");
+        const isPerplexity = getSelectedBenchmarkType() === "perplexity";
+        byId("benchmark-preset-row")?.classList.toggle("hidden", isPerplexity || source !== "preset");
+        byId("benchmark-manual-row")?.classList.toggle("hidden", !isPerplexity && source !== "manual");
         renderCommand();
     }
 
@@ -615,6 +673,14 @@
             "benchmark-n-gen",
             "benchmark-output-format",
             "benchmark-prompt-file",
+            "benchmark-ppl-ctx",
+            "benchmark-ppl-batch",
+            "benchmark-ppl-ubatch",
+            "benchmark-ppl-threads",
+            "benchmark-ppl-gpu-layers",
+            "benchmark-ppl-flash-attn",
+            "benchmark-ppl-cache-k",
+            "benchmark-ppl-cache-v",
             "benchmark-chunks",
             "benchmark-ppl-stride",
             "benchmark-warmup",
