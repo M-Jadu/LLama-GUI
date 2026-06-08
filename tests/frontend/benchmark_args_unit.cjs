@@ -155,6 +155,32 @@ function flat(result) {
         benchmarkType: "perplexity",
         flags,
         source: { model: "ppl-model.gguf", flags: {} },
+        promptFile: "wiki.test.raw",
+        pplCleanRun: true,
+        pplContextSize: 4096,
+        pplBatchSize: 2048,
+        pplUbatchSize: 512,
+        pplThreads: -1,
+        pplGpuLayers: "auto",
+        pplFlashAttention: "auto",
+        pplCacheTypeK: "f16",
+        pplCacheTypeV: "f16",
+        pplMmap: false,
+        chunks: 5,
+        pplStride: 0,
+        warmup: false,
+    });
+
+    assert.equal(result.error, null);
+    assert.deepEqual(flat(result), ["-m", "models/ppl-model.gguf", "-f", "wiki.test.raw"]);
+    assert.ok(result.excluded.some((item) => item.label === "Perplexity Controls"));
+}
+
+{
+    const result = adapter.buildBenchmarkArgs({
+        benchmarkType: "perplexity",
+        flags,
+        source: { model: "ppl-model.gguf", flags: {} },
         promptFile: "eval.txt",
         pplMmap: true,
     });
