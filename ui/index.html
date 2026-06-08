@@ -888,9 +888,65 @@
                             </div>
                             <div class="benchmark-controls-grid">
                                 <div class="form-group">
+                                    <label class="form-label" for="benchmark-ppl-ctx">Context Size</label>
+                                    <input id="benchmark-ppl-ctx" type="number" min="128" max="262144" step="128" value="4096">
+                                    <p class="help-text">Scoring window size. Smaller values are faster and avoid long-context setup issues.</p>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="benchmark-ppl-batch">Batch Size</label>
+                                    <input id="benchmark-ppl-batch" type="number" min="1" max="131072" step="1" value="2048">
+                                    <p class="help-text">How many tokens llama.cpp processes per batch during evaluation.</p>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="benchmark-ppl-ubatch">Micro Batch Size</label>
+                                    <input id="benchmark-ppl-ubatch" type="number" min="1" max="131072" step="1" value="512">
+                                    <p class="help-text">Smaller micro batches can reduce memory pressure on large models.</p>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="benchmark-ppl-threads">Threads</label>
+                                    <input id="benchmark-ppl-threads" type="number" min="-1" max="256" step="1" value="-1">
+                                    <p class="help-text">CPU worker threads. Leave -1 to let llama.cpp choose.</p>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="benchmark-ppl-gpu-layers">GPU Layers</label>
+                                    <input id="benchmark-ppl-gpu-layers" type="text" value="auto">
+                                    <p class="help-text">Use auto for llama.cpp's default GPU offload choice, or enter a layer count.</p>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="benchmark-ppl-flash-attn">Flash Attention</label>
+                                    <select id="benchmark-ppl-flash-attn">
+                                        <option value="auto">Auto</option>
+                                        <option value="on">On</option>
+                                        <option value="off">Off</option>
+                                    </select>
+                                    <p class="help-text">Auto lets llama.cpp choose whether flash attention is supported.</p>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="benchmark-ppl-cache-k">K Cache Type</label>
+                                    <select id="benchmark-ppl-cache-k">
+                                        <option value="f16">f16</option>
+                                        <option value="bf16">bf16</option>
+                                        <option value="q8_0">q8_0</option>
+                                        <option value="q4_0">q4_0</option>
+                                        <option value="q4_1">q4_1</option>
+                                    </select>
+                                    <p class="help-text">Lower precision can reduce memory use, but may affect scores.</p>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="benchmark-ppl-cache-v">V Cache Type</label>
+                                    <select id="benchmark-ppl-cache-v">
+                                        <option value="f16">f16</option>
+                                        <option value="bf16">bf16</option>
+                                        <option value="q8_0">q8_0</option>
+                                        <option value="q4_0">q4_0</option>
+                                        <option value="q4_1">q4_1</option>
+                                    </select>
+                                    <p class="help-text">Usually match K cache unless you are comparing memory tradeoffs.</p>
+                                </div>
+                                <div class="form-group">
                                     <label class="form-label" for="benchmark-chunks">Chunks</label>
-                                    <input id="benchmark-chunks" type="number" min="-1" step="1" value="-1">
-                                    <p class="help-text">Limits how much of the file to evaluate. Use -1 to process all chunks.</p>
+                                    <input id="benchmark-chunks" type="number" min="-1" step="1" value="5">
+                                    <p class="help-text">Limits how much of the file to evaluate. Start small, then increase for steadier scores.</p>
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label" for="benchmark-ppl-stride">PPL Stride</label>
