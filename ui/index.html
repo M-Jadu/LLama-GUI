@@ -964,6 +964,11 @@
                                 </div>
                             </div>
                             <label class="toggle-row benchmark-toggle">
+                                <input id="benchmark-ppl-mmap" type="checkbox" checked>
+                                <span>Memory map model</span>
+                            </label>
+                            <p class="help-text">Uses llama.cpp's default mmap loading. Turn this off to pass --no-mmap when testing model-load or tensor-placement issues.</p>
+                            <label class="toggle-row benchmark-toggle">
                                 <input id="benchmark-warmup" type="checkbox" checked>
                                 <span>Warmup</span>
                             </label>

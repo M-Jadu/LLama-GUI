@@ -49,6 +49,7 @@
             flashAttention: "auto",
             cacheTypeK: "f16",
             cacheTypeV: "f16",
+            mmap: true,
             chunks: "5",
             pplStride: "0",
             warmup: true,
@@ -62,6 +63,7 @@
             flashAttention: "auto",
             cacheTypeK: "f16",
             cacheTypeV: "f16",
+            mmap: true,
             chunks: "-1",
             pplStride: "0",
             warmup: true,
@@ -76,6 +78,7 @@
         "benchmark-ppl-flash-attn",
         "benchmark-ppl-cache-k",
         "benchmark-ppl-cache-v",
+        "benchmark-ppl-mmap",
         "benchmark-chunks",
         "benchmark-ppl-stride",
         "benchmark-warmup",
@@ -304,6 +307,7 @@
             if (flashAttention) args.push(["-fa", flashAttention]);
             if (cacheTypeK) args.push(["-ctk", cacheTypeK]);
             if (cacheTypeV) args.push(["-ctv", cacheTypeV]);
+            if (options.pplMmap === false) args.push(["--no-mmap"]);
             if (options.promptFile) {
                 args.push(["-f", String(options.promptFile)]);
             } else {
@@ -320,6 +324,7 @@
             if (flashAttention) applied.push({ label: "Flash Attention", value: flashAttention });
             if (cacheTypeK) applied.push({ label: "K Cache Type", value: cacheTypeK });
             if (cacheTypeV) applied.push({ label: "V Cache Type", value: cacheTypeV });
+            applied.push({ label: "Memory Mapping", value: options.pplMmap === false ? "Off (--no-mmap)" : "On" });
             if (options.promptFile) applied.push({ label: "Prompt/Data File", value: String(options.promptFile) });
             applied.push({ label: "Chunks", value: options.chunks === undefined || options.chunks === "" ? "-1" : String(options.chunks) });
             applied.push({ label: "PPL Stride", value: options.pplStride === undefined || options.pplStride === "" ? "0" : String(options.pplStride) });
@@ -417,6 +422,7 @@
         setControlValue("benchmark-ppl-flash-attn", preset.flashAttention);
         setControlValue("benchmark-ppl-cache-k", preset.cacheTypeK);
         setControlValue("benchmark-ppl-cache-v", preset.cacheTypeV);
+        setControlValue("benchmark-ppl-mmap", preset.mmap);
         setControlValue("benchmark-chunks", preset.chunks);
         setControlValue("benchmark-ppl-stride", preset.pplStride);
         setControlValue("benchmark-warmup", preset.warmup);
@@ -476,6 +482,7 @@
             pplFlashAttention: byId("benchmark-ppl-flash-attn")?.value || "auto",
             pplCacheTypeK: byId("benchmark-ppl-cache-k")?.value || "f16",
             pplCacheTypeV: byId("benchmark-ppl-cache-v")?.value || "f16",
+            pplMmap: byId("benchmark-ppl-mmap")?.checked !== false,
             chunks: byId("benchmark-chunks")?.value || "-1",
             pplStride: byId("benchmark-ppl-stride")?.value || "0",
             warmup: Boolean(byId("benchmark-warmup")?.checked),
