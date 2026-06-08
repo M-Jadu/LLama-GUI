@@ -49,6 +49,7 @@
             flashAttention: "auto",
             cacheTypeK: "f16",
             cacheTypeV: "f16",
+            mmap: true,
             chunks: "5",
             pplStride: "0",
             warmup: true,
@@ -62,6 +63,7 @@
             flashAttention: "auto",
             cacheTypeK: "f16",
             cacheTypeV: "f16",
+            mmap: true,
             chunks: "-1",
             pplStride: "0",
             warmup: true,
@@ -76,6 +78,7 @@
         "benchmark-ppl-flash-attn",
         "benchmark-ppl-cache-k",
         "benchmark-ppl-cache-v",
+        "benchmark-ppl-mmap",
         "benchmark-chunks",
         "benchmark-ppl-stride",
         "benchmark-warmup",
@@ -288,6 +291,7 @@
             applied.push({ label: "Generation Tokens", value: String(nGen) });
             applied.push({ label: "Output Format", value: outputFormat });
         } else {
+            const cleanRun = options.pplCleanRun === true;
             const contextSize = options.pplContextSize || 4096;
             const batchSize = options.pplBatchSize || 2048;
             const ubatchSize = options.pplUbatchSize || 512;
@@ -296,34 +300,41 @@
             const flashAttention = options.pplFlashAttention || "auto";
             const cacheTypeK = options.pplCacheTypeK || "f16";
             const cacheTypeV = options.pplCacheTypeV || "f16";
-            args.push(["-c", String(contextSize)]);
-            args.push(["-b", String(batchSize)]);
-            args.push(["-ub", String(ubatchSize)]);
-            args.push(["-t", String(threads)]);
-            if (gpuLayers) args.push(["-ngl", gpuLayers]);
-            if (flashAttention) args.push(["-fa", flashAttention]);
-            if (cacheTypeK) args.push(["-ctk", cacheTypeK]);
-            if (cacheTypeV) args.push(["-ctv", cacheTypeV]);
-            if (options.promptFile) {
-                args.push(["-f", String(options.promptFile)]);
-            } else {
+            if (!options.promptFile) {
                 return { tool, args, applied, excluded, error: "Choose a prompt/data file before running perplexity." };
             }
-            if (options.chunks !== undefined && options.chunks !== "") args.push(["--chunks", String(options.chunks)]);
-            if (options.pplStride !== undefined && options.pplStride !== "") args.push(["--ppl-stride", String(options.pplStride)]);
-            args.push([options.warmup === false ? "--no-warmup" : "--warmup"]);
-            applied.push({ label: "Context Size", value: String(contextSize) });
-            applied.push({ label: "Batch Size", value: String(batchSize) });
-            applied.push({ label: "Micro Batch Size", value: String(ubatchSize) });
-            applied.push({ label: "Threads", value: String(threads) });
-            if (gpuLayers) applied.push({ label: "GPU Layers", value: gpuLayers });
-            if (flashAttention) applied.push({ label: "Flash Attention", value: flashAttention });
-            if (cacheTypeK) applied.push({ label: "K Cache Type", value: cacheTypeK });
-            if (cacheTypeV) applied.push({ label: "V Cache Type", value: cacheTypeV });
+            if (cleanRun) {
+                args.push(["-f", String(options.promptFile)]);
+                applied.push({ label: "Mode", value: "llama.cpp clean run" });
+                excluded.push({ label: "Perplexity Controls", reason: "Clean run only passes model and prompt/data file" });
+            } else {
+                args.push(["-c", String(contextSize)]);
+                args.push(["-b", String(batchSize)]);
+                args.push(["-ub", String(ubatchSize)]);
+                args.push(["-t", String(threads)]);
+                if (gpuLayers) args.push(["-ngl", gpuLayers]);
+                if (flashAttention) args.push(["-fa", flashAttention]);
+                if (cacheTypeK) args.push(["-ctk", cacheTypeK]);
+                if (cacheTypeV) args.push(["-ctv", cacheTypeV]);
+                if (options.pplMmap === false) args.push(["--no-mmap"]);
+                args.push(["-f", String(options.promptFile)]);
+                if (options.chunks !== undefined && options.chunks !== "") args.push(["--chunks", String(options.chunks)]);
+                if (options.pplStride !== undefined && options.pplStride !== "") args.push(["--ppl-stride", String(options.pplStride)]);
+                args.push([options.warmup === false ? "--no-warmup" : "--warmup"]);
+                applied.push({ label: "Context Size", value: String(contextSize) });
+                applied.push({ label: "Batch Size", value: String(batchSize) });
+                applied.push({ label: "Micro Batch Size", value: String(ubatchSize) });
+                applied.push({ label: "Threads", value: String(threads) });
+                if (gpuLayers) applied.push({ label: "GPU Layers", value: gpuLayers });
+                if (flashAttention) applied.push({ label: "Flash Attention", value: flashAttention });
+                if (cacheTypeK) applied.push({ label: "K Cache Type", value: cacheTypeK });
+                if (cacheTypeV) applied.push({ label: "V Cache Type", value: cacheTypeV });
+                applied.push({ label: "Memory Mapping", value: options.pplMmap === false ? "Off (--no-mmap)" : "On" });
+                applied.push({ label: "Chunks", value: options.chunks === undefined || options.chunks === "" ? "-1" : String(options.chunks) });
+                applied.push({ label: "PPL Stride", value: options.pplStride === undefined || options.pplStride === "" ? "0" : String(options.pplStride) });
+                applied.push({ label: "Warmup", value: options.warmup === false ? "Off" : "On" });
+            }
             if (options.promptFile) applied.push({ label: "Prompt/Data File", value: String(options.promptFile) });
-            applied.push({ label: "Chunks", value: options.chunks === undefined || options.chunks === "" ? "-1" : String(options.chunks) });
-            applied.push({ label: "PPL Stride", value: options.pplStride === undefined || options.pplStride === "" ? "0" : String(options.pplStride) });
-            applied.push({ label: "Warmup", value: options.warmup === false ? "Off" : "On" });
             if (Object.keys(flags).length > 0) {
                 excluded.push({ label: "Configure/Preset Flags", reason: "Perplexity uses only the settings shown here" });
             }
@@ -417,6 +428,7 @@
         setControlValue("benchmark-ppl-flash-attn", preset.flashAttention);
         setControlValue("benchmark-ppl-cache-k", preset.cacheTypeK);
         setControlValue("benchmark-ppl-cache-v", preset.cacheTypeV);
+        setControlValue("benchmark-ppl-mmap", preset.mmap);
         setControlValue("benchmark-chunks", preset.chunks);
         setControlValue("benchmark-ppl-stride", preset.pplStride);
         setControlValue("benchmark-warmup", preset.warmup);
@@ -424,6 +436,42 @@
         applyingPerplexityPreset = false;
         renderCommand();
         return true;
+    }
+
+    function selectBenchmarkModelFromConfigure() {
+        const select = byId("benchmark-manual-model");
+        if (!select || select.value || !flagCore) return;
+        const selectedModel = flagCore.getSelectedModel && flagCore.getSelectedModel();
+        if (!selectedModel) return;
+        const hasOption = Array.from(select.options || []).some((option) => option.value === selectedModel);
+        if (hasOption) select.value = selectedModel;
+    }
+
+    async function prepareWikitextCleanRun() {
+        if (!fetchJson) return;
+        const button = byId("btn-benchmark-wikitext-clean");
+        const previousText = button ? button.textContent : "";
+        if (button) {
+            button.disabled = true;
+            button.textContent = "Preparing WikiText-2...";
+        }
+        try {
+            const result = await fetchJson("/api/benchmark/wikitext2", { method: "POST" });
+            setPerplexityPresetSelection("clean");
+            setControlValue("benchmark-prompt-file", result.path || "");
+            selectBenchmarkModelFromConfigure();
+            renderCommand();
+            if (showToast) {
+                showToast(result.downloaded ? "Downloaded WikiText-2 test file." : "Using existing WikiText-2 test file.", "success");
+            }
+        } catch (e) {
+            if (showToast) showToast("WikiText-2 setup failed: " + e.message, "error");
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.textContent = previousText || "Use WikiText-2 clean run";
+            }
+        }
     }
 
     function getSourceSnapshot() {
@@ -476,6 +524,8 @@
             pplFlashAttention: byId("benchmark-ppl-flash-attn")?.value || "auto",
             pplCacheTypeK: byId("benchmark-ppl-cache-k")?.value || "f16",
             pplCacheTypeV: byId("benchmark-ppl-cache-v")?.value || "f16",
+            pplMmap: byId("benchmark-ppl-mmap")?.checked !== false,
+            pplCleanRun: byId("benchmark-ppl-preset")?.value === "clean",
             chunks: byId("benchmark-chunks")?.value || "-1",
             pplStride: byId("benchmark-ppl-stride")?.value || "0",
             warmup: Boolean(byId("benchmark-warmup")?.checked),
@@ -750,7 +800,7 @@
         });
         byId("benchmark-ppl-preset")?.addEventListener("change", (event) => {
             const value = event.target.value || "custom";
-            if (value === "custom") {
+            if (value === "custom" || value === "clean") {
                 renderCommand();
                 return;
             }
@@ -759,6 +809,7 @@
         byId("benchmark-manual-model")?.addEventListener("change", renderCommand);
         byId("btn-refresh-benchmark-presets")?.addEventListener("click", loadPresetsForSelect);
         byId("btn-refresh-benchmark-models")?.addEventListener("click", loadModelsForSelect);
+        byId("btn-benchmark-wikitext-clean")?.addEventListener("click", prepareWikitextCleanRun);
         byId("btn-run-benchmark")?.addEventListener("click", runBenchmark);
         byId("btn-stop-benchmark")?.addEventListener("click", stopBenchmark);
         byId("btn-clear-benchmark-output")?.addEventListener("click", clearOutput);

@@ -123,6 +123,7 @@ function flat(result) {
         pplFlashAttention: "auto",
         pplCacheTypeK: "f16",
         pplCacheTypeV: "f16",
+        pplMmap: false,
         chunks: 5,
         pplStride: 64,
         warmup: false,
@@ -139,14 +140,53 @@ function flat(result) {
         "-fa", "auto",
         "-ctk", "f16",
         "-ctv", "f16",
+        "--no-mmap",
         "-f", "eval.txt",
         "--chunks", "5",
         "--ppl-stride", "64",
         "--no-warmup",
     ]);
     assert.ok(result.excluded.some((item) => item.label === "Configure/Preset Flags"));
-    assert.ok(!flat(result).includes("--no-mmap"));
     assert.ok(!flat(result).includes("-hf"));
+}
+
+{
+    const result = adapter.buildBenchmarkArgs({
+        benchmarkType: "perplexity",
+        flags,
+        source: { model: "ppl-model.gguf", flags: {} },
+        promptFile: "wiki.test.raw",
+        pplCleanRun: true,
+        pplContextSize: 4096,
+        pplBatchSize: 2048,
+        pplUbatchSize: 512,
+        pplThreads: -1,
+        pplGpuLayers: "auto",
+        pplFlashAttention: "auto",
+        pplCacheTypeK: "f16",
+        pplCacheTypeV: "f16",
+        pplMmap: false,
+        chunks: 5,
+        pplStride: 0,
+        warmup: false,
+    });
+
+    assert.equal(result.error, null);
+    assert.deepEqual(flat(result), ["-m", "models/ppl-model.gguf", "-f", "wiki.test.raw"]);
+    assert.ok(result.excluded.some((item) => item.label === "Perplexity Controls"));
+}
+
+{
+    const result = adapter.buildBenchmarkArgs({
+        benchmarkType: "perplexity",
+        flags,
+        source: { model: "ppl-model.gguf", flags: {} },
+        promptFile: "eval.txt",
+        pplMmap: true,
+    });
+
+    assert.equal(result.error, null);
+    assert.ok(!flat(result).includes("--no-mmap"));
 }
 
 {
@@ -182,6 +222,7 @@ function flat(result) {
         "benchmark-ppl-flash-attn": element("auto"),
         "benchmark-ppl-cache-k": element("f16"),
         "benchmark-ppl-cache-v": element("f16"),
+        "benchmark-ppl-mmap": { ...element(""), type: "checkbox", checked: false },
         "benchmark-chunks": element("5"),
         "benchmark-ppl-stride": element("0"),
         "benchmark-warmup": { ...element(""), type: "checkbox", checked: false },
@@ -199,6 +240,7 @@ function flat(result) {
     assert.equal(elements["benchmark-ppl-flash-attn"].value, "auto");
     assert.equal(elements["benchmark-ppl-cache-k"].value, "f16");
     assert.equal(elements["benchmark-ppl-cache-v"].value, "f16");
+    assert.equal(elements["benchmark-ppl-mmap"].checked, true);
     assert.equal(elements["benchmark-ppl-stride"].value, "0");
     assert.equal(elements["benchmark-warmup"].checked, true);
 

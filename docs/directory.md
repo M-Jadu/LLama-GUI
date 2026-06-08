@@ -64,6 +64,7 @@
 
 - Downloads `llama.cpp` releases from GitHub with SHA256 verification.
 - Runs `llama-server`, `llama-cli`, `llama-bench`, or `llama-perplexity` as a subprocess and streams stdout/stderr.
+- Downloads the official WikiText-2 raw test file for Benchmarking clean perplexity runs.
 - Handles preset, model file, and Hugging Face download APIs.
 - Selects binary based on platform (`win32`/`darwin`/`linux`) and backend type (e.g., `cuda-12.4`, `cuda-13.1`, `vulkan`, `hip`, `sycl`, `openvino`, `metal`, `metal-kleidiai`).
 - Proxies OpenAI-compatible chat completions (`/v1/chat/completions`) to `llama-server` with streaming SSE support.
@@ -79,6 +80,7 @@
 | Route | Endpoints |
 |-------|-----------|
 | `chat.py` | `/api/chat/completions` — SSE proxy with web search |
+| `benchmarks.py` | `/api/benchmark/wikitext2` — ensure WikiText-2 raw test file exists |
 | `process.py` | `/api/launch`, `/api/stop`, `/api/output`, `/api/send-input`, `/api/cleanup-llama` |
 | `install.py` | `/api/releases`, `/api/install`, `/api/update`, `/api/download-progress` |
 | `metrics.py` | `/api/llama/metrics`, `/api/llama/slots` — Prometheus proxy |
@@ -196,7 +198,7 @@ The frontend loads scripts in a strict dependency order via `ui/index.html`:
 - Configure's Custom Launch Args textarea stores its raw value in shared `flagCore.flagValues.custom_args` through `setFlagValue("custom_args", ...)`.
 - Command preview and launch args are generated from shared state (`flagCore.getLaunchArgs()`), never per-tab copies.
 - Custom launch args are parsed and appended only by `flagCore.getLaunchArgs()`, after UI-managed flags and before the selected model arg.
-- Benchmarking reads Configure state or saved preset JSON without mutating them, builds tool-compatible benchmark args, and uses `/api/launch`, `/api/stop`, `/api/output`, and `/api/status` through the existing single process slot.
+- Benchmarking reads Configure state or saved preset JSON without mutating them, builds tool-compatible benchmark args, can prepare the official WikiText-2 raw test file through `/api/benchmark/wikitext2`, and uses `/api/launch`, `/api/stop`, `/api/output`, and `/api/status` through the existing single process slot.
 - Server output is polled via HTTP endpoint and streamed to the terminal panel.
 - Chat completions are streamed via SSE from `/api/chat/completions` (backend proxies to `llama-server`).
 - Stats are polled from `llama-server`'s Prometheus `/metrics` endpoint, with KV/context usage falling back through the local `/slots` proxy when `llamacpp:kv_cache_usage_ratio` is unavailable.

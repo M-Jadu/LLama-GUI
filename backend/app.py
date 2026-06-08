@@ -41,6 +41,7 @@ from backend.http import (
 )
 from backend.routing import Router
 from backend.routes import chat as chat_routes
+from backend.routes import benchmarks as benchmarks_routes
 from backend.routes import file_picker as file_picker_routes
 from backend.routes import hf_download as hf_download_routes
 from backend.routes import metrics as metrics_routes
@@ -820,6 +821,7 @@ API_ROUTER = (
     .add("GET", "/api/app-update-status", git_update_routes.get_status)
     .add("GET", "/api/presets", presets_routes.list_presets)
     .add("POST", "/api/web-search", search_routes.search)
+    .add("POST", "/api/benchmark/wikitext2", benchmarks_routes.ensure_wikitext2)
     .add("POST", "/api/chat/completions", chat_routes.completions)
     .add("POST", "/api/remote-tunnel/start", tunnel_routes.start)
     .add("POST", "/api/remote-tunnel/stop", tunnel_routes.stop)

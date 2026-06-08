@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 import urllib.error
+import zipfile
 from unittest import mock
 from email.message import Message
 from pathlib import Path
@@ -10,7 +11,7 @@ from types import SimpleNamespace
 
 from backend.context import AppContext, AppPaths, BackendServices, ServerConfig
 from backend.http import Request
-from backend.routes import chat, file_picker, git_update, hf_download, install, lifecycle, metrics, models, presets, process, search, status, tunnel
+from backend.routes import benchmarks, chat, file_picker, git_update, hf_download, install, lifecycle, metrics, models, presets, process, search, status, tunnel
 from backend.services import chat as chat_service
 from backend.services import lifecycle as lifecycle_service
 from backend.services import llama_manager
@@ -66,6 +67,17 @@ class FakeSseUpstream:
         return self.lines.pop(0)
 
 
+class FakeBinaryUpstream:
+    def __init__(self, payload):
+        self.stream = io.BytesIO(payload)
+
+    def __enter__(self):
+        return self.stream
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
 def make_context(root):
     root = Path(root)
     return AppContext(
@@ -98,6 +110,35 @@ class ExtractedRouteTests(unittest.TestCase):
             models.list_models(Request("GET", "/api/models", "", {}), response, ctx)
 
             self.assertEqual(response.payload, [{"name": "model.gguf", "size_mb": 0.0}])
+
+    def test_benchmark_wikitext2_route_reuses_existing_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            dataset_dir = ctx.paths.models / "wikitext-2-raw-v1"
+            dataset_dir.mkdir(parents=True)
+            target = dataset_dir / "wiki.test.raw"
+            target.write_text("already here", encoding="utf-8")
+            response = DummyResponse()
+
+            benchmarks.ensure_wikitext2(Request("POST", "/api/benchmark/wikitext2", "", {}), response, ctx)
+
+            self.assertEqual(response.payload, {"ready": True, "downloaded": False, "path": str(target)})
+
+    def test_benchmark_wikitext2_route_downloads_and_extracts_test_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            zip_payload = io.BytesIO()
+            with zipfile.ZipFile(zip_payload, "w") as archive:
+                archive.writestr("wikitext-2-raw/wiki.train.raw", "train")
+                archive.writestr("wikitext-2-raw/wiki.test.raw", "test data")
+            ctx.services.urlopen_with_ssl = mock.Mock(return_value=FakeBinaryUpstream(zip_payload.getvalue()))
+            response = DummyResponse()
+
+            benchmarks.ensure_wikitext2(Request("POST", "/api/benchmark/wikitext2", "", {}), response, ctx)
+
+            target = ctx.paths.models / "wikitext-2-raw-v1" / "wiki.test.raw"
+            self.assertEqual(response.payload, {"ready": True, "downloaded": True, "path": str(target)})
+            self.assertEqual(target.read_text(encoding="utf-8"), "test data")
 
     def test_presets_routes_list_save_and_delete(self):
         with tempfile.TemporaryDirectory() as tmp:

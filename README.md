@@ -340,6 +340,7 @@ Default-friendly behavior includes:
 - Run throughput benchmarks with `llama-bench`
 - Run perplexity checks with `llama-perplexity`
 - Choose settings from **Current Configure**, a **Saved Preset**, or a **Manual Model**
+- Use the WikiText-2 clean run helper to download the official raw test file and preview a minimal `-m`/`-f` command
 - Shows the command preview, applied settings, excluded settings, and raw benchmark output
 - Results are kept only for the current page session
 - Uses the same single process slot as normal launches, so stop any running server or chat process before starting a benchmark
