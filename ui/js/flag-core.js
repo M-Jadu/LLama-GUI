@@ -165,6 +165,11 @@
         return String(value) === String(expected);
     }
 
+    function isMirostatEnabled(values) {
+        const mode = String((values || {}).mirostat || "0").trim();
+        return mode === "1" || mode === "2";
+    }
+
     function parseCustomLaunchArgs(raw) {
         const input = String(raw || "");
         const tokens = [];
@@ -309,6 +314,9 @@
                 }
                 if (f.id === "checkpoint_every_n_tokens" && Number(val) < 0) {
                     args.push([f.flag, "0"]);
+                    continue;
+                }
+                if ((f.id === "mirostat_lr" || f.id === "mirostat_ent") && !isMirostatEnabled(flagValues)) {
                     continue;
                 }
                 if (shouldOmitFlagValue(f, val)) continue;
