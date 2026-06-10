@@ -49,6 +49,8 @@ function flatLaunchArgs() {
         "--xtc-probability",
         "--xtc-threshold",
         "--mirostat",
+        "--mirostat-lr",
+        "--mirostat-ent",
     ]) {
         assert.ok(!args.includes(flag), `default launch args should omit ${flag}`);
     }
@@ -60,12 +62,16 @@ function flatLaunchArgs() {
             xtc_probability: 0,
             xtc_threshold: 1.0,
             mirostat: "0",
+            mirostat_lr: 0.1,
+            mirostat_ent: 5,
         });
     `, context);
     const args = flatLaunchArgs();
     assert.ok(!args.includes("--xtc-probability"), "disabled XTC probability should be omitted");
     assert.ok(!args.includes("--xtc-threshold"), "disabled XTC threshold should be omitted");
     assert.ok(!args.includes("--mirostat"), "disabled Mirostat should be omitted");
+    assert.ok(!args.includes("--mirostat-lr"), "Mirostat LR should be omitted when Mirostat is disabled");
+    assert.ok(!args.includes("--mirostat-ent"), "Mirostat entropy should be omitted when Mirostat is disabled");
 }
 
 {
@@ -75,6 +81,8 @@ function flatLaunchArgs() {
             dynatemp_range: 0.5,
             xtc_probability: 0.1,
             mirostat: "2",
+            mirostat_lr: 0.2,
+            mirostat_ent: 6,
         });
     `, context);
     const args = flatLaunchArgs();
@@ -82,6 +90,8 @@ function flatLaunchArgs() {
     assert.ok(args.includes("--dynatemp-range") && args.includes("0.5"));
     assert.ok(args.includes("--xtc-probability") && args.includes("0.1"));
     assert.ok(args.includes("--mirostat") && args.includes("2"));
+    assert.ok(args.includes("--mirostat-lr") && args.includes("0.2"));
+    assert.ok(args.includes("--mirostat-ent") && args.includes("6"));
 }
 
 console.log("launch args unit tests passed");
