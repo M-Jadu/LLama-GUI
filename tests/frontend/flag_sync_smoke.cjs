@@ -475,7 +475,7 @@ async function main() {
         await page.dispatchEvent("#custom-launch-args", "input");
         await page.waitForFunction(() => document.querySelector("#command-preview-text")?.textContent.includes("--threads 8"));
         const customState = await page.evaluate(() => ({
-            raw: window.LlamaGui.flagCore.collectFlagValues().custom_args,
+            raw: window.LlamaGui.flagCore.getFlagValues().custom_args,
             args: window.LlamaGui.flagCore.getLaunchArgs().args.flat(),
         }));
         assert.equal(customState.raw, "--threads 8\n--chat-template-kwargs '{\"preserve_thinking\":true}'");

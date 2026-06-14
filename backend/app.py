@@ -30,7 +30,6 @@ from backend.context import DEFAULT_CONTEXT
 from backend.http import (
     Request,
     Response,
-    SseWriter,
     WILDCARD_BIND_HOSTS,
     get_access_control_origin,
     get_allowed_request_origins,
@@ -499,10 +498,6 @@ def get_local_llama_slots(host, port):
         return None, f"llama-server slots returned HTTP {exc.code}."
     except Exception as exc:
         return None, f"Failed to fetch llama-server slots: {exc}"
-
-
-def write_sse(wfile, data):
-    SseWriter(wfile).write(data)
 
 
 def get_ui_asset_version():

@@ -249,14 +249,14 @@
                             fullContent += delta;
                             appendChatStreamToken(bubble, delta);
                         }
-                    } catch (_) {
-                        // skip malformed chunks
+                    } catch (e) {
+                        console.debug("Skipping malformed chat stream chunk", e);
                     }
                 }
             }
 
             if (streamDone) {
-                await reader.cancel().catch(() => {});
+                await reader.cancel().catch((e) => console.debug("Failed to cancel completed chat stream reader", e));
             }
             setChatWebStatus(bubble, "");
             if (fullContent) {
@@ -330,7 +330,8 @@
     function getStoredConversations() {
         try {
             return JSON.parse(localStorage.getItem(CHAT_CONVERSATIONS_STORAGE_KEY)) || [];
-        } catch (_) {
+        } catch (e) {
+            console.debug("Failed to read stored conversations", e);
             return [];
         }
     }

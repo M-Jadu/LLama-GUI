@@ -396,20 +396,6 @@ class ValidationTests(ServerStateIsolationMixin, unittest.TestCase):
             server.get_local_chat_api_url({"host": "localhost", "port": 70000})
 
 
-class StreamingTests(unittest.TestCase):
-    def test_write_sse_formats_json_and_done_messages(self):
-        output = io.BytesIO()
-
-        server.write_sse(output, {"type": "status", "content": "hello"})
-        server.write_sse(output, "[DONE]")
-
-        self.assertEqual(
-            output.getvalue().decode("utf-8"),
-            'data: {"type": "status", "content": "hello"}\n\n'
-            "data: [DONE]\n\n",
-        )
-
-
 class ImportSmokeTests(unittest.TestCase):
     def test_server_py_is_compatibility_entrypoint(self):
         import backend.app

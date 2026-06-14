@@ -153,7 +153,7 @@ The frontend loads scripts in a strict dependency order via `ui/index.html`:
 
 | Module | Namespace | Role |
 |--------|-----------|------|
-| `ui/js/flags/definitions.js` | (data) | `FLAGS` array — single source of truth for all exposed `llama.cpp` flags (134 entries) |
+| `ui/js/flags/definitions.js` | (data) | `FLAGS` array — single source of truth for all exposed `llama.cpp` flags |
 | `ui/js/flags/categories.js` | (data) | `FLAG_CATEGORIES` array |
 | `ui/js/flags/options.js` | (data) | Shared enum option lists (`CACHE_TYPE_OPTIONS`, etc.) |
 | `ui/js/flags/chat-templates.js` | (data) | `BUILTIN_CHAT_TEMPLATES`, `CHAT_TEMPLATE_PRESETS`, preset helpers |
@@ -212,7 +212,7 @@ The frontend loads scripts in a strict dependency order via `ui/index.html`:
 
 ### Single Source of Truth
 
-`ui/js/flags/definitions.js` defines the `FLAGS` array (134 entries). Each flag has:
+`ui/js/flags/definitions.js` defines the `FLAGS` array. Each flag has:
 - `id`, `flag` (CLI name), `category`, `type`, `label`, `desc`, `tool`, `default`
 - `tool` field: `"both"`, `"server"`, `"cli"` — controls visibility
 - Types: `bool`, `int`, `float`, `text`, `path`, `enum`, `multi_enum`
@@ -695,11 +695,10 @@ Prefer `rg` for local search. On Windows/PowerShell, use patterns like `rg -n "p
 | File | Purpose |
 |------|---------|
 | `AGENTS.md` | Agent workflow rules, pitfalls, task recipes, file ownership |
-| `docs/agent-workflows.md` | Agent reference for flag audits and chat template updates |
 | `docs/directory.md` | This file — project structure and feature reference |
 | `docs/todo.md` | Known planned work |
-| `docs/flag_report.md` | One-time flag audit report (May 2026) |
+| `docs/flag_report.md` | Archived one-time flag audit report (May 2026) |
+| `docs/llama_cpp_compat_report.md` | Current llama.cpp compatibility report |
 | `docs/frontend_flag_core_plan.md` | Completed phased plan for extracting flag state |
-| `docs/frontend_modularization.md` | Plan for future frontend modularization |
 | `docs/archive/` | Archived plans (backend architecture, progress) |
 | `docs/images/` | Screenshots used by README.md |
