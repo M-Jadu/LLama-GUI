@@ -30,7 +30,8 @@
             const parsed = JSON.parse(raw);
             if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
             return parsed;
-        } catch (_) {
+        } catch (e) {
+            console.debug("Failed to load sampler presets", e);
             return {};
         }
     }

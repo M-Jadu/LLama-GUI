@@ -661,7 +661,7 @@ async function stopLlama() {
     try {
         await fetchJson("/api/stop", { method: "POST" });
     } catch (e) {
-        // ignore
+        console.debug("Stop request failed", e);
     }
     stopOutputPolling();
     stopStatsPolling();
@@ -948,7 +948,7 @@ async function sendInput() {
             body: JSON.stringify({ text }),
         });
     } catch (e) {
-        // ignore
+        console.debug("Send input request failed", e);
     }
 }
 
@@ -969,7 +969,7 @@ function copyQuickServerUrl() {
 }
 
 function copyText(text) {
-    navigator.clipboard.writeText(text).catch(() => {});
+    navigator.clipboard.writeText(text).catch((e) => console.debug("Clipboard write failed", e));
 }
 
 function showToast(message, type) {

@@ -381,7 +381,6 @@
         getFlagValues: collectFlagValues,
         replaceFlagValues,
         patchFlagValues,
-        collectFlagValues,
         configure,
         setMultipleFlagValues,
         setFlagValue,

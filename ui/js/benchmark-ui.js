@@ -501,7 +501,7 @@
             sourceType,
             label: "Current Configure",
             model: flagCore ? flagCore.getSelectedModel() : "",
-            flags: flagCore ? flagCore.collectFlagValues() : {},
+            flags: flagCore ? flagCore.getFlagValues() : {},
         };
     }
 

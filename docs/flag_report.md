@@ -1,12 +1,14 @@
 # Flag Audit Report - May 9, 2026
 
+> Archived historical audit. The current compatibility report is `docs/llama_cpp_compat_report.md`.
+
 **Upstream ref:** `ggerganov/llama.cpp` master at `1e5ad35d560b90a8ac447d149c8f8447ae1fcaa0`  
-**Local FLAGS count:** 134  
+**Local FLAGS count at time of audit:** 134  
 **Upstream server/common flag count parsed:** 234 server-relevant flags from `common/arg.cpp`
 
 ## A. New Upstream Flags
 
-Found **110 upstream server/common flags not exposed in `ui/js/flags.js`**. Most are advanced or router/speculative/server-management options rather than obvious required GUI basics.
+Found **110 upstream server/common flags not exposed in the split flag definitions under `ui/js/flags/`**. Most are advanced or router/speculative/server-management options rather than obvious required GUI basics.
 
 Highest-signal additions to consider:
 

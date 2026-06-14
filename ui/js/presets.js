@@ -84,7 +84,7 @@ function applyPresetModel(modelName) {
 
 function buildCurrentPresetData() {
     const flagCore = getPresetFlagCore();
-    const values = flagCore.collectFlagValues();
+    const values = flagCore.getFlagValues();
     const selectedModel = flagCore.getSelectedModel();
     const tool = flagCore.getCurrentTool();
     return { tool, model: selectedModel, flags: values };
@@ -245,10 +245,10 @@ function getNotablePresetSettings(presetData) {
     const flags = (presetData && presetData.flags) || {};
     const notableIds = [
         "ctx_size",
-        "n_gpu_layers",
+        "gpu_layers",
         "chat_template",
         "chat_template_custom",
-        "temp",
+        "temperature",
         "top_k",
         "top_p",
         "min_p",
