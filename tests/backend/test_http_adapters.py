@@ -10,6 +10,7 @@ from backend.http import (
     get_allowed_request_origins,
     get_cors_methods,
     is_safe_request_origin,
+    is_safe_v1_proxy_path,
     is_static_ui_path,
     is_v1_proxy_path,
 )
@@ -102,6 +103,11 @@ class HttpCorsAdapterTests(unittest.TestCase):
     def test_path_classification(self):
         self.assertTrue(is_v1_proxy_path("/v1/chat/completions"))
         self.assertFalse(is_v1_proxy_path("/api/status"))
+        self.assertTrue(is_safe_v1_proxy_path("/v1/chat/completions"))
+        self.assertFalse(is_safe_v1_proxy_path("/v1/../api/status"))
+        self.assertFalse(is_safe_v1_proxy_path("/v1/%2e%2e/api/status"))
+        self.assertFalse(is_safe_v1_proxy_path("/v1/%252e%252e/api/status"))
+        self.assertFalse(is_safe_v1_proxy_path(r"/v1\..\api\status"))
         self.assertEqual(get_cors_methods("/v1/models"), "GET, POST, OPTIONS")
         self.assertEqual(get_cors_methods("/api/status"), "GET, POST, PUT, DELETE, OPTIONS")
         self.assertTrue(is_static_ui_path("/js/app.js"))

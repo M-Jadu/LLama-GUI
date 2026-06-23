@@ -176,6 +176,28 @@ class HandlerResponseTests(ServerStateIsolationMixin, unittest.TestCase):
             {"error": "upstream failed", "status": 502},
         )
 
+    def test_proxy_rejects_path_traversal_before_forwarding(self):
+        handler = self.make_handler()
+        parsed = server.urllib.parse.urlparse("/v1/%2e%2e/api/status")
+
+        handler.proxy_v1_request("GET", parsed)
+
+        self.assertEqual(handler.sent_response, 400)
+        self.assertEqual(
+            json.loads(handler.wfile.getvalue().decode("utf-8")),
+            {"error": "Invalid proxy path", "status": 400},
+        )
+
+    def test_read_body_returns_408_when_body_read_times_out(self):
+        handler = self.make_handler()
+        handler.headers["Content-Length"] = "10"
+        handler.read_request_bytes = lambda length: (_ for _ in ()).throw(TimeoutError())
+
+        result = handler.read_body()
+
+        self.assertIsNotNone(result)
+        self.assertEqual(handler.sent_response, 408)
+
     def test_version_ui_asset_urls_rewrites_local_assets(self):
         html = (
             '<link rel="stylesheet" href="/css/style.css?v=revamp-1">'

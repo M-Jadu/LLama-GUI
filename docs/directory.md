@@ -248,7 +248,7 @@ Categories can also define `submenu` entries that render as collapsible sub-acco
 - Cross-reference every flag against upstream documentation: flag name and shorthand, expected value type, valid option values for enum types, default values, and whether the flag has been renamed, deprecated, or removed.
 - After any flag-related changes, confirm the generated command preview produces valid arguments that `llama-server` will accept.
 - Verify that enum dropdowns only contain values still recognized by the current `llama.cpp` version.
-- Check that chat template names in `flags.js` match templates bundled with the installed `llama.cpp` release.
+- Check that chat template names in `ui/js/flags/chat-templates.js` match templates bundled with the installed `llama.cpp` release.
 - Run `tests/frontend/flag_sync_smoke.cjs` after mirrored-control, flag-state, or command-preview changes when Playwright is available.
 
 ---
@@ -397,7 +397,7 @@ Quick Launch renders simplified controls for:
 - Context size (preset dropdown + custom input, linked to fit_ctx by default)
 - GPU layers (auto/0/all/custom, synced with Configure)
 - Auto Fit toggle + fit target/context inputs
-- Chat template (reuses shared `chat_template` options from flags.js)
+- Chat template (reuses shared `chat_template` options from `ui/js/flags/chat-templates.js`)
 - Sampler preset selection (load/save/delete from shared sampler preset store)
 - Quick sampler fields (temperature, top-k, top-p, min-p, repeat-penalty)
 - Metrics toggle
