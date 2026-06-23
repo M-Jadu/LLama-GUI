@@ -5,6 +5,7 @@ import re
 import socket
 import ssl
 import sys
+import time
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -20,6 +21,7 @@ from backend.config import (
     LLAMA_PORT,
     MODELS_DIR,
     PRESETS_DIR,
+    REQUEST_BODY_TIMEOUT_SECONDS,
     UI_DIR,
     WEB_SEARCH_FETCH_BYTES,
     WEB_SEARCH_MAX_RESULTS,
@@ -35,6 +37,7 @@ from backend.http import (
     get_allowed_request_origins,
     get_cors_methods,
     is_safe_request_origin,
+    is_safe_v1_proxy_path,
     is_static_ui_path,
     is_v1_proxy_path,
 )
@@ -593,9 +596,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_error_json(f"Request body too large (max {MAX_BODY_SIZE // (1024 * 1024)} MB)", 413)
             return _BODY_TOO_LARGE
         try:
-            return json.loads(self.rfile.read(length))
+            return json.loads(self.read_request_bytes(length))
+        except (TimeoutError, socket.timeout):
+            self.send_error_json("Request body timed out", 408)
+            return _BODY_TOO_LARGE
         except (json.JSONDecodeError, UnicodeDecodeError):
             return None
+
+    def read_request_bytes(self, length):
+        deadline = time.monotonic() + REQUEST_BODY_TIMEOUT_SECONDS
+        chunks = []
+        remaining = length
+        connection = getattr(self, "connection", None)
+        previous_timeout = connection.gettimeout() if connection is not None else None
+        try:
+            while remaining > 0:
+                timeout = deadline - time.monotonic()
+                if timeout <= 0:
+                    raise TimeoutError("Request body timed out")
+                if connection is not None:
+                    connection.settimeout(timeout)
+                chunk = self.rfile.read(min(65536, remaining))
+                if not chunk:
+                    raise TimeoutError("Request body ended before Content-Length bytes were received")
+                chunks.append(chunk)
+                remaining -= len(chunk)
+        finally:
+            if connection is not None:
+                connection.settimeout(previous_timeout)
+        return b"".join(chunks)
 
     def is_safe_request_origin(self):
         return is_safe_request_origin(self.headers, self.get_allowed_request_origins())
@@ -620,7 +649,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         if length <= 0:
             return None
-        return self.rfile.read(length)
+        return self.read_request_bytes(length)
 
     def send_proxy_error(self, message, status=502):
         self.send_error_json(message, status)
@@ -643,11 +672,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.handle_v1_index()
             return
 
+        if not is_safe_v1_proxy_path(parsed.path):
+            self.send_error_json("Invalid proxy path", 400)
+            return
+
         target = get_llama_api_target()
         path = parsed.path
         query = f"?{parsed.query}" if parsed.query else ""
         url = f"http://{target['host']}:{target['port']}{path}{query}"
-        data = self.get_proxy_request_body() if method in {"POST", "PUT", "PATCH"} else None
+        try:
+            data = self.get_proxy_request_body() if method in {"POST", "PUT", "PATCH"} else None
+        except (TimeoutError, socket.timeout):
+            self.send_error_json("Request body timed out", 408)
+            return
 
         headers = {}
         for name in ("Content-Type", "Accept", "Authorization"):

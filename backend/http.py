@@ -30,6 +30,17 @@ def is_v1_proxy_path(path: str) -> bool:
     return path == "/v1" or path.startswith("/v1/")
 
 
+def is_safe_v1_proxy_path(path: str) -> bool:
+    decoded = str(path or "")
+    for _ in range(3):
+        next_decoded = urllib.parse.unquote(decoded)
+        if next_decoded == decoded:
+            break
+        decoded = next_decoded
+    segments = decoded.replace("\\", "/").split("/")
+    return is_v1_proxy_path(decoded) and all(segment not in {".", ".."} for segment in segments)
+
+
 def get_allowed_request_origins(
     tunnel_url: str = "",
     gui_host: str = config.GUI_HOST,
