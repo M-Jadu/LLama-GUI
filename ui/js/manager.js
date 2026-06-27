@@ -1,4 +1,7 @@
 let cachedReleases = null;
+let releasesBackend = null;
+let releasesBackendInFlight = null;
+let releaseFetchRequestId = 0;
 let installPollTimer = null;
 let installPollStartTime = null;
 let installPollFailCount = 0;
@@ -61,12 +64,31 @@ async function fetchJson(url, options) {
     return data;
 }
 
-async function fetchReleases() {
+function selectedBackendId() {
+    const sel = document.getElementById("backend-select");
+    return sel ? String(sel.value || "") : "";
+}
+
+function onBackendChange() {
+    fetchReleases(selectedBackendId());
+}
+
+async function fetchReleases(backend) {
     const sel = document.getElementById("release-select");
     if (!sel) return;
+    const backendParam = typeof backend === "string" ? backend.trim() : "";
+    const url = backendParam
+        ? `/api/releases?backend=${encodeURIComponent(backendParam)}`
+        : "/api/releases";
+    const requestId = ++releaseFetchRequestId;
+    releasesBackendInFlight = backendParam;
     sel.innerHTML = '<option value="">Loading...</option>';
     try {
-        cachedReleases = await fetchJson("/api/releases");
+        const releases = await fetchJson(url);
+        if (requestId !== releaseFetchRequestId) return;
+        cachedReleases = releases;
+        releasesBackend = backendParam;
+        releasesBackendInFlight = null;
         sel.innerHTML = "";
         for (const r of cachedReleases) {
             const opt = document.createElement("option");
@@ -86,6 +108,8 @@ async function fetchReleases() {
             sel.value = cachedReleases[0].tag;
         }
     } catch (e) {
+        if (requestId !== releaseFetchRequestId) return;
+        releasesBackendInFlight = null;
         sel.innerHTML = '<option value="">Failed to load</option>';
         showStatus("error", "Failed to fetch releases: " + e.message);
     }
@@ -121,6 +145,13 @@ function updateStatusUI(status) {
         const hasBackendOption = Array.from(backendSelect.options).some((opt) => opt.value === status.backend);
         if (hasBackendOption) {
             backendSelect.value = status.backend;
+        }
+    }
+
+    if (backendSelect) {
+        const targetBackend = backendSelect.value || "";
+        if (targetBackend !== releasesBackend && targetBackend !== releasesBackendInFlight) {
+            fetchReleases(targetBackend);
         }
     }
 
