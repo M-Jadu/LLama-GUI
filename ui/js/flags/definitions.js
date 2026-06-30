@@ -1212,6 +1212,16 @@ const FLAGS = [
 		tool: "both",
 		default: false,
 	},
+	{
+		id: "kv_unified",
+		flag: "--kv-unified",
+		category: "kv",
+		type: "bool",
+		label: "Unified KV Cache",
+		desc: "Use a single unified KV buffer shared across sequences. This can improve slot/cache behavior in some server setups, but may interact badly with cache reuse on some llama.cpp Vulkan builds.",
+		tool: "server",
+		default: false,
+	},
 
 	// Speculative Decoding
 	{
