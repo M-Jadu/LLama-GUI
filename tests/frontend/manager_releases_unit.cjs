@@ -58,8 +58,8 @@ const context = {
         getElementById: (id) => elements.get(id) || null,
     },
     console,
-    fetch: async (url) => {
-        fetchCalls.push(url);
+    fetch: async (url, options) => {
+        fetchCalls.push({ url, options });
         return { ok: true, json: async () => fetchPayload };
     },
 };
@@ -79,14 +79,19 @@ vm.runInContext(source, context, { filename: "ui/js/manager.js" });
 
     await context.fetchReleases("lemonade-rocm-gfx110X");
     assert.equal(
-        fetchCalls[fetchCalls.length - 1],
+        fetchCalls[fetchCalls.length - 1].url,
         "/api/releases?backend=lemonade-rocm-gfx110X",
         "fetchReleases(backend) should hit backend-aware releases URL"
+    );
+    assert.equal(
+        fetchCalls[fetchCalls.length - 1].options.cache,
+        "no-store",
+        "fetchJson should bypass browser cache for API requests"
     );
 
     await context.fetchReleases();
     assert.equal(
-        fetchCalls[fetchCalls.length - 1],
+        fetchCalls[fetchCalls.length - 1].url,
         "/api/releases",
         "fetchReleases() without backend should hit default releases URL"
     );
@@ -94,14 +99,14 @@ vm.runInContext(source, context, { filename: "ui/js/manager.js" });
     backendSelect.value = "cpu";
     await context.onBackendChange();
     assert.equal(
-        fetchCalls[fetchCalls.length - 1],
+        fetchCalls[fetchCalls.length - 1].url,
         "/api/releases?backend=cpu",
         "onBackendChange should refetch releases for the selected backend"
     );
 
     const pending = new Map();
-    context.fetch = async (url) => {
-        fetchCalls.push(url);
+    context.fetch = async (url, options) => {
+        fetchCalls.push({ url, options });
         return new Promise((resolve) => {
             pending.set(url, (payload) => resolve({ ok: true, json: async () => payload }));
         });
