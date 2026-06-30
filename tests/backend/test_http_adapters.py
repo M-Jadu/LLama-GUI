@@ -151,6 +151,9 @@ class HttpResponseAdapterTests(unittest.TestCase):
 
         self.assertEqual(handler.sent_response, 502)
         self.assertIn(("Access-Control-Allow-Origin", "http://localhost:5240"), handler.sent_headers)
+        self.assertIn(("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0"), handler.sent_headers)
+        self.assertIn(("Pragma", "no-cache"), handler.sent_headers)
+        self.assertIn(("Expires", "0"), handler.sent_headers)
         self.assertEqual(
             json.loads(handler.wfile.getvalue().decode("utf-8")),
             {"error": "upstream failed", "status": 502, "code": "upstream_unavailable"},

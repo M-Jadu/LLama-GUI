@@ -45,7 +45,7 @@ function renderBackendOptions(status) {
 }
 
 async function fetchJson(url, options) {
-    const resp = await fetch(url, options);
+    const resp = await fetch(url, { cache: "no-store", ...(options || {}) });
     let data = null;
     try {
         data = await resp.json();
