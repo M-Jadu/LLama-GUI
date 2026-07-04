@@ -15,6 +15,8 @@ let pollOutputActive = false;
 let pollStatsActive = false;
 let pollOutputFailCount = 0;
 let serverReadyNotified = false;
+const TOAST_MAX_VISIBLE = 5;
+const DEFAULT_TOAST_DURATION_MS = 4000;
 
 let chatStatsBaseline = { promptTokens: 0, genTokens: 0 };
 let chatStatsRaw = { promptTokens: 0, genTokens: 0 };
@@ -80,6 +82,7 @@ quickLaunchUi.configure({
     normalizeSamplerPresetValues: samplerPresets.normalizeSamplerPresetValues,
     collectSamplerValues: samplerPresets.collectSamplerValues,
     confirmAction,
+    hasLaunchModelArg,
 });
 benchmarkUi.configure({
     flagCore,
@@ -574,22 +577,14 @@ function restoreRunningState(status) {
 async function launchLlama() {
     const result = flagCore.getLaunchArgs();
     if (result.error) {
-        alert(result.error);
+        showToast(result.error, "error", { duration: 0 });
         return;
     }
     const args = result.args;
     const tool = flagCore.getCurrentTool();
-    const hasModel = args.some(a => {
-        const entryValues = Array.isArray(a) ? a : [a];
-        return entryValues.some(value => {
-            const token = String(value || "");
-            return token === "-m" || token === "-hf" || token === "--model" || token === "--hf-repo"
-                || token.startsWith("-m=") || token.startsWith("-hf=")
-                || token.startsWith("--model=") || token.startsWith("--hf-repo=");
-        });
-    });
-    if (!hasModel) {
-        alert("Select a model or provide an HF repo before launching.");
+    if (!hasLaunchModelArg(args)) {
+        showToast("Select a model or provide an HF repo before launching.", "warning");
+        refreshQuickLaunchUI();
         return;
     }
 
@@ -639,6 +634,18 @@ async function launchLlama() {
         updateQuickLaunchActionButtons();
         updateChatStatusBadge();
     }
+}
+
+function hasLaunchModelArg(args) {
+    return (args || []).some((entry) => {
+        const entryValues = Array.isArray(entry) ? entry : [entry];
+        return entryValues.some((value) => {
+            const token = String(value || "");
+            return token === "-m" || token === "-hf" || token === "--model" || token === "--hf-repo"
+                || token.startsWith("-m=") || token.startsWith("-hf=")
+                || token.startsWith("--model=") || token.startsWith("--hf-repo=");
+        });
+    });
 }
 
 async function stopLlama() {
@@ -956,13 +963,40 @@ function copyText(text) {
     navigator.clipboard.writeText(text).catch((e) => console.debug("Clipboard write failed", e));
 }
 
-function showToast(message, type) {
+function dismissToast(toast) {
+    if (!toast || toast.dataset.dismissing === "true") return;
+    toast.dataset.dismissing = "true";
+    const timerId = Number(toast.dataset.timerId || 0);
+    if (timerId) {
+        clearTimeout(timerId);
+    }
+    toast.style.opacity = "0";
+    toast.style.transform = "translateY(-8px)";
+    toast.style.transition = "opacity 0.2s ease, transform 0.2s ease";
+    setTimeout(() => toast.remove(), 220);
+}
+
+function capToastStack(container) {
+    const toasts = Array.from(container.querySelectorAll(".toast"));
+    const overflow = toasts.length - TOAST_MAX_VISIBLE;
+    if (overflow <= 0) return;
+    for (const toast of toasts.slice(0, overflow)) {
+        dismissToast(toast);
+    }
+}
+
+function showToast(message, type, options = {}) {
     const container = document.getElementById("toast-container");
     if (!container) return;
+    const duration = Object.prototype.hasOwnProperty.call(options, "duration")
+        ? Number(options.duration)
+        : DEFAULT_TOAST_DURATION_MS;
     const toast = document.createElement("div");
     toast.className = "toast toast-" + (type || "info");
+    toast.setAttribute("role", "status");
     const icon = document.createElement("span");
     icon.className = "icon icon-sm toast-icon";
+    icon.setAttribute("aria-hidden", "true");
     icon.innerHTML = '<svg viewBox="0 0 24 24">' +
         (type === "success" ? '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>' +
             '<polyline points="22 4 12 14.01 9 11.01"/>' :
@@ -971,16 +1005,28 @@ function showToast(message, type) {
                     '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>') +
         '</svg>';
     const text = document.createElement("span");
+    text.className = "toast-message";
     text.textContent = String(message || "");
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "toast-close";
+    closeBtn.type = "button";
+    closeBtn.title = "Dismiss";
+    closeBtn.setAttribute("aria-label", "Dismiss notification");
+    closeBtn.textContent = "×";
+    closeBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        dismissToast(toast);
+    });
+    toast.addEventListener("click", () => dismissToast(toast));
     toast.appendChild(icon);
     toast.appendChild(text);
+    toast.appendChild(closeBtn);
     container.appendChild(toast);
-    setTimeout(() => {
-        toast.style.opacity = "0";
-        toast.style.transform = "translateY(-8px)";
-        toast.style.transition = "all 0.3s ease";
-        setTimeout(() => toast.remove(), 300);
-    }, 4000);
+    capToastStack(container);
+    if (Number.isFinite(duration) && duration > 0) {
+        const timerId = setTimeout(() => dismissToast(toast), duration);
+        toast.dataset.timerId = String(timerId);
+    }
 }
 
 // Chat Tab
@@ -991,6 +1037,7 @@ chatUi.configure({
     getServerEndpointConfig,
     getLatestStatus: () => latestStatus,
     snapshotStatsBaseline,
+    switchTab,
 });
 
 function refreshChatSidebarUI() {

@@ -82,6 +82,8 @@ async function main() {
         const page = await browser.newPage();
         const chatCompletionBodies = [];
         const launchBodies = [];
+        let statusRunning = false;
+        let activeProcessTool = "";
 
         await page.route("**/api/**", async (route) => {
             const url = new URL(route.request().url());
@@ -123,7 +125,8 @@ async function main() {
                     contentType: "application/json",
                     body: JSON.stringify({
                         installed: true,
-                        running: false,
+                        running: statusRunning,
+                        active_process_tool: activeProcessTool,
                         backend: "cpu",
                         tag: "smoke",
                         available_backends: [{ id: "cpu", label: "CPU" }],
@@ -206,6 +209,48 @@ async function main() {
         assert.match(toastSecurity.text, /<img src=x/);
         assert.equal(toastSecurity.parsedImageCount, 0);
         assert.equal(toastSecurity.xssFlag, false);
+        const toastUx = await page.evaluate(async () => {
+            const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+            const container = document.querySelector("#toast-container");
+            container.querySelectorAll(".toast").forEach((toast) => toast.remove());
+            showToast("dismiss me", "warning", { duration: 0 });
+            const clickToast = container.querySelector(".toast");
+            clickToast.click();
+            await wait(260);
+            const dismissedOnClick = container.querySelectorAll(".toast").length === 0;
+            for (let i = 0; i < 7; i += 1) {
+                showToast(`toast ${i}`, "info", { duration: 0 });
+            }
+            await wait(260);
+            const cappedCount = container.querySelectorAll(".toast").length;
+            const lastToast = container.querySelector(".toast:last-child");
+            const closeButton = lastToast.querySelector(".toast-close");
+            closeButton.click();
+            await wait(260);
+            return {
+                role: container.getAttribute("role"),
+                live: container.getAttribute("aria-live"),
+                dismissedOnClick,
+                cappedCount,
+                dismissedOnClose: !Array.from(container.querySelectorAll(".toast")).some((toast) =>
+                    toast.textContent.includes("toast 6")
+                ),
+                closeLabel: closeButton.getAttribute("aria-label"),
+            };
+        });
+        assert.equal(toastUx.role, "status");
+        assert.equal(toastUx.live, "polite");
+        assert.equal(toastUx.dismissedOnClick, true);
+        assert.equal(toastUx.cappedCount, 5);
+        assert.equal(toastUx.dismissedOnClose, true);
+        assert.equal(toastUx.closeLabel, "Dismiss notification");
+        await page.evaluate(() => {
+            document.querySelectorAll("#toast-container .toast").forEach((toast) => toast.remove());
+        });
+
+        await page.waitForFunction(() => document.querySelector("#quick-launch-status")?.textContent.includes("Select a model"));
+        assert.equal(await page.locator("#btn-quick-launch").isDisabled(), true);
+        assert.equal(await page.locator("#btn-sidebar-launch").isDisabled(), true);
 
         const sourceSecurity = await page.evaluate(() => {
             const wrap = document.createElement("div");
@@ -299,6 +344,16 @@ async function main() {
         await page.evaluate(() => stopStatsPolling());
 
         await selectSection(page, "chat");
+        assert.equal(await page.locator("#chat-input").isDisabled(), true);
+        assert.equal(await page.locator("#btn-chat-send").isDisabled(), true);
+        assert.match(await page.textContent("#chat-no-server-note"), /Start llama-server/i);
+        statusRunning = true;
+        activeProcessTool = "llama-cli";
+        await page.evaluate(() => refreshRuntimeStatusPanels());
+        assert.equal(await page.locator("#chat-input").isDisabled(), true);
+        activeProcessTool = "llama-server";
+        await page.evaluate(() => refreshRuntimeStatusPanels());
+        assert.equal(await page.locator("#chat-input").isDisabled(), false);
         await page.evaluate(() => {
             window.LlamaGui.flagCore.setFlagValue("temperature", 0.31);
         });
@@ -494,13 +549,8 @@ async function main() {
         await page.selectOption("#model-select", "smoke-model.gguf");
         await page.dispatchEvent("#model-select", "change");
         const launchCountBefore = launchBodies.length;
-        let launchDialogMessage = "";
-        page.once("dialog", async (dialog) => {
-            launchDialogMessage = dialog.message();
-            await dialog.accept();
-        });
         await page.click("#btn-launch");
-        assert.match(launchDialogMessage, /unmatched single quote/);
+        await page.waitForFunction(() => document.querySelector("#toast-container")?.textContent.includes("unmatched single quote"));
         assert.equal(launchBodies.length, launchCountBefore);
 
         console.log(`flag sync smoke passed on http://127.0.0.1:${port}/`);

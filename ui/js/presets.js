@@ -487,7 +487,9 @@ function renderPresetGroups(container, groups) {
     if (groups.length === 0) {
         const empty = document.createElement("div");
         empty.className = "presets-empty";
-        empty.textContent = presetSearchQuery ? "No presets match your search." : "No saved presets yet.";
+        empty.textContent = presetSearchQuery
+            ? "No presets match your search."
+            : "No saved presets yet. Save the current configuration above or import a JSON preset file.";
         container.appendChild(empty);
         renderPresetAuxiliaryPanels();
         return;
