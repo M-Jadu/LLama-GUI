@@ -436,7 +436,7 @@ body {
 .form-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; margin-bottom: var(--space-4); }
 .input-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 
-input[type="text"], input[type="number"], select, textarea {
+input[type="text"], input[type="number"], input[type="password"], select, textarea {
     background: var(--bg-raised);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm);
@@ -454,7 +454,8 @@ input:focus, select:focus, textarea:focus {
 }
 
 input::placeholder { color: var(--fg-faint); }
-input[type="text"] { flex: 1; min-width: 150px; }
+input[type="text"],
+input[type="password"] { flex: 1; min-width: 150px; }
 input[type="number"] { width: 100px; }
 select { cursor: pointer; min-width: 180px; }
 textarea { width: 100%; min-height: 60px; resize: vertical; }
@@ -660,12 +661,49 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
 }
 
 .hf-download-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
     color: var(--fg-bright);
     font-size: 12px;
     font-weight: 700;
-    margin-bottom: var(--space-3);
     text-transform: uppercase;
     letter-spacing: 0.3px;
+    cursor: pointer;
+    list-style: none;
+}
+
+.hf-download-title::-webkit-details-marker {
+    display: none;
+}
+
+.hf-download-title::after {
+    content: "+";
+    color: var(--fg-muted);
+    font-size: 16px;
+    line-height: 1;
+}
+
+.hf-download-panel[open] .hf-download-title {
+    margin-bottom: var(--space-3);
+}
+
+.hf-download-panel[open] .hf-download-title::after {
+    content: "-";
+}
+
+.hf-download-summary {
+    color: var(--fg-muted);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.hf-download-body {
+    display: grid;
+    gap: var(--space-3);
 }
 
 .hf-download-grid {
@@ -690,6 +728,29 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
 
 #hf-download-progress { margin: var(--space-3) 0; }
 #hf-progress-text { font-size: 12px; color: var(--fg-muted); margin-top: var(--space-1); display: inline-block; }
+
+.quick-launch-status {
+    display: none;
+    margin-top: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.quick-launch-status.warning {
+    display: block;
+    background: var(--yellow-subtle);
+    border: 1px solid var(--yellow-border);
+    color: var(--yellow);
+}
+
+.quick-launch-status.error {
+    display: block;
+    background: var(--red-subtle);
+    border: 1px solid var(--red-border);
+    color: var(--red);
+}
 
 /* ════════════════════════════════════════════
    CODE BLOCK
@@ -1871,6 +1932,8 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
 .toast-success .toast-icon { color: var(--green); }
 .toast-error { border-color: var(--red-border); }
 .toast-error .toast-icon { color: var(--red); }
+.toast-warning { border-color: var(--yellow-border); }
+.toast-warning .toast-icon { color: var(--yellow); }
 .toast-info { border-color: var(--accent-border); }
 .toast-info .toast-icon { color: var(--accent); }
 
@@ -2557,7 +2620,7 @@ textarea.sidebar-system-prompt::placeholder { color: var(--fg-faint); }
 @media (max-width: 900px) {
     .sidebar { transform: translateX(-100%); }
     .sidebar.open { transform: translateX(0); }
-    .main-content { margin-left: 0; }
+    .main-content { margin-left: 0; padding-top: calc(var(--space-6) + 40px); }
     .stats-bar { left: 0; }
     .quick-grid { grid-template-columns: 1fr; }
     .quick-grid .span-full { grid-column: auto; }
