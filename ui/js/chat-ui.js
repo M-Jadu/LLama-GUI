@@ -208,6 +208,7 @@
             let fullContent = "";
             let responseSources = [];
             let streamDone = false;
+            let errored = false;
 
             while (!streamDone) {
                 const { done, value } = await reader.read();
@@ -240,9 +241,10 @@
                         }
                         if (parsed.error) {
                             const message = parsed.error.message || "Unknown error";
-                            fullContent += `Error: ${message}`;
                             appendChatStreamToken(bubble, `Error: ${message}`);
-                            continue;
+                            errored = true;
+                            streamDone = true;
+                            break;
                         }
                         const delta = parsed.choices?.[0]?.delta?.content;
                         if (delta) {
@@ -261,6 +263,8 @@
             setChatWebStatus(bubble, "");
             if (fullContent) {
                 finalizeChatStreamMarkdown(bubble);
+            }
+            if (fullContent && !errored) {
                 chatMessages.push({ role: "assistant", content: fullContent, sources: responseSources });
                 saveCurrentConversation();
             }

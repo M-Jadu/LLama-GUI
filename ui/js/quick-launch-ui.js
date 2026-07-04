@@ -183,6 +183,40 @@
         }
     }
 
+    function hasLaunchModelArg(args) {
+        return (args || []).some((entry) => {
+            const entryValues = Array.isArray(entry) ? entry : [entry];
+            return entryValues.some((value) => {
+                const token = String(value || "");
+                return token === "-m" || token === "-hf" || token === "--model" || token === "--hf-repo"
+                    || token.startsWith("-m=") || token.startsWith("-hf=")
+                    || token.startsWith("--model=") || token.startsWith("--hf-repo=");
+            });
+        });
+    }
+
+    function setQuickLaunchStatus(type, message) {
+        const status = document.getElementById("quick-launch-status");
+        if (!status) return;
+        status.className = "quick-launch-status" + (type ? " " + type : "");
+        status.textContent = message || "";
+    }
+
+    function getQuickLaunchReadiness() {
+        const result = flagCore.getLaunchArgs();
+        if (result.error) {
+            return { ok: false, type: "error", message: result.error };
+        }
+        if (!hasLaunchModelArg(result.args)) {
+            return {
+                ok: false,
+                type: "warning",
+                message: "Select a model or provide an HF repo before launching.",
+            };
+        }
+        return { ok: true, type: "", message: "" };
+    }
+
     function updateActionButtons() {
         const quickLaunchBtn = document.getElementById("btn-quick-launch");
         const quickStopBtn = document.getElementById("btn-quick-stop");
@@ -194,6 +228,9 @@
 
         quickLaunchBtn.classList.toggle("hidden", mainLaunchBtn.classList.contains("hidden"));
         quickStopBtn.classList.toggle("hidden", mainStopBtn.classList.contains("hidden"));
+        const readiness = getQuickLaunchReadiness();
+        quickLaunchBtn.disabled = !readiness.ok && !mainLaunchBtn.classList.contains("hidden");
+        quickLaunchBtn.title = readiness.ok ? "" : readiness.message;
         if (sidebarLaunchBtn) {
             sidebarLaunchBtn.classList.toggle("hidden", mainLaunchBtn.classList.contains("hidden"));
         }
@@ -322,6 +359,8 @@
 
         quickCommand.textContent = document.getElementById("command-preview-text").textContent || "";
         quickCommand.classList.toggle("command-preview-error", document.getElementById("command-preview-text").classList.contains("command-preview-error"));
+        const readiness = getQuickLaunchReadiness();
+        setQuickLaunchStatus(readiness.ok ? "" : readiness.type, readiness.message);
         updateQuickServerAddressPreview();
         updateActionButtons();
     }
@@ -525,7 +564,9 @@
         });
 
         on("btn-quick-launch", "click", async () => {
-            switchTab("configure");
+            const readiness = getQuickLaunchReadiness();
+            setQuickLaunchStatus(readiness.ok ? "" : readiness.type, readiness.message);
+            if (!readiness.ok) return;
             await launchLlama();
         });
 

@@ -123,7 +123,20 @@ async function checkStatus() {
         updateStatusUI(status);
         return status;
     } catch (e) {
+        markSelectFailedToLoad("backend-select");
+        markSelectFailedToLoad("release-select");
+        showStatus("error", "Could not check installation status: " + e.message);
         return null;
+    }
+}
+
+function markSelectFailedToLoad(id) {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    if (sel.options.length === 0) return;
+    const first = sel.options[0];
+    if (first && /loading/i.test(first.textContent || "")) {
+        sel.innerHTML = '<option value="">Failed to load</option>';
     }
 }
 
@@ -775,11 +788,19 @@ async function refreshModels() {
     sel.innerHTML = '<option value="">-- Select Model --</option>';
     try {
         const models = await fetchJson("/api/models");
+        let added = 0;
         for (const m of models) {
             if (!m.name || !String(m.name).toLowerCase().endsWith(".gguf")) continue;
             const opt = document.createElement("option");
             opt.value = m.name;
             opt.textContent = `${m.name}  (${m.size_mb} MB)`;
+            sel.appendChild(opt);
+            added++;
+        }
+        if (added === 0) {
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "No .gguf models found \u2014 add one to models/ or download from Quick Launch";
             sel.appendChild(opt);
         }
         if (current) sel.value = current;
@@ -790,7 +811,21 @@ async function refreshModels() {
             syncQuickLaunchModelOptions();
         }
     } catch (e) {
-        console.debug("Failed to refresh model list", e);
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "Failed to load models";
+        sel.appendChild(opt);
+        if (window.LlamaGui && window.LlamaGui.flagCore) {
+            window.LlamaGui.flagCore.setSelectedModelValue("");
+        }
+        if (typeof syncQuickLaunchModelOptions === "function") {
+            syncQuickLaunchModelOptions();
+        }
+        if (typeof showToast === "function") {
+            showToast("Could not load models: " + e.message, "error");
+        } else {
+            console.debug("Failed to refresh model list", e);
+        }
     }
 }
 

@@ -204,37 +204,198 @@
             </div>
 
             <div class="quick-grid">
-                <div class="card">
-                    <div class="card-header">
-                        <div>
-                            <div class="card-kicker">Step 1</div>
-                            <div class="card-title">Model</div>
+                <div class="quick-setup-grid span-full">
+                    <div class="card">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-title">Model</div>
+                            </div>
+                            <div class="card-icon icon-blue">
+                                <span class="icon icon-lg"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span>
+                            </div>
                         </div>
-                        <div class="card-icon icon-blue">
-                            <span class="icon icon-lg"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span>
+                        <div class="form-group">
+                            <label class="form-label" for="quick-model-select">Model</label>
+                            <div class="input-row">
+                                <select id="quick-model-select">
+                                    <option value="">-- Select Model --</option>
+                                </select>
+                                <button id="btn-quick-refresh-models" class="btn btn-sm" type="button" title="Refresh models">
+                                    <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="quick-model-select">Model</label>
-                        <div class="input-row">
-                            <select id="quick-model-select">
-                                <option value="">-- Select Model --</option>
+                        <div class="form-group">
+                            <label class="form-label" for="quick-profile-select">Beginner Profile</label>
+                            <select id="quick-profile-select">
+                                <option value="">Choose a profile...</option>
                             </select>
-                            <button id="btn-quick-refresh-models" class="btn btn-sm" type="button" title="Refresh models">
-                                <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
-                            </button>
+                        </div>
+                        <p id="quick-profile-summary" class="help-text">Profiles apply a full starter setup, including context, Auto Fit, GPU offload, and sampler settings.</p>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-title">Launch Mode</div>
+                            </div>
+                            <div class="card-icon icon-green">
+                                <span class="icon icon-lg"><svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
+                            </div>
+                        </div>
+                        <div class="quick-mode-toggle" id="quick-mode-toggle">
+                            <label class="quick-choice">
+                                <input type="radio" name="quick-launch-mode" value="llama-server" checked />
+                                <span>API Server</span>
+                            </label>
+                            <label class="quick-choice">
+                                <input type="radio" name="quick-launch-mode" value="llama-cli" />
+                                <span>Chat</span>
+                            </label>
+                        </div>
+                        <p id="quick-mode-summary" class="help-text">API Server exposes the OpenAI-compatible endpoints and built-in web UI.</p>
+
+                        <div class="quick-template-section">
+                            <div class="quick-subsection-label">Instruction Template</div>
+                            <div class="form-group">
+                                <label class="form-label" for="quick-template-pack">Template Pack</label>
+                                <select id="quick-template-pack"></select>
+                            </div>
+                            <p id="quick-template-summary" class="help-text">Choose a pack that matches your model family or desired thinking style.</p>
                         </div>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label" for="quick-profile-select">Beginner Profile</label>
-                        <select id="quick-profile-select">
-                            <option value="">Choose a profile...</option>
-                        </select>
-                    </div>
-                    <p id="quick-profile-summary" class="help-text">Profiles apply a full starter setup, including context, Auto Fit, GPU offload, and sampler settings.</p>
 
-                    <div class="hf-download-panel">
-                        <div class="hf-download-title">Download from Hugging Face</div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-title">Memory &amp; Fit</div>
+                            </div>
+                            <div class="card-icon icon-cyan">
+                                <span class="icon icon-lg"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="12" x2="6" y2="12.01"/><line x1="10" y1="12" x2="10" y2="12.01"/><line x1="14" y1="12" x2="14" y2="12.01"/><line x1="18" y1="12" x2="18" y2="12.01"/></svg></span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="quick-context-preset">Context Length</label>
+                            <div class="input-row">
+                                <select id="quick-context-preset">
+                                    <option value="8192">8192</option>
+                                    <option value="16000">16000</option>
+                                    <option value="32768">32768</option>
+                                    <option value="64000">64000</option>
+                                    <option value="128000">128000</option>
+                                    <option value="256000">256000</option>
+                                    <option value="custom">Custom</option>
+                                </select>
+                                <input type="number" id="quick-context-custom" min="0" step="1" placeholder="Custom tokens" />
+                            </div>
+                            <p class="help-text">32768 is a strong default for most local chat use. Higher values use more RAM or VRAM.</p>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="quick-gpu-mode">GPU Offload</label>
+                            <div class="input-row">
+                                <select id="quick-gpu-mode">
+                                    <option value="auto">Auto</option>
+                                    <option value="0">CPU only</option>
+                                    <option value="all">All GPU layers</option>
+                                    <option value="custom">Custom</option>
+                                </select>
+                                <input type="text" id="quick-gpu-custom" placeholder="Manual layers" />
+                            </div>
+                            <p class="help-text">Leave this on Auto unless you are tuning a specific machine.</p>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="quick-fit-toggle">Auto Fit</label>
+                            <select id="quick-fit-toggle">
+                                <option value="on">On</option>
+                                <option value="off">Off</option>
+                            </select>
+                        </div>
+
+                        <div class="quick-fit-grid">
+                            <div class="form-group">
+                                <label class="form-label" for="quick-fit-target">Fit Target Margin (MiB)</label>
+                                <input type="text" id="quick-fit-target" placeholder="1024" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="quick-fit-ctx">Minimum Fit Context</label>
+                                <div class="input-row">
+                                    <input type="number" id="quick-fit-ctx" min="0" step="1" placeholder="16000" />
+                                    <button id="btn-quick-fit-sync" class="btn btn-sm" type="button">Match Context</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <p id="quick-fit-summary" class="help-text"></p>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-title">Sampler</div>
+                            </div>
+                            <div class="card-icon icon-magenta">
+                                <span class="icon icon-lg"><svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="quick-sampler-select">Sampler Preset</label>
+                            <div class="input-row">
+                                <select id="quick-sampler-select"></select>
+                                <button id="btn-quick-sampler-load" class="btn btn-sm" type="button">Load</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="quick-sampler-name">Save Current Sampler</label>
+                            <div class="input-row">
+                                <input type="text" id="quick-sampler-name" placeholder="Preset name..." />
+                                <button id="btn-quick-sampler-save" class="btn btn-sm" type="button">Save</button>
+                                <button id="btn-quick-sampler-delete" class="btn btn-sm btn-danger" type="button">Delete</button>
+                            </div>
+                        </div>
+
+                        <div class="quick-slider-grid">
+                            <div class="form-group">
+                                <label class="form-label" for="quick-temperature">Temperature</label>
+                                <input type="number" id="quick-temperature" min="0" max="5" step="0.01" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="quick-top-k">Top-K</label>
+                                <input type="number" id="quick-top-k" min="0" step="1" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="quick-top-p">Top-P</label>
+                                <input type="number" id="quick-top-p" min="0" max="1" step="0.01" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="quick-min-p">Min-P</label>
+                                <input type="number" id="quick-min-p" min="0" max="1" step="0.01" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="quick-repeat-penalty">Repeat Penalty</label>
+                                <input type="number" id="quick-repeat-penalty" min="0.5" max="3" step="0.01" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="quick-presence-penalty">Presence Penalty</label>
+                                <input type="number" id="quick-presence-penalty" min="0" max="5" step="0.1" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <details class="card hf-download-panel span-full">
+                    <summary class="hf-download-title">
+                        <span class="hf-download-copy">
+                            <span class="hf-download-label">Download from Hugging Face</span>
+                            <span class="hf-download-summary">Find GGUF files from a repo</span>
+                        </span>
+                        <span class="hf-download-toggle" aria-hidden="true">
+                            <span class="hf-toggle-expand">Expand</span>
+                            <span class="hf-toggle-collapse">Collapse</span>
+                        </span>
+                    </summary>
+                    <div class="hf-download-body">
                         <div id="hf-download-status" class="hf-download-status"></div>
                         <div class="form-group">
                             <label class="form-label" for="hf-repo-input">Repo ID</label>
@@ -272,165 +433,12 @@
                             </div>
                         </div>
                     </div>
-                </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        <div>
-                            <div class="card-kicker">Step 2</div>
-                            <div class="card-title">Launch Mode</div>
-                        </div>
-                        <div class="card-icon icon-green">
-                            <span class="icon icon-lg"><svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
-                        </div>
-                    </div>
-                    <div class="quick-mode-toggle" id="quick-mode-toggle">
-                        <label class="quick-choice">
-                            <input type="radio" name="quick-launch-mode" value="llama-server" checked />
-                            <span>API Server</span>
-                        </label>
-                        <label class="quick-choice">
-                            <input type="radio" name="quick-launch-mode" value="llama-cli" />
-                            <span>Chat</span>
-                        </label>
-                    </div>
-                    <p id="quick-mode-summary" class="help-text">API Server exposes the OpenAI-compatible endpoints and built-in web UI.</p>
-
-                    <div class="quick-template-section">
-                        <div class="card-kicker" style="margin-bottom:var(--space-2);">Step 3</div>
-                        <div class="card-title" style="margin-bottom:var(--space-3);">Instruction Template</div>
-                        <div class="form-group">
-                            <label class="form-label" for="quick-template-pack">Template Pack</label>
-                            <select id="quick-template-pack"></select>
-                        </div>
-                        <p id="quick-template-summary" class="help-text">Choose a pack that matches your model family or desired thinking style.</p>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        <div>
-                            <div class="card-kicker">Step 4</div>
-                            <div class="card-title">Memory &amp; Fit</div>
-                        </div>
-                        <div class="card-icon icon-cyan">
-                            <span class="icon icon-lg"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="12" x2="6" y2="12.01"/><line x1="10" y1="12" x2="10" y2="12.01"/><line x1="14" y1="12" x2="14" y2="12.01"/><line x1="18" y1="12" x2="18" y2="12.01"/></svg></span>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="quick-context-preset">Context Length</label>
-                        <div class="input-row">
-                            <select id="quick-context-preset">
-                                <option value="8192">8192</option>
-                                <option value="16000">16000</option>
-                                <option value="32768">32768</option>
-                                <option value="64000">64000</option>
-                                <option value="128000">128000</option>
-                                <option value="256000">256000</option>
-                                <option value="custom">Custom</option>
-                            </select>
-                            <input type="number" id="quick-context-custom" min="0" step="1" placeholder="Custom tokens" />
-                        </div>
-                        <p class="help-text">32768 is a strong default for most local chat use. Higher values use more RAM or VRAM.</p>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label" for="quick-gpu-mode">GPU Offload</label>
-                        <div class="input-row">
-                            <select id="quick-gpu-mode">
-                                <option value="auto">Auto</option>
-                                <option value="0">CPU only</option>
-                                <option value="all">All GPU layers</option>
-                                <option value="custom">Custom</option>
-                            </select>
-                            <input type="text" id="quick-gpu-custom" placeholder="Manual layers" />
-                        </div>
-                        <p class="help-text">Leave this on Auto unless you are tuning a specific machine.</p>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label" for="quick-fit-toggle">Auto Fit</label>
-                        <select id="quick-fit-toggle">
-                            <option value="on">On</option>
-                            <option value="off">Off</option>
-                        </select>
-                    </div>
-
-                    <div class="quick-fit-grid">
-                        <div class="form-group">
-                            <label class="form-label" for="quick-fit-target">Fit Target Margin (MiB)</label>
-                            <input type="text" id="quick-fit-target" placeholder="1024" />
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label" for="quick-fit-ctx">Minimum Fit Context</label>
-                            <div class="input-row">
-                                <input type="number" id="quick-fit-ctx" min="0" step="1" placeholder="16000" />
-                                <button id="btn-quick-fit-sync" class="btn btn-sm" type="button">Match Context</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <p id="quick-fit-summary" class="help-text"></p>
-                </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        <div>
-                            <div class="card-kicker">Step 5</div>
-                            <div class="card-title">Sampler</div>
-                        </div>
-                        <div class="card-icon icon-magenta">
-                            <span class="icon icon-lg"><svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="quick-sampler-select">Sampler Preset</label>
-                        <div class="input-row">
-                            <select id="quick-sampler-select"></select>
-                            <button id="btn-quick-sampler-load" class="btn btn-sm" type="button">Load</button>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="quick-sampler-name">Save Current Sampler</label>
-                        <div class="input-row">
-                            <input type="text" id="quick-sampler-name" placeholder="Preset name..." />
-                            <button id="btn-quick-sampler-save" class="btn btn-sm" type="button">Save</button>
-                            <button id="btn-quick-sampler-delete" class="btn btn-sm btn-danger" type="button">Delete</button>
-                        </div>
-                    </div>
-
-                    <div class="quick-slider-grid">
-                        <div class="form-group">
-                            <label class="form-label" for="quick-temperature">Temperature</label>
-                            <input type="number" id="quick-temperature" min="0" max="5" step="0.01" />
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label" for="quick-top-k">Top-K</label>
-                            <input type="number" id="quick-top-k" min="0" step="1" />
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label" for="quick-top-p">Top-P</label>
-                            <input type="number" id="quick-top-p" min="0" max="1" step="0.01" />
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label" for="quick-min-p">Min-P</label>
-                            <input type="number" id="quick-min-p" min="0" max="1" step="0.01" />
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label" for="quick-repeat-penalty">Repeat Penalty</label>
-                            <input type="number" id="quick-repeat-penalty" min="0.5" max="3" step="0.01" />
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label" for="quick-presence-penalty">Presence Penalty</label>
-                            <input type="number" id="quick-presence-penalty" min="0" max="5" step="0.1" />
-                        </div>
-                    </div>
-                </div>
+                </details>
 
                 <div class="card span-full launch-preview">
                     <div class="card-header">
                         <div>
-                            <div class="card-kicker">Ready</div>
+                            <div class="card-kicker">Launch</div>
                             <div class="card-title">Launch Preview</div>
                         </div>
                         <div class="launch-preview-badges">
@@ -451,6 +459,7 @@
                     </div>
                     <p class="help-text">Quick Launch uses the same shared settings as Configure. You can always switch over for full control.</p>
                     <div class="code-block" id="quick-command-preview"></div>
+                    <div id="quick-launch-status" class="quick-launch-status" role="status" aria-live="polite"></div>
                     <div class="quick-actions">
                         <button id="btn-quick-launch" class="btn btn-primary btn-lg" type="button">
                             <span class="icon"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg></span>
