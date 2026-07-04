@@ -212,13 +212,18 @@ function updateStatusUI(status) {
 
         const exeWrap = document.createElement("div");
         const exeTitle = document.createElement("strong");
-        exeTitle.textContent = "Executables:";
+        exeTitle.textContent = "Available tools:";
         exeWrap.appendChild(exeTitle);
+        const exeHint = document.createElement("span");
+        exeHint.style.color = "var(--fg-dim)";
+        exeHint.textContent = " Core launch tools are required; benchmark and utility tools are optional.";
+        exeWrap.appendChild(exeHint);
         exeWrap.appendChild(document.createElement("br"));
         for (const [name, exists] of Object.entries(status.executables)) {
+            const isCoreTool = /^llama-(cli|server)(\.|$)/.test(String(name));
             const line = document.createElement("span");
             line.className = exists ? "exe-ok" : "exe-missing";
-            line.textContent = `${exists ? "✓" : "✗"} ${name}`;
+            line.textContent = `${exists ? "✓" : "✗"} ${name}${isCoreTool ? "" : " (optional)"}`;
             exeWrap.appendChild(line);
             exeWrap.appendChild(document.createElement("br"));
         }

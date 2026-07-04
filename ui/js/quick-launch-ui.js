@@ -22,6 +22,7 @@
     let normalizeSamplerPresetValues = (values) => values || {};
     let collectSamplerValues = () => ({});
     let confirmAction = async () => false;
+    let hasLaunchModelArg = () => false;
 
     let quickLaunchFitCtxLinked = true;
     let quickLaunchGpuCustomSelected = false;
@@ -48,6 +49,7 @@
         normalizeSamplerPresetValues = options.normalizeSamplerPresetValues || normalizeSamplerPresetValues;
         collectSamplerValues = options.collectSamplerValues || collectSamplerValues;
         confirmAction = options.confirmAction || confirmAction;
+        hasLaunchModelArg = options.hasLaunchModelArg || hasLaunchModelArg;
     }
 
     function populateTemplatePackOptions() {
@@ -183,18 +185,6 @@
         }
     }
 
-    function hasLaunchModelArg(args) {
-        return (args || []).some((entry) => {
-            const entryValues = Array.isArray(entry) ? entry : [entry];
-            return entryValues.some((value) => {
-                const token = String(value || "");
-                return token === "-m" || token === "-hf" || token === "--model" || token === "--hf-repo"
-                    || token.startsWith("-m=") || token.startsWith("-hf=")
-                    || token.startsWith("--model=") || token.startsWith("--hf-repo=");
-            });
-        });
-    }
-
     function setQuickLaunchStatus(type, message) {
         const status = document.getElementById("quick-launch-status");
         if (!status) return;
@@ -233,6 +223,8 @@
         quickLaunchBtn.title = readiness.ok ? "" : readiness.message;
         if (sidebarLaunchBtn) {
             sidebarLaunchBtn.classList.toggle("hidden", mainLaunchBtn.classList.contains("hidden"));
+            sidebarLaunchBtn.disabled = quickLaunchBtn.disabled;
+            sidebarLaunchBtn.title = quickLaunchBtn.title;
         }
         if (sidebarStopBtn) {
             sidebarStopBtn.classList.toggle("hidden", mainStopBtn.classList.contains("hidden"));
@@ -359,10 +351,15 @@
 
         quickCommand.textContent = document.getElementById("command-preview-text").textContent || "";
         quickCommand.classList.toggle("command-preview-error", document.getElementById("command-preview-text").classList.contains("command-preview-error"));
-        const readiness = getQuickLaunchReadiness();
-        setQuickLaunchStatus(readiness.ok ? "" : readiness.type, readiness.message);
         updateQuickServerAddressPreview();
         updateActionButtons();
+        const readiness = getQuickLaunchReadiness();
+        const mainLaunchBtn = document.getElementById("btn-launch");
+        if (readiness.ok || (mainLaunchBtn && mainLaunchBtn.classList.contains("hidden"))) {
+            setQuickLaunchStatus("", "");
+        } else {
+            setQuickLaunchStatus(readiness.type, readiness.message);
+        }
     }
 
     function populateProfileOptions() {

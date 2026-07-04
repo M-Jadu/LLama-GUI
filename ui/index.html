@@ -14,9 +14,9 @@
 </head>
 <body>
 
-<div class="toast-container" id="toast-container"></div>
+<div class="toast-container" id="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
-<button class="mobile-toggle" id="mobile-toggle" type="button">
+<button class="mobile-toggle" id="mobile-toggle" type="button" aria-label="Open navigation" title="Open navigation">
     <span class="icon icon-lg"><svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></span>
 </button>
 
@@ -128,7 +128,7 @@
                     <label class="form-label">Version</label>
                     <div class="input-row">
                         <select id="release-select"><option value="">Loading...</option></select>
-                        <button id="refresh-releases" class="btn btn-sm" title="Refresh releases">
+                        <button id="refresh-releases" class="btn btn-sm" title="Refresh releases" aria-label="Refresh releases">
                             <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
                         </button>
                     </div>
@@ -220,7 +220,7 @@
                                 <select id="quick-model-select">
                                     <option value="">-- Select Model --</option>
                                 </select>
-                                <button id="btn-quick-refresh-models" class="btn btn-sm" type="button" title="Refresh models">
+                                <button id="btn-quick-refresh-models" class="btn btn-sm" type="button" title="Refresh models" aria-label="Refresh models">
                                     <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
                                 </button>
                             </div>
@@ -446,7 +446,7 @@
                                 <span class="badge badge-accent"><span class="badge-dot"></span> <a id="quick-server-url" href="#" target="_blank" class="badge-link"></a></span>
                                 <span class="server-sep">|</span>
                                 <a id="quick-server-webui" href="#" target="_blank" class="server-link">Web UI</a>
-                                <button id="btn-copy-quick-server-url" class="btn btn-sm btn-ghost" type="button" title="Copy URL">
+                                <button id="btn-copy-quick-server-url" class="btn btn-sm btn-ghost" type="button" title="Copy URL" aria-label="Copy Quick Launch server URL">
                                     <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
                                 </button>
                             </div>
@@ -489,7 +489,7 @@
                     <select id="model-select">
                         <option value="">-- Select Model --</option>
                     </select>
-                    <button class="btn btn-sm btn-ghost" id="btn-refresh-models" title="Refresh models">
+                    <button class="btn btn-sm btn-ghost" id="btn-refresh-models" title="Refresh models" aria-label="Refresh models">
                         <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
                     </button>
                     <button id="btn-configure-hf-download" class="btn btn-sm" type="button">Download in Quick Launch</button>
@@ -529,7 +529,7 @@
                 <a id="server-url" href="#" target="_blank" class="server-link"></a>
                 <span class="server-sep">|</span>
                 <a id="server-webui" href="#" target="_blank" class="server-link">Web UI</a>
-                <button class="btn btn-sm btn-ghost" id="btn-copy-server-url" title="Copy URL">
+                <button class="btn btn-sm btn-ghost" id="btn-copy-server-url" title="Copy URL" aria-label="Copy server URL">
                     <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
                 </button>
             </div>
@@ -587,7 +587,7 @@
                 <div class="chat-history-panel" id="chat-history-panel">
                     <div class="sidebar-header">
                         <h3>Conversations</h3>
-                        <button class="btn-toggle-sidebar" id="btn-collapse-history" title="Collapse history">
+                        <button class="btn-toggle-sidebar" id="btn-collapse-history" title="Collapse history" aria-label="Collapse history">
                             <span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
                         </button>
                     </div>
@@ -615,6 +615,10 @@
                         </div>
                     </div>
                     <div class="chat-input-area">
+                        <div class="chat-no-server-note" id="chat-no-server-note" role="status">
+                            <span>Start llama-server before sending chat messages.</span>
+                            <button class="btn btn-xs" id="btn-chat-open-quick-launch" type="button">Open Quick Launch</button>
+                        </div>
                         <div class="chat-input-row">
                             <textarea class="chat-input" id="chat-input" placeholder="Type a message..." rows="1"></textarea>
                             <button class="btn btn-primary" id="btn-chat-send">
@@ -646,7 +650,7 @@
                 <div class="chat-sidebar" id="chat-sidebar">
                     <div class="sidebar-header">
                         <h3>Settings</h3>
-                        <button class="btn-toggle-sidebar" id="btn-collapse-sidebar" title="Collapse sidebar">
+                        <button class="btn-toggle-sidebar" id="btn-collapse-sidebar" title="Collapse sidebar" aria-label="Collapse settings">
                             <span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
                         </button>
                     </div>
@@ -717,10 +721,10 @@
                         </div>
                     </div>
                 </div>
-                <button class="btn btn-sm btn-sidebar-open" id="btn-open-history" title="Show conversations">
+                <button class="btn btn-sm btn-sidebar-open" id="btn-open-history" title="Show conversations" aria-label="Show conversations">
                     <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
                 </button>
-                <button class="btn btn-sm btn-sidebar-open" id="btn-open-sidebar" title="Show settings">
+                <button class="btn btn-sm btn-sidebar-open" id="btn-open-sidebar" title="Show settings" aria-label="Show settings">
                     <span class="icon icon-sm"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
                 </button>
             </div>
@@ -739,7 +743,7 @@
                 <div class="api-base-row">
                     <span class="api-base-label">Base URL</span>
                     <a id="api-base-url" href="#" target="_blank" class="server-link"></a>
-                    <button id="btn-copy-api-base" class="btn btn-sm btn-ghost" type="button" title="Copy base URL">
+                    <button id="btn-copy-api-base" class="btn btn-sm btn-ghost" type="button" title="Copy base URL" aria-label="Copy API base URL">
                         <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
                         Copy
                     </button>
@@ -761,7 +765,7 @@
                     <div id="remote-tunnel-url-row" class="api-base-row hidden">
                         <span class="api-base-label">Remote URL</span>
                         <a id="remote-tunnel-url" href="#" target="_blank" rel="noopener noreferrer" class="server-link"></a>
-                        <button id="btn-copy-remote-tunnel" class="btn btn-sm btn-ghost" type="button" title="Copy remote URL">
+                        <button id="btn-copy-remote-tunnel" class="btn btn-sm btn-ghost" type="button" title="Copy remote URL" aria-label="Copy remote URL">
                             <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
                             Copy
                         </button>
@@ -769,7 +773,7 @@
                     <div id="remote-openai-url-row" class="api-base-row hidden">
                         <span class="api-base-label">Remote OpenAI Base URL</span>
                         <a id="remote-openai-url" href="#" target="_blank" rel="noopener noreferrer" class="server-link"></a>
-                        <button id="btn-copy-remote-openai" class="btn btn-sm btn-ghost" type="button" title="Copy remote OpenAI base URL">
+                        <button id="btn-copy-remote-openai" class="btn btn-sm btn-ghost" type="button" title="Copy remote OpenAI base URL" aria-label="Copy remote OpenAI base URL">
                             <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
                             Copy
                         </button>
@@ -842,7 +846,7 @@
                             <label class="form-label" for="benchmark-preset-select">Saved Preset</label>
                             <div class="input-row">
                                 <select id="benchmark-preset-select"></select>
-                                <button id="btn-refresh-benchmark-presets" class="btn btn-sm" type="button" title="Refresh presets">
+                                <button id="btn-refresh-benchmark-presets" class="btn btn-sm" type="button" title="Refresh presets" aria-label="Refresh benchmark presets">
                                     <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
                                 </button>
                             </div>
@@ -854,7 +858,7 @@
                                 <select id="benchmark-manual-model">
                                     <option value="">-- Select Model --</option>
                                 </select>
-                                <button id="btn-refresh-benchmark-models" class="btn btn-sm" type="button" title="Refresh models">
+                                <button id="btn-refresh-benchmark-models" class="btn btn-sm" type="button" title="Refresh models" aria-label="Refresh benchmark models">
                                     <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
                                 </button>
                             </div>

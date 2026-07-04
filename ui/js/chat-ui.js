@@ -6,6 +6,7 @@
     let getServerEndpointConfig = null;
     let getLatestStatus = null;
     let snapshotStatsBaseline = null;
+    let switchTab = () => {};
 
     let chatMessages = [];
     let chatStreaming = false;
@@ -37,6 +38,7 @@
         getServerEndpointConfig = options.getServerEndpointConfig;
         getLatestStatus = options.getLatestStatus;
         snapshotStatsBaseline = options.snapshotStatsBaseline;
+        switchTab = options.switchTab || switchTab;
     }
 
     function refreshSidebarUI() {
@@ -100,15 +102,39 @@
         }));
     }
 
+    function isServerRunning() {
+        const latestStatus = getLatestStatus ? getLatestStatus() : null;
+        return !!(latestStatus && latestStatus.running && latestStatus.active_process_tool === "llama-server");
+    }
+
+    function updateChatAvailability(isRunning) {
+        const chatInput = document.getElementById("chat-input");
+        const sendBtn = document.getElementById("btn-chat-send");
+        const note = document.getElementById("chat-no-server-note");
+        const canSend = Boolean(isRunning) && !chatStreaming;
+
+        if (chatInput) {
+            chatInput.disabled = !isRunning;
+            chatInput.placeholder = isRunning ? "Type a message..." : "Start llama-server to chat...";
+        }
+        if (sendBtn) {
+            sendBtn.disabled = !canSend;
+            sendBtn.title = isRunning ? "" : "Start llama-server before sending chat messages.";
+        }
+        if (note) {
+            note.classList.toggle("hidden", Boolean(isRunning));
+        }
+    }
+
     function updateStatusBadge() {
         const runningBadge = document.getElementById("chat-status-badge");
         const noServerBadge = document.getElementById("chat-no-server-badge");
         if (!runningBadge || !noServerBadge) return;
 
-        const latestStatus = getLatestStatus ? getLatestStatus() : null;
-        const isRunning = !!(latestStatus && latestStatus.running);
+        const isRunning = isServerRunning();
         runningBadge.style.display = isRunning ? "" : "none";
         noServerBadge.style.display = isRunning ? "none" : "";
+        updateChatAvailability(isRunning);
     }
 
     function showChatSendButton(show) {
@@ -116,6 +142,7 @@
         const stopBtn = document.getElementById("btn-chat-stop");
         if (sendBtn) sendBtn.style.display = show ? "flex" : "none";
         if (stopBtn) stopBtn.style.display = show ? "none" : "flex";
+        updateChatAvailability(isServerRunning());
     }
 
     function getChatSamplerParams() {
@@ -142,6 +169,10 @@
 
     async function sendMessage(userText) {
         if (chatStreaming || !userText.trim()) return;
+        if (!isServerRunning()) {
+            updateStatusBadge();
+            return;
+        }
 
         const systemPrompt = (document.getElementById("chat-system-prompt").value || "").trim();
         chatMessages.push({ role: "user", content: userText.trim() });
@@ -562,6 +593,7 @@
         const btnOpen = document.getElementById("btn-open-sidebar");
         const webSearchToggle = document.getElementById("chat-web-search-toggle");
         const webSearchMaxResults = document.getElementById("chat-web-search-max-results");
+        const openQuickLaunchBtn = document.getElementById("btn-chat-open-quick-launch");
 
         updateStatusBadge();
 
@@ -603,6 +635,9 @@
         stopBtn.addEventListener("click", stopStream);
         undoBtn.addEventListener("click", undoMessage);
         regenBtn.addEventListener("click", regenerateResponse);
+        if (openQuickLaunchBtn) {
+            openQuickLaunchBtn.addEventListener("click", () => switchTab("quick-launch"));
+        }
 
         sysPrompt.addEventListener("input", () => {
             sysCharCount.textContent = sysPrompt.value.length + " chars";
