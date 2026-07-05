@@ -318,22 +318,41 @@ def activate_custom_backend(ctx: AppContext) -> dict[str, Any]:
             ctx.services.get_tool_filename("llama-cli"),
             ctx.services.get_tool_filename("llama-server"),
         }
+        current_platform = ctx.services.current_platform or sys.platform
+        require_executable = current_platform != "win32"
         found: list[str] = []
         missing: list[str] = []
+        not_executable: list[str] = []
         for tool in ctx.services.llama_tools:
             exe_name = ctx.services.get_tool_filename(tool)
-            if (ctx.paths.llama_custom_bin / exe_name).exists():
+            exe_path = ctx.paths.llama_custom_bin / exe_name
+            if exe_path.exists():
                 found.append(exe_name)
+                if exe_name in required and require_executable and not os.access(exe_path, os.X_OK):
+                    not_executable.append(exe_name)
             else:
                 missing.append(exe_name)
 
         missing_required = sorted(name for name in required if name not in found)
-        if missing_required:
+        if missing_required or not_executable:
             return {
                 "ok": False,
                 "found": found,
                 "missing": missing,
                 "missing_required": missing_required,
+                "not_executable": sorted(not_executable),
+            }
+
+        runtime_health = _validate_custom_runtime_dependencies(ctx, required)
+        if not runtime_health.get("ok", True):
+            return {
+                "ok": False,
+                "found": found,
+                "missing": missing,
+                "missing_required": [],
+                "not_executable": [],
+                "runtime_health": runtime_health,
+                "missing_runtime_files": runtime_health.get("missing_runtime_files", []),
             }
 
         cfg = dict(ctx.services.load_config())
@@ -346,10 +365,54 @@ def activate_custom_backend(ctx: AppContext) -> dict[str, Any]:
             "found": found,
             "missing": missing,
             "missing_required": [],
+            "not_executable": [],
+            "runtime_health": runtime_health,
         }
     except Exception as e:
         print(f"[llama_manager] activate_custom_backend failed: {e}", file=sys.stderr)
         return {"ok": False, "error": str(e)}
+
+
+def _validate_custom_runtime_dependencies(
+    ctx: AppContext, executable_names: Iterable[str]
+) -> dict[str, Any]:
+    current_platform = ctx.services.current_platform
+    if current_platform != "darwin":
+        return {
+            "ok": True,
+            "checked": False,
+            "required_runtime_files": [],
+            "missing_runtime_files": [],
+        }
+
+    required: set[str] = set()
+    checked_tools: list[str] = []
+    unchecked_tools: list[str] = []
+
+    for exe_name in executable_names:
+        exe_path = ctx.paths.llama_custom_bin / exe_name
+        try:
+            required.update(get_macos_rpath_libraries(exe_path))
+            checked_tools.append(exe_name)
+        except (
+            FileNotFoundError,
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ):
+            unchecked_tools.append(exe_name)
+
+    missing_runtime_files = sorted(
+        name for name in required if not (ctx.paths.llama_custom_bin / name).exists()
+    )
+    return {
+        "ok": not missing_runtime_files,
+        "checked": bool(checked_tools),
+        "checked_tools": checked_tools,
+        "unchecked_tools": unchecked_tools,
+        "required_runtime_files": sorted(required),
+        "missing_runtime_files": missing_runtime_files,
+    }
 
 
 def download_file(

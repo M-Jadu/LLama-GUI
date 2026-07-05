@@ -135,8 +135,16 @@ async function activateCustomBackend() {
             checkStatus();
         } else {
             const missingRequired = (result.missing_required || []).join(", ");
-            const missingList = missingRequired || (result.missing || []).join(", ");
-            showStatus("error", "Custom backend needs llama-cli and llama-server in llama/custom/bin/. Missing: " + (missingList || "required tools") + ".");
+            const notExecutable = (result.not_executable || []).join(", ");
+            const missingRuntime = (result.missing_runtime_files || []).join(", ");
+            if (missingRuntime) {
+                showStatus("error", "Custom backend is missing runtime libraries in llama/custom/bin/: " + missingRuntime + ".");
+            } else if (notExecutable) {
+                showStatus("error", "Custom backend tools must be executable: " + notExecutable + ".");
+            } else {
+                const missingList = missingRequired || (result.missing || []).join(", ");
+                showStatus("error", "Custom backend needs llama-cli and llama-server in llama/custom/bin/. Missing: " + (missingList || "required tools") + ".");
+            }
         }
     } catch (e) {
         showStatus("error", "Failed to activate custom backend: " + e.message);
