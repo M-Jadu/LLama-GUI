@@ -16,6 +16,9 @@ def get_releases(request, response, ctx):
         repo_api = None
         query = urllib.parse.parse_qs(request.query or "")
         backend = (query.get("backend") or [""])[0].strip()
+        if backend == "custom":
+            response.json([])
+            return
         if backend:
             spec = ctx.services.backend_specs.get(backend)
             if spec is not None:

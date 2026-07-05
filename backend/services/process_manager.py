@@ -536,10 +536,16 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
         if missing_runtime_files:
             missing = ", ".join(str(name) for name in missing_runtime_files)
             plural = "libraries" if len(missing_runtime_files) != 1 else "library"
+            cfg = _load_config_safe(ctx)
+            recovery = (
+                "Add the missing files to llama/custom/bin/."
+                if cfg.get("backend") == "custom"
+                else "Use Repair Install to reinstall binaries."
+            )
             return {
                 "error": (
                     f"Missing llama.cpp runtime {plural}: {missing}. "
-                    "Use Repair Install to reinstall binaries."
+                    f"{recovery}"
                 )
             }
 
