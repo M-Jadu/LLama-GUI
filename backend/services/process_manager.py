@@ -201,9 +201,19 @@ def flatten_launch_args(args_list: Optional[Iterable[Any]]) -> list[str]:
     return flat_args
 
 
+def _load_config_safe(ctx: AppContext) -> dict[str, Any]:
+    try:
+        return dict(ctx.services.load_config())
+    except Exception as e:
+        print(f"[process] load_config failed: {e}", file=sys.stderr)
+        return {}
+
+
 def _fit_params_executable(ctx: AppContext) -> Any:
     suffix = getattr(ctx.services, "binary_suffix", "") or ""
-    return ctx.paths.llama_bin / f"llama-fit-params{suffix}"
+    cfg = _load_config_safe(ctx)
+    bin_dir = ctx.paths.llama_custom_bin if cfg.get("backend") == "custom" else ctx.paths.llama_bin
+    return bin_dir / f"llama-fit-params{suffix}"
 
 
 def parse_memory_estimate_output(output: str) -> list[dict[str, Any]]:
@@ -491,7 +501,9 @@ def parse_launch_api_target(ctx: AppContext, args_list: Optional[Iterable[Any]])
 
 def _build_process_env(ctx: AppContext) -> dict[str, str]:
     env = os.environ.copy()
-    runtime_paths = [str(ctx.paths.llama_bin)]
+    cfg = _load_config_safe(ctx)
+    bin_dir = ctx.paths.llama_custom_bin if cfg.get("backend") == "custom" else ctx.paths.llama_bin
+    runtime_paths = [str(bin_dir)]
     existing_path = env.get("PATH", "")
     env["PATH"] = os.pathsep.join(runtime_paths + ([existing_path] if existing_path else []))
 
@@ -524,10 +536,16 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
         if missing_runtime_files:
             missing = ", ".join(str(name) for name in missing_runtime_files)
             plural = "libraries" if len(missing_runtime_files) != 1 else "library"
+            cfg = _load_config_safe(ctx)
+            recovery = (
+                "Add the missing files to llama/custom/bin/."
+                if cfg.get("backend") == "custom"
+                else "Use Repair Install to reinstall binaries."
+            )
             return {
                 "error": (
                     f"Missing llama.cpp runtime {plural}: {missing}. "
-                    "Use Repair Install to reinstall binaries."
+                    f"{recovery}"
                 )
             }
 
@@ -597,16 +615,20 @@ def send_input(ctx: AppContext, text: str) -> bool:
 def remove_llama_files(ctx: AppContext) -> int:
     removed_files = 0
 
-    if ctx.paths.llama.exists():
-        for path in ctx.paths.llama.rglob("*"):
+    for directory in [ctx.paths.llama_bin, ctx.paths.llama_grammars]:
+        if directory.exists():
+            for path in directory.rglob("*"):
+                if path.is_file():
+                    removed_files += 1
+            shutil.rmtree(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+
+    llama_dll_dir = ctx.paths.llama / "dll"
+    if llama_dll_dir.exists():
+        for path in llama_dll_dir.rglob("*"):
             if path.is_file():
                 removed_files += 1
-
-    if ctx.paths.llama.exists():
-        shutil.rmtree(ctx.paths.llama)
-
-    for directory in [ctx.paths.llama_bin, ctx.paths.llama_grammars]:
-        directory.mkdir(parents=True, exist_ok=True)
+        shutil.rmtree(llama_dll_dir)
 
     ctx.services.save_config({"version": None, "backend": None, "tag": None})
 

@@ -69,8 +69,80 @@ function selectedBackendId() {
     return sel ? String(sel.value || "") : "";
 }
 
+function showCustomBackendControls() {
+    releaseFetchRequestId += 1;
+    cachedReleases = null;
+    releasesBackend = "custom";
+    releasesBackendInFlight = null;
+
+    const sel = document.getElementById("release-select");
+    if (sel) {
+        sel.innerHTML = '<option value="custom">Custom (User-Provided)</option>';
+        sel.disabled = true;
+    }
+    const releaseGroup = document.getElementById("release-group");
+    if (releaseGroup) releaseGroup.style.display = "none";
+    const customInfo = document.getElementById("custom-backend-info");
+    if (customInfo) customInfo.style.display = "";
+    const installBtn = document.getElementById("btn-install");
+    if (installBtn) {
+        installBtn.textContent = "Activate Custom";
+    }
+    const updateBtn = document.getElementById("btn-update");
+    if (updateBtn) updateBtn.disabled = true;
+    const repairBtn = document.getElementById("btn-repair");
+    if (repairBtn) repairBtn.classList.add("hidden");
+}
+
+function showOfficialBackendControls() {
+    const releaseGroup = document.getElementById("release-group");
+    if (releaseGroup) releaseGroup.style.display = "";
+    const customInfo = document.getElementById("custom-backend-info");
+    if (customInfo) customInfo.style.display = "none";
+    const sel = document.getElementById("release-select");
+    if (sel) sel.disabled = false;
+    const installBtn = document.getElementById("btn-install");
+    if (installBtn) {
+        installBtn.textContent = "Install";
+    }
+    const updateBtn = document.getElementById("btn-update");
+    if (updateBtn) updateBtn.disabled = false;
+    const repairBtn = document.getElementById("btn-repair");
+    if (repairBtn) repairBtn.classList.remove("hidden");
+}
+
 function onBackendChange() {
-    fetchReleases(selectedBackendId());
+    const backend = selectedBackendId();
+    if (backend === "custom") {
+        showCustomBackendControls();
+        return;
+    }
+    showOfficialBackendControls();
+    fetchReleases(backend);
+}
+
+async function activateCustomBackend() {
+    setInstallButtonsDisabled(true);
+    showStatus("info", "Checking custom binaries...");
+    try {
+        const result = await fetchJson("/api/activate-custom", { method: "POST" });
+        if (result.ok) {
+            const foundList = (result.found || []).join(", ");
+            const missingList = (result.missing || []).join(", ");
+            let msg = "Custom backend activated. Found: " + (foundList || "none") + ".";
+            if (missingList) msg += " Missing: " + missingList + ".";
+            showStatus("success", msg);
+            checkStatus();
+        } else {
+            const missingRequired = (result.missing_required || []).join(", ");
+            const missingList = missingRequired || (result.missing || []).join(", ");
+            showStatus("error", "Custom backend needs llama-cli and llama-server in llama/custom/bin/. Missing: " + (missingList || "required tools") + ".");
+        }
+    } catch (e) {
+        showStatus("error", "Failed to activate custom backend: " + e.message);
+    } finally {
+        setInstallButtonsDisabled(false);
+    }
 }
 
 async function fetchReleases(backend) {
@@ -161,8 +233,15 @@ function updateStatusUI(status) {
         }
     }
 
+    const activeBackend = backendSelect ? backendSelect.value || "" : "";
+    if (activeBackend === "custom") {
+        showCustomBackendControls();
+    } else {
+        showOfficialBackendControls();
+    }
+
     if (backendSelect) {
-        const targetBackend = backendSelect.value || "";
+        const targetBackend = activeBackend;
         if (targetBackend !== releasesBackend && targetBackend !== releasesBackendInFlight) {
             fetchReleases(targetBackend);
         }
@@ -193,7 +272,9 @@ function updateStatusUI(status) {
         if (sidebarStatus) sidebarStatus.style.display = "none";
     }
 
-    repairBtn.classList.toggle("hidden", !status.config_stale);
+    if (activeBackend !== "custom") {
+        repairBtn.classList.toggle("hidden", !status.config_stale);
+    }
 
     info.textContent = "";
 
@@ -256,7 +337,9 @@ function updateStatusUI(status) {
 
         const hint = document.createElement("div");
         hint.style.color = "var(--fg-dim)";
-        hint.textContent = "Click Repair Install to reinstall the configured version/backend and restore binaries.";
+        hint.textContent = status.backend === "custom"
+            ? "Add llama-cli and llama-server to llama/custom/bin/, then click Activate Custom again."
+            : "Click Repair Install to reinstall the configured version/backend and restore binaries.";
         info.appendChild(hint);
 
         appendRow("Version (config)", String(status.version));
@@ -275,8 +358,12 @@ function updateStatusUI(status) {
 }
 
 async function installRelease() {
+    const backendEl = document.getElementById("backend-select");
+    if (backendEl && backendEl.value === "custom") {
+        return activateCustomBackend();
+    }
     const tag = document.getElementById("release-select").value;
-    const backend = document.getElementById("backend-select").value;
+    const backend = backendEl ? backendEl.value : "";
     if (!tag) {
         showStatus("error", "Select a version first");
         return;

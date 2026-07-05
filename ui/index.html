@@ -145,7 +145,7 @@
             <div class="card">
                 <div id="install-status" class="status-box"></div>
 
-                <div class="form-group">
+                <div class="form-group" id="release-group">
                     <label class="form-label">Version</label>
                     <div class="input-row">
                         <select id="release-select"><option value="">Loading...</option></select>
@@ -161,6 +161,17 @@
                         <option value="">Loading available backends...</option>
                     </select>
                     <div style="font-size:12px;color:var(--fg-muted);margin-top:var(--space-1);line-height:1.45;">ROCm (Lemonade) builds target a specific AMD GPU architecture &mdash; choose the gfx target matching your GPU (e.g. gfx110X = RDNA3, gfx103X = RDNA2, gfx1150/gfx1151 = Ryzen AI).</div>
+                </div>
+
+                <div id="custom-backend-info" style="display:none;">
+                    <div class="status-box info" style="margin-top:8px;">
+                        <strong>Custom Backend Setup:</strong><br>
+                        Place your pre-compiled llama.cpp binaries in:<br>
+                        <code>llama/custom/bin/</code><br><br>
+                        Expected executables: <code>llama-server</code>, <code>llama-cli</code>, <code>llama-bench</code>, <code>llama-perplexity</code><br>
+                        Runtime libraries (.dll, .so, .dylib) should also be placed in the same directory.<br><br>
+                        Click "Activate Custom" below once your binaries are in place.
+                    </div>
                 </div>
 
                 <div class="form-row">

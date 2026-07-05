@@ -452,6 +452,23 @@ For `--tools`:
 It does not remove:
 - model files in `models/`
 - saved presets in `presets/`
+- custom binaries in `llama/custom/`
+
+### Using Custom Pre-Compiled Binaries
+
+If you have your own build of llama.cpp (e.g., compiled with specific options, optimizations, or for a platform not covered by the official releases), you can use it directly:
+
+1. Create the directory `llama/custom/bin/` (it will be created automatically if you click "Activate Custom" in the Install tab).
+2. Place your pre-compiled binaries in that directory:
+   - `llama-server` (or `llama-server.exe` on Windows)
+   - `llama-cli` (or `llama-cli.exe`)
+   - Other tools: `llama-bench`, `llama-perplexity`, `llama-quantize`, `llama-simple`
+3. Any required runtime libraries (`.dll`, `.so`, `.dylib`) should also be placed in `llama/custom/bin/`.
+4. In the Install tab, select **"Custom (User-Provided)"** as the backend.
+5. Click **"Activate Custom"** to validate the binaries and switch to your custom build.
+6. To switch back to an official release, select any other backend and click **"Install"**.
+
+The custom binaries directory (`llama/custom/`) is preserved during cleanup operations ("Remove llama.cpp Files" only affects official releases).
 
 ## Project Layout
 
