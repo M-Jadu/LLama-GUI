@@ -65,6 +65,7 @@ for (const scriptFile of scriptFiles) {
 
 const expectedNamespaces = [
     "flagCore",
+    "themeUi",
     "configFlagsUi",
     "quickLaunchUi",
     "chatUi",
@@ -86,6 +87,7 @@ for (const namespace of expectedNamespaces) {
 }
 
 assert.equal(typeof context.window.LlamaGui.flagCore.setFlagValue, "function");
+assert.equal(typeof context.window.LlamaGui.themeUi.init, "function");
 assert.equal(typeof context.window.LlamaGui.quickLaunchUi.refresh, "function");
 assert.equal(typeof context.window.LlamaGui.chatUi.init, "function");
 assert.equal(typeof context.window.LlamaGui.apiTab.updateEndpoints, "function");

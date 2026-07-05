@@ -9,6 +9,17 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script>
+        (function () {
+            try {
+                if (localStorage.getItem("llama_gui_theme") === "cappuccino") {
+                    document.documentElement.dataset.theme = "cappuccino";
+                }
+            } catch (e) {
+                console.debug("Failed to apply stored theme before paint", e);
+            }
+        })();
+    </script>
     <link rel="stylesheet" href="/css/tokens.css">
     <link rel="stylesheet" href="/css/style.css">
 </head>
@@ -102,6 +113,16 @@
         </nav>
 
         <div class="sidebar-footer">
+            <div class="theme-switcher" aria-label="Theme">
+                <button class="theme-switcher-btn active" type="button" data-theme-option="tokyo" aria-pressed="true" title="Use Tokyo dark theme">
+                    <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 7.5A9 9 0 1 1 12 3Z"/></svg></span>
+                    Tokyo
+                </button>
+                <button class="theme-switcher-btn" type="button" data-theme-option="cappuccino" aria-pressed="false" title="Use Cappuccino light theme">
+                    <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 0 1 0 8h-1"/><path d="M3 8h14v6a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><path d="M6 2v3"/><path d="M10 2v3"/><path d="M14 2v3"/></svg></span>
+                    Cappuccino
+                </button>
+            </div>
             <div class="sidebar-status" id="sidebar-status" style="display:none;">
                 <span class="status-dot"></span>
                 <span id="sidebar-status-text">Running</span>
@@ -1118,6 +1139,7 @@
 <script src="/js/flags/definitions.js?v=revamp-1"></script>
 <script src="/js/flags/helpers.js?v=revamp-1"></script>
 <script src="/js/flag-validation.js?v=revamp-1"></script>
+<script src="/js/theme-ui.js?v=revamp-1"></script>
 <script src="/js/flag-core.js?v=revamp-1"></script>
 <script src="/js/config-flags-ui.js?v=revamp-1"></script>
 <script src="/js/manager.js?v=revamp-1"></script>
