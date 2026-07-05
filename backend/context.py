@@ -14,6 +14,8 @@ class AppPaths:
     llama: Path = config.LLAMA_DIR
     llama_bin: Path = config.LLAMA_BIN_DIR
     llama_grammars: Path = config.LLAMA_GRAMMARS_DIR
+    llama_custom_bin: Path = config.LLAMA_CUSTOM_BIN_DIR
+    llama_custom_grammars: Path = config.LLAMA_CUSTOM_GRAMMARS_DIR
     models: Path = config.MODELS_DIR
     presets: Path = config.PRESETS_DIR
     config_file: Path = config.CONFIG_FILE

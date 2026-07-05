@@ -60,6 +60,8 @@ def make_service_context(root):
             llama=root / "llama",
             llama_bin=root / "llama" / "bin",
             llama_grammars=root / "llama" / "grammars",
+            llama_custom_bin=root / "llama" / "custom" / "bin",
+            llama_custom_grammars=root / "llama" / "custom" / "grammars",
             models=root / "models",
             presets=root / "presets",
             config_file=root / "config.json",
@@ -106,13 +108,13 @@ class BuildBackendSpecsTests(unittest.TestCase):
     def test_darwin_x64_returns_cpu_only(self):
         specs = llama_manager.build_backend_specs("darwin", "x64")
 
-        self.assertEqual(list(specs.keys()), ["cpu"])
+        self.assertEqual(list(specs.keys()), ["cpu", "custom"])
         self.assertIn("macos-x64", specs["cpu"]["asset"])
 
     def test_darwin_unknown_arch_returns_empty(self):
         specs = llama_manager.build_backend_specs("darwin", "ppc64")
 
-        self.assertEqual(specs, {})
+        self.assertEqual(specs, {"custom": {"label": "Custom (User-Provided)"}})
 
     def test_linux_x64_returns_cpu_vulkan_rocm_openvino(self):
         specs = llama_manager.build_backend_specs("linux", "x64")
@@ -133,24 +135,31 @@ class BuildBackendSpecsTests(unittest.TestCase):
     def test_linux_s390x_returns_cpu_only(self):
         specs = llama_manager.build_backend_specs("linux", "s390x")
 
-        self.assertEqual(list(specs.keys()), ["cpu"])
+        self.assertEqual(list(specs.keys()), ["cpu", "custom"])
         self.assertIn("s390x", specs["cpu"]["asset"])
 
     def test_linux_unknown_arch_returns_empty(self):
         specs = llama_manager.build_backend_specs("linux", "riscv64")
 
-        self.assertEqual(specs, {})
+        self.assertEqual(specs, {"custom": {"label": "Custom (User-Provided)"}})
 
     def test_unknown_platform_returns_empty(self):
         specs = llama_manager.build_backend_specs("freebsd", "x64")
 
-        self.assertEqual(specs, {})
+        self.assertEqual(specs, {"custom": {"label": "Custom (User-Provided)"}})
+
+    def test_custom_backend_available_without_prebuilt_backend(self):
+        specs = llama_manager.build_backend_specs("plan9", "weird64")
+
+        self.assertEqual(list(specs.keys()), ["custom"])
 
     def test_asset_patterns_contain_tag_placeholder(self):
         for platform_name, arch in [("win32", "x64"), ("darwin", "arm64"), ("linux", "x64")]:
             with self.subTest(platform=platform_name, arch=arch):
                 specs = llama_manager.build_backend_specs(platform_name, arch)
                 for backend_id, spec in specs.items():
+                    if "asset" not in spec:
+                        continue
                     self.assertIn("{tag}", spec["asset"], f"{backend_id} missing {{tag}}")
 
     def test_cuda_backends_have_extra_assets(self):
@@ -224,6 +233,93 @@ class BuildBackendSpecsTests(unittest.TestCase):
 
         self.assertNotIn("repo_api", specs["cpu"])
         self.assertNotIn("preserve_paths", specs["cpu"])
+        self.assertNotIn("asset", specs["custom"])
+
+
+class ActivateCustomBackendTests(unittest.TestCase):
+    def test_requires_cli_and_server(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_service_context(tmp)
+            ctx.services.llama_tools = ["llama-cli", "llama-server", "llama-bench"]
+            ctx.services.current_platform = "win32"
+            ctx.services.get_tool_filename = lambda tool: f"{tool}.exe"
+            ctx.services.load_config = lambda: {"tag": None, "backend": None}
+            ctx.services.save_config = mock.Mock()
+            ctx.paths.llama_custom_bin.mkdir(parents=True)
+            (ctx.paths.llama_custom_bin / "llama-cli.exe").write_text("")
+
+            result = llama_manager.activate_custom_backend(ctx)
+
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["missing_required"], ["llama-server.exe"])
+            ctx.services.save_config.assert_not_called()
+
+    def test_saves_config_when_core_tools_exist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_service_context(tmp)
+            ctx.services.llama_tools = ["llama-cli", "llama-server", "llama-bench"]
+            ctx.services.current_platform = "win32"
+            ctx.services.get_tool_filename = lambda tool: f"{tool}.exe"
+            ctx.services.load_config = lambda: {"tag": None, "backend": None}
+            ctx.services.save_config = mock.Mock()
+            ctx.paths.llama_custom_bin.mkdir(parents=True)
+            (ctx.paths.llama_custom_bin / "llama-cli.exe").write_text("")
+            (ctx.paths.llama_custom_bin / "llama-server.exe").write_text("")
+
+            result = llama_manager.activate_custom_backend(ctx)
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["missing_required"], [])
+            ctx.services.save_config.assert_called_once_with(
+                {"tag": "custom", "backend": "custom", "version": "custom"}
+            )
+
+    def test_rejects_non_executable_core_tools_on_unix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_service_context(tmp)
+            ctx.services.llama_tools = ["llama-cli", "llama-server"]
+            ctx.services.current_platform = "linux"
+            ctx.services.get_tool_filename = lambda tool: tool
+            ctx.services.load_config = lambda: {"tag": None, "backend": None}
+            ctx.services.save_config = mock.Mock()
+            ctx.paths.llama_custom_bin.mkdir(parents=True)
+            (ctx.paths.llama_custom_bin / "llama-cli").write_text("")
+            (ctx.paths.llama_custom_bin / "llama-server").write_text("")
+
+            with mock.patch.object(llama_manager.os, "access", return_value=False):
+                result = llama_manager.activate_custom_backend(ctx)
+
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["missing_required"], [])
+            self.assertEqual(result["not_executable"], ["llama-cli", "llama-server"])
+            ctx.services.save_config.assert_not_called()
+
+    def test_rejects_custom_backend_when_runtime_library_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_service_context(tmp)
+            ctx.services.llama_tools = ["llama-cli", "llama-server"]
+            ctx.services.current_platform = "darwin"
+            ctx.services.get_tool_filename = lambda tool: tool
+            ctx.services.load_config = lambda: {"tag": None, "backend": None}
+            ctx.services.save_config = mock.Mock()
+            ctx.paths.llama_custom_bin.mkdir(parents=True)
+            for tool in ("llama-cli", "llama-server"):
+                tool_path = ctx.paths.llama_custom_bin / tool
+                tool_path.write_text("")
+                tool_path.chmod(0o755)
+
+            with mock.patch.object(
+                llama_manager,
+                "get_macos_rpath_libraries",
+                return_value=["libllama-common.0.dylib"],
+            ):
+                result = llama_manager.activate_custom_backend(ctx)
+
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["missing_required"], [])
+            self.assertEqual(result["not_executable"], [])
+            self.assertEqual(result["missing_runtime_files"], ["libllama-common.0.dylib"])
+            ctx.services.save_config.assert_not_called()
 
 
 class ResolveRepoApiTests(unittest.TestCase):
@@ -355,6 +451,8 @@ class RuntimeDependencyValidationTests(unittest.TestCase):
                 llama=root / "llama",
                 llama_bin=root / "llama" / "bin",
                 llama_grammars=root / "llama" / "grammars",
+                llama_custom_bin=root / "llama" / "custom" / "bin",
+                llama_custom_grammars=root / "llama" / "custom" / "grammars",
                 models=root / "models",
                 presets=root / "presets",
                 config_file=root / "config.json",
@@ -369,6 +467,7 @@ class RuntimeDependencyValidationTests(unittest.TestCase):
             current_platform=platform_name,
             find_tool_executable=lambda tool: ctx.paths.llama_bin / tool,
             get_tool_filename=lambda tool: tool,
+            load_config=lambda: {"backend": "cpu"},
         )
         return ctx
 
@@ -406,6 +505,25 @@ class RuntimeDependencyValidationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = self.make_runtime_context(tmp)
             (ctx.paths.llama_bin / "llama-server").write_text("binary")
+
+            with mock.patch.object(
+                llama_manager,
+                "get_macos_rpath_libraries",
+                return_value=["libllama-common.0.dylib"],
+            ):
+                result = llama_manager.validate_runtime_dependencies(ctx, ["llama-server"])
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["missing_runtime_files"], ["libllama-common.0.dylib"])
+
+    def test_validate_macos_custom_runtime_checks_custom_bin_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.make_runtime_context(tmp)
+            ctx.paths.llama_custom_bin.mkdir(parents=True)
+            ctx.services.find_tool_executable = lambda tool: ctx.paths.llama_custom_bin / tool
+            ctx.services.load_config = lambda: {"backend": "custom"}
+            (ctx.paths.llama_custom_bin / "llama-server").write_text("binary")
+            (ctx.paths.llama_bin / "libllama-common.0.dylib").write_text("official lib")
 
             with mock.patch.object(
                 llama_manager,

@@ -82,9 +82,16 @@ async function main() {
         const page = await browser.newPage();
         const chatCompletionBodies = [];
         const launchBodies = [];
+        const pageErrors = [];
+        const releaseRequests = [];
+        const activateCustomRequests = [];
         let statusRunning = false;
         let activeProcessTool = "";
+        let installedBackend = "cpu";
 
+        page.on("pageerror", (error) => {
+            pageErrors.push(error.message || String(error));
+        });
         await page.route("**/api/**", async (route) => {
             const url = new URL(route.request().url());
             const pathName = url.pathname;
@@ -127,9 +134,17 @@ async function main() {
                         installed: true,
                         running: statusRunning,
                         active_process_tool: activeProcessTool,
-                        backend: "cpu",
-                        tag: "smoke",
-                        available_backends: [{ id: "cpu", label: "CPU" }],
+                        backend: installedBackend,
+                        tag: installedBackend === "custom" ? "custom" : "smoke",
+                        available_backends: [
+                            { id: "cpu", label: "CPU" },
+                            { id: "custom", label: "Custom (User-Provided)" },
+                        ],
+                        executables: {
+                            "llama-cli": true,
+                            "llama-server": true,
+                            "llama-bench": installedBackend !== "custom",
+                        },
                     }),
                 });
                 return;
@@ -143,10 +158,34 @@ async function main() {
                 return;
             }
             if (pathName === "/api/releases") {
+                releaseRequests.push(url.search);
                 await route.fulfill({
                     status: 200,
                     contentType: "application/json",
                     body: JSON.stringify([{ tag: "smoke", published: "2026-01-01T00:00:00Z" }]),
+                });
+                return;
+            }
+            if (pathName === "/api/presets") {
+                await route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify([]),
+                });
+                return;
+            }
+            if (pathName === "/api/activate-custom") {
+                activateCustomRequests.push(JSON.parse(route.request().postData() || "{}"));
+                installedBackend = "custom";
+                await route.fulfill({
+                    status: 200,
+                    contentType: "application/json",
+                    body: JSON.stringify({
+                        ok: true,
+                        found: ["llama-cli", "llama-server"],
+                        missing: ["llama-bench"],
+                        missing_required: [],
+                    }),
                 });
                 return;
             }
@@ -552,6 +591,19 @@ async function main() {
         await page.click("#btn-launch");
         await page.waitForFunction(() => document.querySelector("#toast-container")?.textContent.includes("unmatched single quote"));
         assert.equal(launchBodies.length, launchCountBefore);
+
+        await selectSection(page, "install");
+        pageErrors.length = 0;
+        const customReleaseCountBefore = releaseRequests.filter((search) => search.includes("backend=custom")).length;
+        await page.selectOption("#backend-select", "custom");
+        await page.waitForFunction(() => document.querySelector("#custom-backend-info")?.offsetParent !== null);
+        await page.waitForFunction(() => document.querySelector("#btn-install")?.textContent === "Activate Custom");
+        await page.waitForTimeout(250);
+        assert.equal(releaseRequests.filter((search) => search.includes("backend=custom")).length, customReleaseCountBefore);
+        await page.click("#btn-install");
+        await page.waitForFunction(() => document.querySelector("#install-status")?.textContent.includes("Custom backend activated"));
+        assert.equal(activateCustomRequests.length, 1);
+        assert.equal(pageErrors.length, 0, pageErrors.join("\n"));
 
         console.log(`flag sync smoke passed on http://127.0.0.1:${port}/`);
     } finally {

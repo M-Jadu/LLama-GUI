@@ -86,6 +86,8 @@ def make_context(root):
             llama=root / "llama",
             llama_bin=root / "llama" / "bin",
             llama_grammars=root / "llama" / "grammars",
+            llama_custom_bin=root / "llama" / "custom" / "bin",
+            llama_custom_grammars=root / "llama" / "custom" / "grammars",
             models=root / "models",
             presets=root / "presets",
             config_file=root / "config.json",
@@ -343,8 +345,10 @@ class ExtractedRouteTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = make_context(tmp)
             cli_path = ctx.paths.llama_bin / "llama-cli.exe"
+            server_path = ctx.paths.llama_bin / "llama-server.exe"
             cli_path.parent.mkdir(parents=True)
             cli_path.write_text("")
+            server_path.write_text("")
             ctx.services = BackendServices(
                 backend_specs={"cpu": {"label": "CPU"}},
                 binary_suffix=".exe",
@@ -355,7 +359,7 @@ class ExtractedRouteTests(unittest.TestCase):
                 get_runtime_files=lambda: [SimpleNamespace(name="runtime.dll")],
                 get_tool_filename=lambda tool: f"{tool}.exe",
                 is_process_running=lambda: False,
-                llama_tools=["llama-cli"],
+                llama_tools=["llama-cli", "llama-server"],
                 load_config=lambda: {"tag": "b1", "backend": "cpu"},
             )
             response = DummyResponse()
@@ -370,8 +374,10 @@ class ExtractedRouteTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = make_context(tmp)
             cli_path = ctx.paths.llama_bin / "llama-cli"
+            server_path = ctx.paths.llama_bin / "llama-server"
             cli_path.parent.mkdir(parents=True)
             cli_path.write_text("")
+            server_path.write_text("")
             ctx.services = BackendServices(
                 backend_specs={"metal": {"label": "Metal"}},
                 current_arch="arm64",
@@ -381,8 +387,65 @@ class ExtractedRouteTests(unittest.TestCase):
                 get_runtime_files=lambda: [],
                 get_tool_filename=lambda tool: tool,
                 is_process_running=lambda: False,
-                llama_tools=["llama-cli"],
+                llama_tools=["llama-cli", "llama-server"],
                 load_config=lambda: {"tag": "b1", "backend": "metal"},
+                validate_runtime_dependencies=lambda: {
+                    "ok": False,
+                    "checked": True,
+                    "required_runtime_files": ["libllama-common.0.dylib"],
+                    "missing_runtime_files": ["libllama-common.0.dylib"],
+                },
+            )
+            response = DummyResponse()
+
+            status.get_status(Request("GET", "/api/status", "", {}), response, ctx)
+
+            self.assertFalse(response.payload["installed"])
+            self.assertTrue(response.payload["config_stale"])
+            self.assertEqual(response.payload["missing_runtime_files"], ["libllama-common.0.dylib"])
+
+    def test_status_route_marks_custom_stale_when_core_tool_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            cli_path = ctx.paths.llama_custom_bin / "llama-cli"
+            cli_path.parent.mkdir(parents=True)
+            cli_path.write_text("")
+            ctx.services = BackendServices(
+                backend_specs={"custom": {"label": "Custom (User-Provided)"}},
+                current_arch="x64",
+                current_platform="linux",
+                find_tool_executable=lambda tool: ctx.paths.llama_custom_bin / tool,
+                get_platform_label=lambda: "Linux",
+                get_runtime_files=lambda: [],
+                get_tool_filename=lambda tool: tool,
+                is_process_running=lambda: False,
+                llama_tools=["llama-cli", "llama-server"],
+                load_config=lambda: {"tag": "custom", "backend": "custom"},
+            )
+            response = DummyResponse()
+
+            status.get_status(Request("GET", "/api/status", "", {}), response, ctx)
+
+            self.assertFalse(response.payload["installed"])
+            self.assertTrue(response.payload["config_stale"])
+
+    def test_status_route_marks_custom_stale_when_runtime_library_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.paths.llama_custom_bin.mkdir(parents=True)
+            (ctx.paths.llama_custom_bin / "llama-cli").write_text("")
+            (ctx.paths.llama_custom_bin / "llama-server").write_text("")
+            ctx.services = BackendServices(
+                backend_specs={"custom": {"label": "Custom (User-Provided)"}},
+                current_arch="arm64",
+                current_platform="darwin",
+                find_tool_executable=lambda tool: ctx.paths.llama_custom_bin / tool,
+                get_platform_label=lambda: "macOS",
+                get_runtime_files=lambda: [],
+                get_tool_filename=lambda tool: tool,
+                is_process_running=lambda: False,
+                llama_tools=["llama-cli", "llama-server"],
+                load_config=lambda: {"tag": "custom", "backend": "custom"},
                 validate_runtime_dependencies=lambda: {
                     "ok": False,
                     "checked": True,
@@ -1534,6 +1597,18 @@ class InstallRouteTests(unittest.TestCase):
                 self.ctx,
             )
         gr.assert_called_once_with(self.ctx, None)
+
+    def test_get_releases_returns_empty_for_custom_backend(self):
+        response = DummyResponse()
+        with mock.patch.object(llama_manager, "get_releases") as gr:
+            install.get_releases(
+                Request("GET", "/api/releases", "backend=custom", {}),
+                response,
+                self.ctx,
+            )
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.payload, [])
+        gr.assert_not_called()
 
     def test_update_uses_installed_backend_repo_api_for_lemonade(self):
         self.ctx.services.backend_specs["lemonade-rocm-gfx110X"] = {
