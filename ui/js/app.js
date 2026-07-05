@@ -5,6 +5,7 @@ function debounce(fn, ms) {
 
 const flagCore = window.LlamaGui.flagCore;
 const configFlagsUi = window.LlamaGui.configFlagsUi;
+const themeUi = window.LlamaGui.themeUi;
 flagCore.setCurrentToolValue("llama-server");
 flagCore.replaceFlagValues(getDefaultValues());
 let outputTimer = null;
@@ -338,6 +339,7 @@ function initQuickLaunch() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+    themeUi.init();
     initTabs();
     initToolSelect();
     initConfigControls();
