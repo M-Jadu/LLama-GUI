@@ -16,11 +16,14 @@ def get_status(request, response, ctx):
         runtime_files = services.get_runtime_files()
         runtime_health = dict(services.validate_runtime_dependencies())
         has_config = bool(cfg.get("tag"))
-        installed = (
-            has_config
-            and exes.get(services.get_tool_filename("llama-cli"), False)
-            and runtime_health.get("ok", True)
-        )
+        if cfg.get("backend") == "custom":
+            installed = has_config and exes.get(services.get_tool_filename("llama-cli"), False)
+        else:
+            installed = (
+                has_config
+                and exes.get(services.get_tool_filename("llama-cli"), False)
+                and runtime_health.get("ok", True)
+            )
         config_stale = has_config and not installed
         running = services.is_process_running()
         backend_specs = services.backend_specs

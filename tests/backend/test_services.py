@@ -106,7 +106,7 @@ class BuildBackendSpecsTests(unittest.TestCase):
     def test_darwin_x64_returns_cpu_only(self):
         specs = llama_manager.build_backend_specs("darwin", "x64")
 
-        self.assertEqual(list(specs.keys()), ["cpu"])
+        self.assertEqual(list(specs.keys()), ["cpu", "custom"])
         self.assertIn("macos-x64", specs["cpu"]["asset"])
 
     def test_darwin_unknown_arch_returns_empty(self):
@@ -133,7 +133,7 @@ class BuildBackendSpecsTests(unittest.TestCase):
     def test_linux_s390x_returns_cpu_only(self):
         specs = llama_manager.build_backend_specs("linux", "s390x")
 
-        self.assertEqual(list(specs.keys()), ["cpu"])
+        self.assertEqual(list(specs.keys()), ["cpu", "custom"])
         self.assertIn("s390x", specs["cpu"]["asset"])
 
     def test_linux_unknown_arch_returns_empty(self):
@@ -151,6 +151,8 @@ class BuildBackendSpecsTests(unittest.TestCase):
             with self.subTest(platform=platform_name, arch=arch):
                 specs = llama_manager.build_backend_specs(platform_name, arch)
                 for backend_id, spec in specs.items():
+                    if "asset" not in spec:
+                        continue
                     self.assertIn("{tag}", spec["asset"], f"{backend_id} missing {{tag}}")
 
     def test_cuda_backends_have_extra_assets(self):

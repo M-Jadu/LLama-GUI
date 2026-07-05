@@ -77,6 +77,9 @@ def build_backend_specs(current_platform: str, current_arch: str) -> dict[str, A
                     "label": "OpenCL (Adreno)",
                     "asset": "llama-{tag}-bin-win-opencl-adreno-arm64.zip",
                 },
+                "custom": {
+                    "label": "Custom (User-Provided)",
+                },
             }
         specs = {
             "cpu": {"label": "CPU", "asset": "llama-{tag}-bin-win-cpu-x64.zip"},
@@ -106,6 +109,9 @@ def build_backend_specs(current_platform: str, current_arch: str) -> dict[str, A
                 "label": "OpenVINO",
                 "asset": "llama-{tag}-bin-win-openvino-2026.2.1-x64.zip",
             },
+            "custom": {
+                "label": "Custom (User-Provided)",
+            },
         }
         specs.update(_lemonade_rocm_specs("windows"))
         return specs
@@ -117,13 +123,19 @@ def build_backend_specs(current_platform: str, current_arch: str) -> dict[str, A
                     "label": "Metal (Apple Silicon)",
                     "asset": "llama-{tag}-bin-macos-arm64.tar.gz",
                 },
+                "custom": {
+                    "label": "Custom (User-Provided)",
+                },
             }
         if current_arch == "x64":
             return {
                 "cpu": {
                     "label": "CPU (Intel Mac)",
                     "asset": "llama-{tag}-bin-macos-x64.tar.gz",
-                }
+                },
+                "custom": {
+                    "label": "Custom (User-Provided)",
+                },
             }
         return {}
 
@@ -143,6 +155,9 @@ def build_backend_specs(current_platform: str, current_arch: str) -> dict[str, A
                     "label": "OpenVINO",
                     "asset": "llama-{tag}-bin-ubuntu-openvino-2026.2.1-x64.tar.gz",
                 },
+                "custom": {
+                    "label": "Custom (User-Provided)",
+                },
             }
             specs.update(_lemonade_rocm_specs("ubuntu"))
             return specs
@@ -156,13 +171,19 @@ def build_backend_specs(current_platform: str, current_arch: str) -> dict[str, A
                     "label": "Vulkan",
                     "asset": "llama-{tag}-bin-ubuntu-vulkan-arm64.tar.gz",
                 },
+                "custom": {
+                    "label": "Custom (User-Provided)",
+                },
             }
         if current_arch == "s390x":
             return {
                 "cpu": {
                     "label": "CPU",
                     "asset": "llama-{tag}-bin-ubuntu-s390x.tar.gz",
-                }
+                },
+                "custom": {
+                    "label": "Custom (User-Provided)",
+                },
             }
     return {}
 
@@ -281,7 +302,9 @@ def validate_runtime_dependencies(
             unchecked_tools.append(tool)
 
     missing_runtime_files = sorted(
-        name for name in required if not (ctx.paths.llama_bin / name).exists()
+        name for name in required
+        if not (ctx.paths.llama_bin / name).exists()
+        and not (ctx.paths.llama_custom_bin / name).exists()
     )
     return {
         "ok": not missing_runtime_files,
@@ -292,6 +315,34 @@ def validate_runtime_dependencies(
         "missing_runtime_files": missing_runtime_files,
         "missing_executables": missing_executables,
     }
+
+
+def activate_custom_backend(ctx: AppContext) -> dict[str, Any]:
+    try:
+        ctx.paths.llama_custom_bin.mkdir(parents=True, exist_ok=True)
+        ctx.paths.llama_custom_grammars.mkdir(parents=True, exist_ok=True)
+
+        found: list[str] = []
+        missing: list[str] = []
+        for tool in ctx.services.llama_tools:
+            exe_name = ctx.services.get_tool_filename(tool)
+            if (ctx.paths.llama_custom_bin / exe_name).exists():
+                found.append(exe_name)
+            else:
+                missing.append(exe_name)
+
+        if not found:
+            return {"ok": False, "found": found, "missing": missing}
+
+        cfg = dict(ctx.services.load_config())
+        cfg["version"] = "custom"
+        cfg["backend"] = "custom"
+        cfg["tag"] = "custom"
+        ctx.services.save_config(cfg)
+        return {"ok": True, "found": found, "missing": missing}
+    except Exception as e:
+        print(f"[llama_manager] activate_custom_backend failed: {e}", file=sys.stderr)
+        return {"ok": False, "error": str(e)}
 
 
 def download_file(

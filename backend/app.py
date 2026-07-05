@@ -16,6 +16,7 @@ from backend.config import (
     GUI_HOST,
     GUI_PORT,
     LLAMA_BIN_DIR,
+    LLAMA_CUSTOM_BIN_DIR,
     LLAMA_GRAMMARS_DIR,
     LLAMA_HOST,
     LLAMA_PORT,
@@ -173,14 +174,19 @@ def get_tool_filename(tool):
 
 
 def find_tool_executable(tool):
+    cfg = load_config()
+    if cfg.get("backend") == "custom":
+        return LLAMA_CUSTOM_BIN_DIR / get_tool_filename(tool)
     return LLAMA_BIN_DIR / get_tool_filename(tool)
 
 
 def get_runtime_files():
+    cfg = load_config()
+    search_dir = LLAMA_CUSTOM_BIN_DIR if cfg.get("backend") == "custom" else LLAMA_BIN_DIR
+    if not search_dir.exists():
+        return []
     runtime_files = []
-    if not LLAMA_BIN_DIR.exists():
-        return runtime_files
-    for path in sorted(LLAMA_BIN_DIR.iterdir()):
+    for path in sorted(search_dir.iterdir()):
         if path.is_file() and path.suffix.lower() in SHARED_LIBRARY_SUFFIXES:
             runtime_files.append(path)
     return runtime_files
@@ -859,6 +865,7 @@ API_ROUTER = (
     .add("POST", "/api/hf/download-cancel", hf_download_routes.cancel_download)
     .add("POST", "/api/install", install_routes.start_install)
     .add("POST", "/api/update", install_routes.start_update)
+    .add("POST", "/api/activate-custom", install_routes.activate_custom)
     .add("POST", "/api/launch", process_routes.launch)
     .add("POST", "/api/estimate-memory", process_routes.estimate_memory)
     .add("POST", "/api/stop", process_routes.stop)
