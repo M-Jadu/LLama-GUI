@@ -8,18 +8,42 @@ let installPollFailCount = 0;
 let installPollInFlight = false;
 let latestStatus = null;
 let latestAppUpdateStatus = null;
+let pendingInstallBackendId = null;
 
 const INSTALL_POLL_TIMEOUT_MS = 10 * 60 * 1000;
 const INSTALL_POLL_MAX_FAILS = 5;
+
+function normalizeBackendId(value) {
+    return String(value || "").trim();
+}
+
+function backendOptionsFromStatus(status) {
+    return Array.isArray(status && status.available_backends)
+        ? status.available_backends
+        : [];
+}
+
+function hasBackendOption(options, backendId) {
+    return options.some((backend) => backend && backend.id === backendId);
+}
+
+function backendLabelFromStatus(status, backendId) {
+    const id = normalizeBackendId(backendId);
+    const match = backendOptionsFromStatus(status).find((backend) => backend && backend.id === id);
+    return match && match.label ? match.label : (id || "None");
+}
+
+function installedBackendIdFromStatus(status) {
+    return normalizeBackendId(status && status.backend);
+}
 
 function renderBackendOptions(status) {
     const backendSelect = document.getElementById("backend-select");
     if (!backendSelect) return;
 
-    const availableBackends = Array.isArray(status && status.available_backends)
-        ? status.available_backends
-        : [];
-    const currentValue = status && status.backend ? status.backend : backendSelect.value;
+    const availableBackends = backendOptionsFromStatus(status);
+    const previousValue = normalizeBackendId(backendSelect.value);
+    const installedValue = installedBackendIdFromStatus(status);
 
     backendSelect.innerHTML = "";
 
@@ -40,8 +64,72 @@ function renderBackendOptions(status) {
         backendSelect.appendChild(opt);
     }
 
-    const hasCurrentValue = Array.from(backendSelect.options).some((opt) => opt.value === currentValue);
-    backendSelect.value = hasCurrentValue ? currentValue : availableBackends[0].id;
+    const pendingIsValid = pendingInstallBackendId && hasBackendOption(availableBackends, pendingInstallBackendId);
+    const installedIsValid = installedValue && hasBackendOption(availableBackends, installedValue);
+    const previousIsValid = previousValue && hasBackendOption(availableBackends, previousValue);
+
+    if (pendingInstallBackendId && !pendingIsValid) {
+        pendingInstallBackendId = null;
+    }
+
+    backendSelect.value = pendingIsValid
+        ? pendingInstallBackendId
+        : installedIsValid
+            ? installedValue
+            : previousIsValid
+                ? previousValue
+                : availableBackends[0].id;
+}
+
+function updateInstalledBackendSummary(status) {
+    const el = document.getElementById("installed-backend-summary");
+    if (!el) return;
+
+    const installedBackend = installedBackendIdFromStatus(status);
+    const label = backendLabelFromStatus(status, installedBackend);
+    el.className = "installed-backend-summary";
+
+    if (status && status.installed && installedBackend) {
+        el.textContent = "Installed backend: " + label;
+        el.classList.add("is-installed");
+    } else if (status && status.config_stale && installedBackend) {
+        el.textContent = "Configured backend: " + label + " (incomplete)";
+        el.classList.add("is-stale");
+    } else {
+        el.textContent = "Installed backend: None";
+        el.classList.add("is-empty");
+    }
+}
+
+function syncInstallActionButtons(status, selectedInstallBackend) {
+    const updateBtn = document.getElementById("btn-update");
+    const repairBtn = document.getElementById("btn-repair");
+    const installTarget = normalizeBackendId(selectedInstallBackend);
+    const installedBackend = installedBackendIdFromStatus(status);
+    const hasInstalledBackend = Boolean(status && status.installed && installedBackend);
+    const hasStaleBackendConfig = Boolean(status && status.config_stale && installedBackend);
+    const customTargetSelected = installTarget === "custom";
+
+    if (updateBtn) {
+        const canUpdate = !customTargetSelected && hasInstalledBackend && installedBackend !== "custom";
+        updateBtn.disabled = !canUpdate;
+        updateBtn.title = canUpdate
+            ? "Check the installed backend for updates"
+            : customTargetSelected || installedBackend === "custom"
+                ? "Custom backend installations are managed manually"
+                : "Install llama.cpp before checking for updates";
+    }
+
+    if (repairBtn) {
+        const canRepair = !customTargetSelected && hasStaleBackendConfig && installedBackend !== "custom";
+        repairBtn.classList.toggle("hidden", !canRepair && !customTargetSelected);
+        repairBtn.disabled = !canRepair;
+        repairBtn.title = customTargetSelected
+            ? "Custom backend files are managed manually"
+            : canRepair
+                ? "Reinstall the configured backend files"
+                : "Repair is available only for incomplete default backend installs";
+    }
 }
 
 async function fetchJson(url, options) {
@@ -113,11 +201,15 @@ function showOfficialBackendControls() {
 
 function onBackendChange() {
     const backend = selectedBackendId();
+    const installedBackend = installedBackendIdFromStatus(latestStatus);
+    pendingInstallBackendId = backend && backend !== installedBackend ? backend : null;
     if (backend === "custom") {
         showCustomBackendControls();
+        syncInstallActionButtons(latestStatus, backend);
         return;
     }
     showOfficialBackendControls();
+    syncInstallActionButtons(latestStatus, backend);
     fetchReleases(backend);
 }
 
@@ -226,20 +318,23 @@ function updateStatusUI(status) {
     const sidebarStatus = document.getElementById("sidebar-status");
     const sidebarStatusText = document.getElementById("sidebar-status-text");
     const info = document.getElementById("installed-info");
-    const repairBtn = document.getElementById("btn-repair");
     const backendSelect = document.getElementById("backend-select");
     const releaseSelect = document.getElementById("release-select");
     const installBtn = document.getElementById("btn-install");
 
+    const installedBackend = installedBackendIdFromStatus(status);
+    if (
+        pendingInstallBackendId
+        && installedBackend
+        && pendingInstallBackendId === installedBackend
+        && (status.installed || status.config_stale)
+    ) {
+        pendingInstallBackendId = null;
+    }
+
+    updateInstalledBackendSummary(status);
     renderBackendOptions(status);
     installBtn.disabled = !status.available_backends || status.available_backends.length === 0;
-
-    if ((status.installed || status.config_stale) && status.backend && backendSelect) {
-        const hasBackendOption = Array.from(backendSelect.options).some((opt) => opt.value === status.backend);
-        if (hasBackendOption) {
-            backendSelect.value = status.backend;
-        }
-    }
 
     const activeBackend = backendSelect ? backendSelect.value || "" : "";
     if (activeBackend === "custom") {
@@ -247,6 +342,7 @@ function updateStatusUI(status) {
     } else {
         showOfficialBackendControls();
     }
+    syncInstallActionButtons(status, activeBackend);
 
     if (backendSelect) {
         const targetBackend = activeBackend;
@@ -278,10 +374,6 @@ function updateStatusUI(status) {
         if (sidebarStatusText) sidebarStatusText.textContent = (status.active_process_tool || "llama.cpp") + " running";
     } else {
         if (sidebarStatus) sidebarStatus.style.display = "none";
-    }
-
-    if (activeBackend !== "custom") {
-        repairBtn.classList.toggle("hidden", !status.config_stale);
     }
 
     info.textContent = "";
