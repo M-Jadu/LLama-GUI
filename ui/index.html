@@ -138,12 +138,16 @@
             <div class="page-header">
                 <div>
                     <div class="page-title">Install llama.cpp</div>
-                    <div class="page-title-sub">Download releases, select a backend, and manage your llama.cpp installation.</div>
+                    <div class="page-title-sub">Download releases, choose an install target, and manage your llama.cpp installation.</div>
                 </div>
             </div>
 
             <div class="card">
                 <div id="install-status" class="status-box"></div>
+
+                <div id="installed-backend-summary" class="installed-backend-summary" aria-live="polite">
+                    Installed backend: checking...
+                </div>
 
                 <div class="form-group" id="release-group">
                     <label class="form-label">Version</label>
@@ -156,7 +160,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Backend</label>
+                    <label class="form-label">Backend to install</label>
                     <select id="backend-select">
                         <option value="">Loading available backends...</option>
                     </select>

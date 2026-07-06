@@ -1337,6 +1337,24 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
 .status-box.info { display: block; background: var(--accent-subtle); border: 1px solid var(--accent-border); color: var(--accent); }
 .status-box.warning { display: block; background: var(--yellow-subtle); border: 1px solid var(--yellow-border); color: var(--yellow); }
 
+.installed-backend-summary {
+    display: flex;
+    align-items: center;
+    min-height: 34px;
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--bg-raised);
+    color: var(--fg);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.installed-backend-summary.is-empty { color: var(--fg-muted); }
+.installed-backend-summary.is-stale { color: var(--yellow); border-color: var(--yellow-border); background: var(--yellow-subtle); }
+.installed-backend-summary.is-installed { color: var(--green); border-color: var(--green-border); background: var(--green-subtle); }
+
 .app-update-note { margin-top: var(--space-2); font-size: 12px; color: var(--fg-muted); }
 
 /* ════════════════════════════════════════════
