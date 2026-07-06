@@ -577,8 +577,8 @@ async function loadPresets() {
         const visibleEntries = getVisiblePresetEntries();
         const visibleNames = new Set(visibleEntries.map((entry) => entry.name));
         selectedPresetNames = new Set(Array.from(selectedPresetNames).filter((name) => visibleNames.has(name)));
-        if (!selectedPresetName || !visibleNames.has(selectedPresetName)) {
-            selectedPresetName = visibleEntries.length ? visibleEntries[0].name : "";
+        if (!visibleNames.has(selectedPresetName)) {
+            selectedPresetName = "";
         }
         renderPresetGroups(container, currentPresetGroups);
     } catch (e) {
@@ -644,6 +644,7 @@ function initPresetLibraryControls() {
     if (selectNone) {
         selectNone.addEventListener("click", () => {
             selectedPresetNames.clear();
+            selectedPresetName = "";
             renderPresetGroups(document.getElementById("presets-list"), currentPresetGroups);
         });
     }
