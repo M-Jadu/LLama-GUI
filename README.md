@@ -21,6 +21,8 @@ Llama GUI provides a browser UI to:
 - export Windows preset shortcuts that open Llama GUI with a saved preset already loaded
 - manage local app updates from GitHub
 
+Special thanks to ggml-org for [llama.cpp](https://github.com/ggml-org/llama.cpp), which is used with this program.
+
 ## Contents
 
 - [Requirements](#requirements)
