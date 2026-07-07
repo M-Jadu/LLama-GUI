@@ -12,6 +12,7 @@
     let chatStreaming = false;
     let chatAbortController = null;
     let currentConversationId = null;
+    let chatFocusMode = false;
 
     const CHAT_CONVERSATIONS_STORAGE_KEY = "llama_gui_conversations";
     const CHAT_SETTINGS_COLLAPSED_STORAGE_KEY = "llama_gui_chat_settings_collapsed";
@@ -148,6 +149,27 @@
         }
         if (collapseButton) {
             collapseButton.setAttribute("aria-expanded", String(!collapsed));
+        }
+    }
+
+    function updateChatFocusButton() {
+        const focusBtn = document.getElementById("btn-chat-focus");
+        if (!focusBtn) return;
+        focusBtn.setAttribute("aria-pressed", String(chatFocusMode));
+        focusBtn.title = chatFocusMode ? "Exit Focus Chat" : "Focus Chat";
+        const label = document.getElementById("chat-focus-label");
+        if (label) label.textContent = chatFocusMode ? "Exit Focus" : "Focus";
+    }
+
+    function setChatFocusMode(enabled) {
+        chatFocusMode = Boolean(enabled);
+        document.body.classList.toggle("chat-focus-mode", chatFocusMode);
+        updateChatFocusButton();
+    }
+
+    function onTabChanged(tabId) {
+        if (tabId !== "chat" && chatFocusMode) {
+            setChatFocusMode(false);
         }
     }
 
@@ -600,6 +622,7 @@
         const stopBtn = document.getElementById("btn-chat-stop");
         const undoBtn = document.getElementById("btn-chat-undo");
         const regenBtn = document.getElementById("btn-chat-regenerate");
+        const focusBtn = document.getElementById("btn-chat-focus");
         const sysPrompt = document.getElementById("chat-system-prompt");
         const sysCharCount = document.getElementById("chat-sys-char-count");
         const sidebar = document.getElementById("chat-sidebar");
@@ -649,6 +672,10 @@
         stopBtn.addEventListener("click", stopStream);
         undoBtn.addEventListener("click", undoMessage);
         regenBtn.addEventListener("click", regenerateResponse);
+        if (focusBtn) {
+            focusBtn.addEventListener("click", () => setChatFocusMode(!chatFocusMode));
+            updateChatFocusButton();
+        }
         if (openQuickLaunchBtn) {
             openQuickLaunchBtn.addEventListener("click", () => switchTab("quick-launch"));
         }
@@ -743,6 +770,7 @@
     window.LlamaGui.chatUi = {
         configure,
         init,
+        onTabChanged,
         refreshSidebarUI,
         updateStatusBadge,
     };
