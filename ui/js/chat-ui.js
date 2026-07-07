@@ -14,6 +14,7 @@
     let currentConversationId = null;
 
     const CHAT_CONVERSATIONS_STORAGE_KEY = "llama_gui_conversations";
+    const CHAT_SETTINGS_COLLAPSED_STORAGE_KEY = "llama_gui_chat_settings_collapsed";
     const CHAT_WEB_SEARCH_STORAGE_KEY = "llama_gui_chat_web_search_enabled";
     const CHAT_WEB_SEARCH_MAX_RESULTS_STORAGE_KEY = "llama_gui_chat_web_search_max_results";
     const CHAT_WEB_SEARCH_DEFAULT_MAX_RESULTS = 5;
@@ -135,6 +136,19 @@
         runningBadge.style.display = isRunning ? "" : "none";
         noServerBadge.style.display = isRunning ? "none" : "";
         updateChatAvailability(isRunning);
+    }
+
+    function setChatPanelCollapsed(panel, openButton, collapseButton, collapsed) {
+        if (!panel) return;
+        panel.classList.toggle("collapsed", collapsed);
+        panel.setAttribute("aria-hidden", String(collapsed));
+        if (openButton) {
+            openButton.style.display = collapsed ? "flex" : "none";
+            openButton.setAttribute("aria-expanded", String(!collapsed));
+        }
+        if (collapseButton) {
+            collapseButton.setAttribute("aria-expanded", String(!collapsed));
+        }
     }
 
     function showChatSendButton(show) {
@@ -644,31 +658,38 @@
         });
         sysCharCount.textContent = "0 chars";
 
-        btnCollapse.addEventListener("click", () => {
-            sidebar.classList.add("collapsed");
-            btnOpen.style.display = "flex";
-        });
+        const settingsCollapsed = localStorage.getItem(CHAT_SETTINGS_COLLAPSED_STORAGE_KEY) === "true";
+        setChatPanelCollapsed(sidebar, btnOpen, btnCollapse, settingsCollapsed);
 
-        btnOpen.addEventListener("click", () => {
-            sidebar.classList.remove("collapsed");
-            btnOpen.style.display = "none";
-        });
+        if (btnCollapse && sidebar) {
+            btnCollapse.addEventListener("click", () => {
+                setChatPanelCollapsed(sidebar, btnOpen, btnCollapse, true);
+                localStorage.setItem(CHAT_SETTINGS_COLLAPSED_STORAGE_KEY, "true");
+            });
+        }
+
+        if (btnOpen && sidebar) {
+            btnOpen.addEventListener("click", () => {
+                setChatPanelCollapsed(sidebar, btnOpen, btnCollapse, false);
+                localStorage.setItem(CHAT_SETTINGS_COLLAPSED_STORAGE_KEY, "false");
+            });
+        }
 
         const historyPanel = document.getElementById("chat-history-panel");
         const btnCollapseHistory = document.getElementById("btn-collapse-history");
         const btnOpenHistory = document.getElementById("btn-open-history");
 
+        setChatPanelCollapsed(historyPanel, btnOpenHistory, btnCollapseHistory, false);
+
         if (btnCollapseHistory && historyPanel) {
             btnCollapseHistory.addEventListener("click", () => {
-                historyPanel.classList.add("collapsed");
-                if (btnOpenHistory) btnOpenHistory.style.display = "flex";
+                setChatPanelCollapsed(historyPanel, btnOpenHistory, btnCollapseHistory, true);
             });
         }
 
         if (btnOpenHistory && historyPanel) {
             btnOpenHistory.addEventListener("click", () => {
-                historyPanel.classList.remove("collapsed");
-                btnOpenHistory.style.display = "none";
+                setChatPanelCollapsed(historyPanel, btnOpenHistory, btnCollapseHistory, false);
             });
         }
 
