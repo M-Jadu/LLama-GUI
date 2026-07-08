@@ -52,6 +52,16 @@ function createElement(tagName) {
             this.children.push(child);
             return child;
         },
+        insertBefore(child, before) {
+            child.parentNode = this;
+            const index = this.children.indexOf(before);
+            if (index === -1) {
+                this.children.push(child);
+            } else {
+                this.children.splice(index, 0, child);
+            }
+            return child;
+        },
         remove() {
             if (!this.parentNode) return;
             this.parentNode.children = this.parentNode.children.filter((child) => child !== this);
@@ -220,6 +230,55 @@ const rendering = context.window.LlamaGui.chatRendering;
 
     assert.equal(copiedText, "console.log('<raw copy>');");
     assert.equal(button.textContent, "Copy");
+}
+
+{
+    const split = rendering.splitReasoningFromContent("<think>\nCheck assumptions.\n</think>\n\nFinal answer.");
+    assert.equal(split.reasoning, "Check assumptions.");
+    assert.equal(split.content, "Final answer.");
+
+    const noSplit = rendering.splitReasoningFromContent("Final answer mentions <think> literally </think>.");
+    assert.equal(noSplit.reasoning, "");
+    assert.equal(noSplit.content, "Final answer mentions <think> literally </think>.");
+}
+
+{
+    const messages = createElement("div");
+    const empty = createElement("div");
+    elements.set("chat-messages", messages);
+    elements.set("chat-empty", empty);
+
+    const bubble = rendering.renderChatMessage("assistant", "Final **answer**.", {
+        reasoning: "Check **hidden** assumptions.",
+    });
+
+    const wrap = bubble.closest(".chat-message-content");
+    assert.equal(wrap.children[0].tagName, "DETAILS");
+    assert.equal(wrap.children[0].className, "chat-reasoning");
+    assert.equal(wrap.children[1], bubble);
+    assert.match(wrap.children[0].querySelector(".chat-reasoning-body").innerHTML, /<strong>hidden<\/strong>/);
+    assert.match(bubble.innerHTML, /<strong>answer<\/strong>/);
+}
+
+{
+    const messages = createElement("div");
+    elements.set("chat-messages", messages);
+
+    const wrap = createElement("div");
+    wrap.className = "chat-message-content";
+    const bubble = createElement("div");
+    bubble.className = "chat-bubble";
+    wrap.appendChild(bubble);
+
+    rendering.appendChatReasoningStreamToken(bubble, "Plan ");
+    rendering.appendChatReasoningStreamToken(bubble, "**quietly**.");
+
+    const reasoning = wrap.querySelector(".chat-reasoning");
+    assert.ok(reasoning, "reasoning block should be inserted while streaming");
+    assert.equal(reasoning.querySelector(".chat-reasoning-body").textContent, "Plan **quietly**.");
+
+    rendering.finalizeChatReasoningMarkdown(bubble);
+    assert.match(reasoning.querySelector(".chat-reasoning-body").innerHTML, /<strong>quietly<\/strong>/);
 }
 
 {

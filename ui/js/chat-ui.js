@@ -32,6 +32,10 @@
         removeChatTypingIndicator,
         appendChatStreamToken,
         finalizeChatStreamMarkdown,
+        appendChatReasoningStreamToken,
+        finalizeChatReasoningMarkdown,
+        setChatReasoningContent,
+        splitReasoningFromContent,
     } = chatRendering;
 
     function configure(options) {
@@ -102,6 +106,15 @@
             role: msg.role,
             content: msg.content,
         }));
+    }
+
+    function getChatDeltaText(delta, keys) {
+        if (!delta) return "";
+        for (const key of keys) {
+            const value = delta[key];
+            if (typeof value === "string" && value) return value;
+        }
+        return "";
     }
 
     function isServerRunning() {
@@ -273,6 +286,7 @@
             const decoder = new TextDecoder();
             let buffer = "";
             let fullContent = "";
+            let fullReasoning = "";
             let responseSources = [];
             let streamDone = false;
             let errored = false;
@@ -313,10 +327,16 @@
                             streamDone = true;
                             break;
                         }
-                        const delta = parsed.choices?.[0]?.delta?.content;
-                        if (delta) {
-                            fullContent += delta;
-                            appendChatStreamToken(bubble, delta);
+                        const delta = parsed.choices?.[0]?.delta;
+                        const reasoningDelta = getChatDeltaText(delta, ["reasoning_content", "reasoning"]);
+                        if (reasoningDelta) {
+                            fullReasoning += reasoningDelta;
+                            appendChatReasoningStreamToken(bubble, reasoningDelta);
+                        }
+                        const contentDelta = getChatDeltaText(delta, ["content"]);
+                        if (contentDelta) {
+                            fullContent += contentDelta;
+                            appendChatStreamToken(bubble, contentDelta);
                         }
                     } catch (e) {
                         console.debug("Skipping malformed chat stream chunk", e);
@@ -328,11 +348,29 @@
                 await reader.cancel().catch((e) => console.debug("Failed to cancel completed chat stream reader", e));
             }
             setChatWebStatus(bubble, "");
+            if (!fullReasoning) {
+                const split = splitReasoningFromContent(fullContent);
+                if (split.reasoning) {
+                    fullContent = split.content;
+                    fullReasoning = split.reasoning;
+                    bubble.dataset.rawText = fullContent;
+                    if (!fullContent) {
+                        bubble.textContent = "";
+                        delete bubble.dataset.streamingTextInitialized;
+                    }
+                    setChatReasoningContent(bubble, fullReasoning);
+                }
+            }
+            if (fullReasoning) {
+                finalizeChatReasoningMarkdown(bubble);
+            }
             if (fullContent) {
                 finalizeChatStreamMarkdown(bubble);
             }
             if (fullContent && !errored) {
-                chatMessages.push({ role: "assistant", content: fullContent, sources: responseSources });
+                const assistantMessage = { role: "assistant", content: fullContent, sources: responseSources };
+                if (fullReasoning) assistantMessage.reasoning = fullReasoning;
+                chatMessages.push(assistantMessage);
                 saveCurrentConversation();
             }
         } catch (e) {
@@ -486,7 +524,7 @@
         } else {
             if (empty) empty.style.display = "none";
             for (const msg of chatMessages) {
-                renderChatMessage(msg.role, msg.content);
+                renderChatMessage(msg.role, msg.content, { reasoning: msg.reasoning });
             }
         }
 

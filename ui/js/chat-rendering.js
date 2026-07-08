@@ -181,6 +181,24 @@
         return html;
     }
 
+    function splitReasoningFromContent(content) {
+        let remaining = String(content ?? "");
+        const reasoningParts = [];
+        const leadingThinkBlock = /^\s*<think(?:\s[^>]*)?>([\s\S]*?)<\/think>\s*/i;
+
+        while (true) {
+            const match = remaining.match(leadingThinkBlock);
+            if (!match) break;
+            reasoningParts.push(match[1].trim());
+            remaining = remaining.slice(match[0].length);
+        }
+
+        return {
+            content: reasoningParts.length ? remaining.trimStart() : remaining,
+            reasoning: reasoningParts.filter(Boolean).join("\n\n"),
+        };
+    }
+
     function copyTextToClipboard(text) {
         if (typeof navigator === "undefined") return;
         if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") return;
@@ -206,7 +224,117 @@
         });
     }
 
-    function renderChatMessage(role, content) {
+    function getChatMessageContentWrap(bubble) {
+        return bubble ? bubble.closest(".chat-message-content") : null;
+    }
+
+    function getChatReasoningBlock(bubble) {
+        const wrap = getChatMessageContentWrap(bubble);
+        return wrap ? wrap.querySelector(".chat-reasoning") : null;
+    }
+
+    function createChatReasoningBlock() {
+        const details = document.createElement("details");
+        details.className = "chat-reasoning";
+
+        const summary = document.createElement("summary");
+        summary.className = "chat-reasoning-summary";
+
+        const title = document.createElement("span");
+        title.className = "chat-reasoning-title";
+        title.textContent = "Thinking";
+
+        const meta = document.createElement("span");
+        meta.className = "chat-reasoning-meta";
+
+        summary.appendChild(title);
+        summary.appendChild(meta);
+
+        const body = document.createElement("div");
+        body.className = "chat-reasoning-body";
+
+        details.appendChild(summary);
+        details.appendChild(body);
+        return details;
+    }
+
+    function updateChatReasoningMeta(details, text) {
+        const meta = details ? details.querySelector(".chat-reasoning-meta") : null;
+        if (!meta) return;
+        const trimmed = String(text || "").trim();
+        meta.textContent = trimmed ? `${trimmed.length.toLocaleString()} chars` : "";
+    }
+
+    function ensureChatReasoningBlock(bubble) {
+        let details = getChatReasoningBlock(bubble);
+        if (details) return details;
+
+        const wrap = getChatMessageContentWrap(bubble);
+        if (!wrap) return null;
+        details = createChatReasoningBlock();
+        if (typeof wrap.insertBefore === "function") {
+            wrap.insertBefore(details, bubble);
+        } else {
+            wrap.appendChild(details);
+        }
+        return details;
+    }
+
+    function setChatReasoningContent(bubble, reasoning, options = {}) {
+        const text = String(reasoning ?? "");
+        if (!bubble || !text.trim()) return null;
+
+        const details = ensureChatReasoningBlock(bubble);
+        if (!details) return null;
+        const body = details.querySelector(".chat-reasoning-body");
+        if (!body) return details;
+
+        details.dataset.rawText = text;
+        updateChatReasoningMeta(details, text);
+        if (options.streaming) {
+            body.textContent = text;
+            details.dataset.streamingTextInitialized = "1";
+        } else {
+            body.innerHTML = renderMarkdown(text);
+            installChatCodeCopyButtons(body, text);
+            delete details.dataset.streamingTextInitialized;
+        }
+        return details;
+    }
+
+    function appendChatReasoningStreamToken(bubble, token) {
+        const details = ensureChatReasoningBlock(bubble);
+        if (!details) return;
+        const body = details.querySelector(".chat-reasoning-body");
+        if (!body) return;
+
+        const rawText = (details.dataset.rawText || "") + token;
+        details.dataset.rawText = rawText;
+        updateChatReasoningMeta(details, rawText);
+        if (!details.dataset.streamingTextInitialized) {
+            body.textContent = rawText;
+            details.dataset.streamingTextInitialized = "1";
+        } else {
+            body.textContent += token;
+        }
+        const container = document.getElementById("chat-messages");
+        if (container) container.scrollTop = container.scrollHeight;
+    }
+
+    function finalizeChatReasoningMarkdown(bubble) {
+        const details = getChatReasoningBlock(bubble);
+        if (!details) return;
+        const rawText = details.dataset.rawText || "";
+        if (!rawText.trim()) {
+            details.remove();
+            return;
+        }
+        setChatReasoningContent(bubble, rawText);
+        const container = document.getElementById("chat-messages");
+        if (container) container.scrollTop = container.scrollHeight;
+    }
+
+    function renderChatMessage(role, content, options = {}) {
         const container = document.getElementById("chat-messages");
         const empty = document.getElementById("chat-empty");
         if (empty) empty.style.display = "none";
@@ -234,12 +362,11 @@
         contentWrap.appendChild(bubble);
         msg.appendChild(contentWrap);
         container.appendChild(msg);
+        if (role === "assistant" && options.reasoning) {
+            setChatReasoningContent(bubble, options.reasoning);
+        }
         container.scrollTop = container.scrollHeight;
         return bubble;
-    }
-
-    function getChatMessageContentWrap(bubble) {
-        return bubble ? bubble.closest(".chat-message-content") : null;
     }
 
     function setChatWebStatus(bubble, text) {
@@ -354,6 +481,10 @@
         removeChatTypingIndicator,
         appendChatStreamToken,
         finalizeChatStreamMarkdown,
+        appendChatReasoningStreamToken,
+        finalizeChatReasoningMarkdown,
+        setChatReasoningContent,
+        splitReasoningFromContent,
         installChatCodeCopyButtons,
     };
 })();
