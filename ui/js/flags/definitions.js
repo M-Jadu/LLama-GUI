@@ -1058,7 +1058,7 @@ const FLAGS = [
 		category: "conversation",
 		type: "enum",
 		label: "Reasoning Output Format",
-		desc: "Controls how thought tags are parsed. Plain DeepSeek extraction is intentionally omitted until the Chat tab renders separated reasoning content.",
+		desc: "Controls how thought tags are parsed. DeepSeek mode returns thinking in separated reasoning content for the Chat tab's collapsed reasoning panel.",
 		tool: "both",
 		default: "auto",
 		options: REASONING_FORMAT_OPTIONS,

@@ -2,12 +2,41 @@
     window.LlamaGui = window.LlamaGui || {};
 
     function escapeHtml(text) {
-        return text
+        return String(text ?? "")
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#39;");
+    }
+
+    function getFencedCodeBlocks(text) {
+        const codeBlocks = [];
+        const withPlaceholders = String(text ?? "").replace(/```([^\n`]*)\n([\s\S]*?)```/g, (_, rawLang, rawCode) => {
+            const index = codeBlocks.length;
+            const lang = String(rawLang || "").trim().split(/\s+/)[0].replace(/[^\w#+.-]/g, "").slice(0, 32);
+            codeBlocks.push({
+                lang,
+                code: String(rawCode || "").replace(/\n$/, ""),
+            });
+            return `\u0000CODE_BLOCK_${index}\u0000`;
+        });
+        return { text: withPlaceholders, codeBlocks };
+    }
+
+    function renderCodeBlock(block, index) {
+        const lang = block.lang || "";
+        const label = lang || "Code";
+        const langAttr = lang ? ` data-lang="${escapeHtml(lang)}"` : "";
+        return [
+            `<div class="chat-code-block" data-code-index="${index}">`,
+            '<div class="chat-code-header">',
+            `<span class="chat-code-lang">${escapeHtml(label)}</span>`,
+            `<button class="chat-code-copy" type="button" data-code-index="${index}" title="Copy code">Copy</button>`,
+            "</div>",
+            `<pre${langAttr}><code>${escapeHtml(block.code)}</code></pre>`,
+            "</div>",
+        ].join("");
     }
 
     function processBlocks(text) {
@@ -136,27 +165,176 @@
     }
 
     function renderMarkdown(text) {
-        let html = escapeHtml(text);
-        const codeBlocks = [];
-
-        // Fenced code blocks ``` ... ```
-        html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-            const langAttr = lang ? ` data-lang="${lang}"` : "";
-            const index = codeBlocks.length;
-            codeBlocks.push(`<pre${langAttr}><code>${code.replace(/\n$/, "")}</code></pre>`);
-            return `\u0000CODE_BLOCK_${index}\u0000`;
-        });
+        const extracted = getFencedCodeBlocks(text);
+        let html = escapeHtml(extracted.text);
 
         // Block-level and inline processing
         html = processBlocks(html);
 
         // Restore code blocks
-        html = html.replace(/\u0000CODE_BLOCK_(\d+)\u0000/g, (_, index) => codeBlocks[Number(index)] || "");
+        html = html.replace(/\u0000CODE_BLOCK_(\d+)\u0000/g, (_, index) => {
+            const blockIndex = Number(index);
+            const block = extracted.codeBlocks[blockIndex];
+            return block ? renderCodeBlock(block, blockIndex) : "";
+        });
 
         return html;
     }
 
-    function renderChatMessage(role, content) {
+    function splitReasoningFromContent(content) {
+        let remaining = String(content ?? "");
+        const reasoningParts = [];
+        const leadingThinkBlock = /^\s*<think(?:\s[^>]*)?>([\s\S]*?)<\/think>\s*/i;
+
+        while (true) {
+            const match = remaining.match(leadingThinkBlock);
+            if (!match) break;
+            reasoningParts.push(match[1].trim());
+            remaining = remaining.slice(match[0].length);
+        }
+
+        return {
+            content: reasoningParts.length ? remaining.trimStart() : remaining,
+            reasoning: reasoningParts.filter(Boolean).join("\n\n"),
+        };
+    }
+
+    function copyTextToClipboard(text) {
+        if (typeof navigator === "undefined") return;
+        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") return;
+        navigator.clipboard.writeText(text).catch((e) => console.debug("Clipboard write failed", e));
+    }
+
+    function installChatCodeCopyButtons(bubble, rawText) {
+        if (!bubble || typeof bubble.querySelectorAll !== "function") return;
+        const { codeBlocks } = getFencedCodeBlocks(rawText);
+        bubble.querySelectorAll(".chat-code-copy").forEach((button) => {
+            const index = Number(button.dataset.codeIndex);
+            const block = Number.isInteger(index) ? codeBlocks[index] : null;
+            if (!block) return;
+            button.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                copyTextToClipboard(block.code);
+                button.textContent = "Copied";
+                window.setTimeout(() => {
+                    button.textContent = "Copy";
+                }, 1200);
+            });
+        });
+    }
+
+    function getChatMessageContentWrap(bubble) {
+        return bubble ? bubble.closest(".chat-message-content") : null;
+    }
+
+    function getChatReasoningBlock(bubble) {
+        const wrap = getChatMessageContentWrap(bubble);
+        return wrap ? wrap.querySelector(".chat-reasoning") : null;
+    }
+
+    function createChatReasoningBlock() {
+        const details = document.createElement("details");
+        details.className = "chat-reasoning";
+
+        const summary = document.createElement("summary");
+        summary.className = "chat-reasoning-summary";
+
+        const title = document.createElement("span");
+        title.className = "chat-reasoning-title";
+        title.textContent = "Thinking";
+
+        const meta = document.createElement("span");
+        meta.className = "chat-reasoning-meta";
+
+        summary.appendChild(title);
+        summary.appendChild(meta);
+
+        const body = document.createElement("div");
+        body.className = "chat-reasoning-body";
+
+        details.appendChild(summary);
+        details.appendChild(body);
+        return details;
+    }
+
+    function updateChatReasoningMeta(details, text) {
+        const meta = details ? details.querySelector(".chat-reasoning-meta") : null;
+        if (!meta) return;
+        const trimmed = String(text || "").trim();
+        meta.textContent = trimmed ? `${trimmed.length.toLocaleString()} chars` : "";
+    }
+
+    function ensureChatReasoningBlock(bubble) {
+        let details = getChatReasoningBlock(bubble);
+        if (details) return details;
+
+        const wrap = getChatMessageContentWrap(bubble);
+        if (!wrap) return null;
+        details = createChatReasoningBlock();
+        if (typeof wrap.insertBefore === "function") {
+            wrap.insertBefore(details, bubble);
+        } else {
+            wrap.appendChild(details);
+        }
+        return details;
+    }
+
+    function setChatReasoningContent(bubble, reasoning, options = {}) {
+        const text = String(reasoning ?? "");
+        if (!bubble || !text.trim()) return null;
+
+        const details = ensureChatReasoningBlock(bubble);
+        if (!details) return null;
+        const body = details.querySelector(".chat-reasoning-body");
+        if (!body) return details;
+
+        details.dataset.rawText = text;
+        updateChatReasoningMeta(details, text);
+        if (options.streaming) {
+            body.textContent = text;
+            details.dataset.streamingTextInitialized = "1";
+        } else {
+            body.innerHTML = renderMarkdown(text);
+            installChatCodeCopyButtons(body, text);
+            delete details.dataset.streamingTextInitialized;
+        }
+        return details;
+    }
+
+    function appendChatReasoningStreamToken(bubble, token) {
+        const details = ensureChatReasoningBlock(bubble);
+        if (!details) return;
+        const body = details.querySelector(".chat-reasoning-body");
+        if (!body) return;
+
+        const rawText = (details.dataset.rawText || "") + token;
+        details.dataset.rawText = rawText;
+        updateChatReasoningMeta(details, rawText);
+        if (!details.dataset.streamingTextInitialized) {
+            body.textContent = rawText;
+            details.dataset.streamingTextInitialized = "1";
+        } else {
+            body.textContent += token;
+        }
+        const container = document.getElementById("chat-messages");
+        if (container) container.scrollTop = container.scrollHeight;
+    }
+
+    function finalizeChatReasoningMarkdown(bubble) {
+        const details = getChatReasoningBlock(bubble);
+        if (!details) return;
+        const rawText = details.dataset.rawText || "";
+        if (!rawText.trim()) {
+            details.remove();
+            return;
+        }
+        setChatReasoningContent(bubble, rawText);
+        const container = document.getElementById("chat-messages");
+        if (container) container.scrollTop = container.scrollHeight;
+    }
+
+    function renderChatMessage(role, content, options = {}) {
         const container = document.getElementById("chat-messages");
         const empty = document.getElementById("chat-empty");
         if (empty) empty.style.display = "none";
@@ -173,6 +351,7 @@
         if (role === "assistant") {
             bubble.innerHTML = renderMarkdown(content);
             bubble.dataset.rawText = content;
+            installChatCodeCopyButtons(bubble, content);
         } else {
             bubble.textContent = content;
         }
@@ -183,12 +362,11 @@
         contentWrap.appendChild(bubble);
         msg.appendChild(contentWrap);
         container.appendChild(msg);
+        if (role === "assistant" && options.reasoning) {
+            setChatReasoningContent(bubble, options.reasoning);
+        }
         container.scrollTop = container.scrollHeight;
         return bubble;
-    }
-
-    function getChatMessageContentWrap(bubble) {
-        return bubble ? bubble.closest(".chat-message-content") : null;
     }
 
     function setChatWebStatus(bubble, text) {
@@ -288,6 +466,7 @@
         if (!bubble) return;
         const rawText = bubble.dataset.rawText || "";
         bubble.innerHTML = renderMarkdown(rawText);
+        installChatCodeCopyButtons(bubble, rawText);
         delete bubble.dataset.streamingTextInitialized;
         const container = document.getElementById("chat-messages");
         container.scrollTop = container.scrollHeight;
@@ -302,5 +481,10 @@
         removeChatTypingIndicator,
         appendChatStreamToken,
         finalizeChatStreamMarkdown,
+        appendChatReasoningStreamToken,
+        finalizeChatReasoningMarkdown,
+        setChatReasoningContent,
+        splitReasoningFromContent,
+        installChatCodeCopyButtons,
     };
 })();

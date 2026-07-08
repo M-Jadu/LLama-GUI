@@ -2,15 +2,14 @@
 
 ## Reasoning Content Follow-Up
 
-Plain `--reasoning-format deepseek` is intentionally not exposed yet. It returns
-thinking text through separated `reasoning_content` fields, and the Chat tab
-currently renders streamed `delta.content` only.
+Completed in Chat improvements Phase 5. `--reasoning-format deepseek` is now
+available because the Chat tab renders separated reasoning output.
 
 Acceptance criteria:
-- Update the Chat tab stream handling to render `delta.reasoning_content`.
-- Add `deepseek` to the `Reasoning Output Format` dropdown after the stream UI
+- [x] Update the Chat tab stream handling to render `delta.reasoning_content`.
+- [x] Add `deepseek` to the `Reasoning Output Format` dropdown after the stream UI
   can display separated reasoning content clearly.
-- Run `node --check ui/js/chat-ui.js` and `npm run test:frontend`.
+- [x] Run `node --check ui/js/chat-ui.js` and `npm run test:frontend`.
 
 ## DeepSeek V4 Follow-Ups
 
@@ -34,4 +33,3 @@ Follow up on extending preset shortcut export beyond the current Windows `.cmd` 
 - Optional macOS polish: investigate a generated `.app` bundle with `Info.plist` and an `.icns` icon. This is more work than `.command` but would feel native.
 - Keep all formats loading the preset only. They should start Llama GUI's Python server and open the web UI, but must not launch `llama.cpp`.
 - Reuse the existing `/?preset=<name>` deep-link behavior so shared flag state, command preview, Configure, and Quick Launch remain synchronized.
-

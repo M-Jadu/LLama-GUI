@@ -12,8 +12,10 @@
     let chatStreaming = false;
     let chatAbortController = null;
     let currentConversationId = null;
+    let chatFocusMode = false;
 
     const CHAT_CONVERSATIONS_STORAGE_KEY = "llama_gui_conversations";
+    const CHAT_SETTINGS_COLLAPSED_STORAGE_KEY = "llama_gui_chat_settings_collapsed";
     const CHAT_WEB_SEARCH_STORAGE_KEY = "llama_gui_chat_web_search_enabled";
     const CHAT_WEB_SEARCH_MAX_RESULTS_STORAGE_KEY = "llama_gui_chat_web_search_max_results";
     const CHAT_WEB_SEARCH_DEFAULT_MAX_RESULTS = 5;
@@ -30,6 +32,10 @@
         removeChatTypingIndicator,
         appendChatStreamToken,
         finalizeChatStreamMarkdown,
+        appendChatReasoningStreamToken,
+        finalizeChatReasoningMarkdown,
+        setChatReasoningContent,
+        splitReasoningFromContent,
     } = chatRendering;
 
     function configure(options) {
@@ -102,6 +108,28 @@
         }));
     }
 
+    function getChatDeltaText(delta, keys) {
+        if (!delta) return "";
+        for (const key of keys) {
+            const value = delta[key];
+            if (typeof value === "string" && value) return value;
+        }
+        return "";
+    }
+
+    function shouldExtractEmbeddedReasoning() {
+        const values = flagCore ? flagCore.getFlagValues() : {};
+        const format = values.reasoning_format || "auto";
+        return format === "auto" || format === "deepseek";
+    }
+
+    function getMessagePreviewText(message) {
+        if (!message) return "";
+        const content = String(message.content || "").trim();
+        const text = content || String(message.reasoning || "").trim();
+        return text.replace(/\n/g, " ").slice(0, 60);
+    }
+
     function isServerRunning() {
         const latestStatus = getLatestStatus ? getLatestStatus() : null;
         return !!(latestStatus && latestStatus.running && latestStatus.active_process_tool === "llama-server");
@@ -135,6 +163,40 @@
         runningBadge.style.display = isRunning ? "" : "none";
         noServerBadge.style.display = isRunning ? "none" : "";
         updateChatAvailability(isRunning);
+    }
+
+    function setChatPanelCollapsed(panel, openButton, collapseButton, collapsed) {
+        if (!panel) return;
+        panel.classList.toggle("collapsed", collapsed);
+        panel.setAttribute("aria-hidden", String(collapsed));
+        if (openButton) {
+            openButton.style.display = collapsed ? "flex" : "none";
+            openButton.setAttribute("aria-expanded", String(!collapsed));
+        }
+        if (collapseButton) {
+            collapseButton.setAttribute("aria-expanded", String(!collapsed));
+        }
+    }
+
+    function updateChatFocusButton() {
+        const focusBtn = document.getElementById("btn-chat-focus");
+        if (!focusBtn) return;
+        focusBtn.setAttribute("aria-pressed", String(chatFocusMode));
+        focusBtn.title = chatFocusMode ? "Exit Focus Chat" : "Focus Chat";
+        const label = document.getElementById("chat-focus-label");
+        if (label) label.textContent = chatFocusMode ? "Exit Focus" : "Focus";
+    }
+
+    function setChatFocusMode(enabled) {
+        chatFocusMode = Boolean(enabled);
+        document.body.classList.toggle("chat-focus-mode", chatFocusMode);
+        updateChatFocusButton();
+    }
+
+    function onTabChanged(tabId) {
+        if (tabId !== "chat" && chatFocusMode) {
+            setChatFocusMode(false);
+        }
     }
 
     function showChatSendButton(show) {
@@ -237,6 +299,7 @@
             const decoder = new TextDecoder();
             let buffer = "";
             let fullContent = "";
+            let fullReasoning = "";
             let responseSources = [];
             let streamDone = false;
             let errored = false;
@@ -277,10 +340,16 @@
                             streamDone = true;
                             break;
                         }
-                        const delta = parsed.choices?.[0]?.delta?.content;
-                        if (delta) {
-                            fullContent += delta;
-                            appendChatStreamToken(bubble, delta);
+                        const delta = parsed.choices?.[0]?.delta;
+                        const reasoningDelta = getChatDeltaText(delta, ["reasoning_content", "reasoning"]);
+                        if (reasoningDelta) {
+                            fullReasoning += reasoningDelta;
+                            appendChatReasoningStreamToken(bubble, reasoningDelta);
+                        }
+                        const contentDelta = getChatDeltaText(delta, ["content"]);
+                        if (contentDelta) {
+                            fullContent += contentDelta;
+                            appendChatStreamToken(bubble, contentDelta);
                         }
                     } catch (e) {
                         console.debug("Skipping malformed chat stream chunk", e);
@@ -292,11 +361,32 @@
                 await reader.cancel().catch((e) => console.debug("Failed to cancel completed chat stream reader", e));
             }
             setChatWebStatus(bubble, "");
+            if (!fullReasoning && shouldExtractEmbeddedReasoning()) {
+                const split = splitReasoningFromContent(fullContent);
+                if (split.reasoning) {
+                    fullContent = split.content;
+                    fullReasoning = split.reasoning;
+                    bubble.dataset.rawText = fullContent;
+                    if (!fullContent) {
+                        bubble.textContent = "";
+                        delete bubble.dataset.streamingTextInitialized;
+                    }
+                    setChatReasoningContent(bubble, fullReasoning);
+                }
+            }
+            if (fullReasoning) {
+                finalizeChatReasoningMarkdown(bubble);
+            }
             if (fullContent) {
                 finalizeChatStreamMarkdown(bubble);
+                bubble.classList.remove("hidden");
+            } else if (fullReasoning) {
+                bubble.classList.add("hidden");
             }
-            if (fullContent && !errored) {
-                chatMessages.push({ role: "assistant", content: fullContent, sources: responseSources });
+            if ((fullContent || fullReasoning) && !errored) {
+                const assistantMessage = { role: "assistant", content: fullContent, sources: responseSources };
+                if (fullReasoning) assistantMessage.reasoning = fullReasoning;
+                chatMessages.push(assistantMessage);
                 saveCurrentConversation();
             }
         } catch (e) {
@@ -450,7 +540,7 @@
         } else {
             if (empty) empty.style.display = "none";
             for (const msg of chatMessages) {
-                renderChatMessage(msg.role, msg.content);
+                renderChatMessage(msg.role, msg.content, { reasoning: msg.reasoning });
             }
         }
 
@@ -533,7 +623,7 @@
             const preview = document.createElement("div");
             preview.className = "chat-history-item-preview";
             const lastMsg = convo.messages[convo.messages.length - 1];
-            preview.textContent = lastMsg ? lastMsg.content.trim().replace(/\n/g, " ").slice(0, 60) : "";
+            preview.textContent = getMessagePreviewText(lastMsg);
 
             const time = document.createElement("div");
             time.className = "chat-history-item-time";
@@ -586,6 +676,7 @@
         const stopBtn = document.getElementById("btn-chat-stop");
         const undoBtn = document.getElementById("btn-chat-undo");
         const regenBtn = document.getElementById("btn-chat-regenerate");
+        const focusBtn = document.getElementById("btn-chat-focus");
         const sysPrompt = document.getElementById("chat-system-prompt");
         const sysCharCount = document.getElementById("chat-sys-char-count");
         const sidebar = document.getElementById("chat-sidebar");
@@ -621,7 +712,7 @@
 
         chatInput.addEventListener("input", () => {
             chatInput.style.height = "auto";
-            chatInput.style.height = Math.min(chatInput.scrollHeight, 160) + "px";
+            chatInput.style.height = Math.min(chatInput.scrollHeight, 220) + "px";
         });
 
         chatInput.addEventListener("keydown", (e) => {
@@ -635,6 +726,10 @@
         stopBtn.addEventListener("click", stopStream);
         undoBtn.addEventListener("click", undoMessage);
         regenBtn.addEventListener("click", regenerateResponse);
+        if (focusBtn) {
+            focusBtn.addEventListener("click", () => setChatFocusMode(!chatFocusMode));
+            updateChatFocusButton();
+        }
         if (openQuickLaunchBtn) {
             openQuickLaunchBtn.addEventListener("click", () => switchTab("quick-launch"));
         }
@@ -644,31 +739,38 @@
         });
         sysCharCount.textContent = "0 chars";
 
-        btnCollapse.addEventListener("click", () => {
-            sidebar.classList.add("collapsed");
-            btnOpen.style.display = "flex";
-        });
+        const settingsCollapsed = localStorage.getItem(CHAT_SETTINGS_COLLAPSED_STORAGE_KEY) === "true";
+        setChatPanelCollapsed(sidebar, btnOpen, btnCollapse, settingsCollapsed);
 
-        btnOpen.addEventListener("click", () => {
-            sidebar.classList.remove("collapsed");
-            btnOpen.style.display = "none";
-        });
+        if (btnCollapse && sidebar) {
+            btnCollapse.addEventListener("click", () => {
+                setChatPanelCollapsed(sidebar, btnOpen, btnCollapse, true);
+                localStorage.setItem(CHAT_SETTINGS_COLLAPSED_STORAGE_KEY, "true");
+            });
+        }
+
+        if (btnOpen && sidebar) {
+            btnOpen.addEventListener("click", () => {
+                setChatPanelCollapsed(sidebar, btnOpen, btnCollapse, false);
+                localStorage.setItem(CHAT_SETTINGS_COLLAPSED_STORAGE_KEY, "false");
+            });
+        }
 
         const historyPanel = document.getElementById("chat-history-panel");
         const btnCollapseHistory = document.getElementById("btn-collapse-history");
         const btnOpenHistory = document.getElementById("btn-open-history");
 
+        setChatPanelCollapsed(historyPanel, btnOpenHistory, btnCollapseHistory, false);
+
         if (btnCollapseHistory && historyPanel) {
             btnCollapseHistory.addEventListener("click", () => {
-                historyPanel.classList.add("collapsed");
-                if (btnOpenHistory) btnOpenHistory.style.display = "flex";
+                setChatPanelCollapsed(historyPanel, btnOpenHistory, btnCollapseHistory, true);
             });
         }
 
         if (btnOpenHistory && historyPanel) {
             btnOpenHistory.addEventListener("click", () => {
-                historyPanel.classList.remove("collapsed");
-                btnOpenHistory.style.display = "none";
+                setChatPanelCollapsed(historyPanel, btnOpenHistory, btnCollapseHistory, false);
             });
         }
 
@@ -709,19 +811,13 @@
             clearBtn.addEventListener("click", clearChat);
         }
 
-        document.querySelectorAll("#chat-empty .suggestion-chip").forEach(chip => {
-            chip.addEventListener("click", () => {
-                const prompt = chip.dataset.prompt;
-                if (prompt) sendMessage(prompt);
-            });
-        });
-
         refreshSidebarUI();
     }
 
     window.LlamaGui.chatUi = {
         configure,
         init,
+        onTabChanged,
         refreshSidebarUI,
         updateStatusBadge,
     };

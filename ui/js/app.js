@@ -428,6 +428,7 @@ function initTabs() {
 }
 
 function switchTab(tabId) {
+    if (chatUi && typeof chatUi.onTabChanged === "function") chatUi.onTabChanged(tabId);
     document.querySelectorAll(".nav-item").forEach(t => t.classList.toggle("active", t.dataset.section === tabId));
     document.querySelectorAll(".section-panel").forEach(panel => {
         panel.style.display = panel.id === "section-" + tabId ? "" : "none";

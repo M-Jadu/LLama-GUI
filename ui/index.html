@@ -609,6 +609,10 @@
                     <span class="badge badge-neutral" id="chat-no-server-badge">No Server</span>
                 </div>
                 <div class="chat-header-actions">
+                    <button class="btn btn-sm btn-ghost" id="btn-chat-focus" type="button" aria-pressed="false" title="Focus Chat">
+                        <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></span>
+                        <span id="chat-focus-label">Focus</span>
+                    </button>
                     <button class="btn btn-sm" id="btn-chat-new" type="button">
                         <span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
                         New Chat
@@ -619,11 +623,11 @@
                     </button>
                 </div>
             </div>
-            <div class="chat-layout">
+            <div class="chat-layout" id="chat-layout">
                 <div class="chat-history-panel" id="chat-history-panel">
                     <div class="sidebar-header">
                         <h3>Conversations</h3>
-                        <button class="btn-toggle-sidebar" id="btn-collapse-history" title="Collapse history" aria-label="Collapse history">
+                        <button class="btn-toggle-sidebar" id="btn-collapse-history" type="button" title="Collapse history" aria-label="Collapse history" aria-controls="chat-history-panel">
                             <span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
                         </button>
                     </div>
@@ -635,6 +639,9 @@
                         </button>
                     </div>
                 </div>
+                <button class="btn btn-sm btn-sidebar-open btn-history-open" id="btn-open-history" type="button" title="Show conversations" aria-label="Show conversations" aria-controls="chat-history-panel" aria-expanded="false">
+                    <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                </button>
                 <div class="chat-main">
                     <div class="chat-messages" id="chat-messages">
                         <div class="chat-empty" id="chat-empty">
@@ -642,12 +649,6 @@
                                 <span class="icon" style="width:40px;height:40px;color:var(--fg-faint);"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
                             </div>
                             <h3>Start a conversation</h3>
-                            <p>Send a message to begin chatting with the model. The response will stream in token by token.</p>
-                            <div class="suggestions">
-                                <span class="suggestion-chip" data-prompt="Explain async/await in Python">Explain async/await in Python</span>
-                                <span class="suggestion-chip" data-prompt="Write a bash script to find large files">Write a bash script to find large files</span>
-                                <span class="suggestion-chip" data-prompt="What is a transformer model?">What is a transformer model?</span>
-                            </div>
                         </div>
                     </div>
                     <div class="chat-input-area">
@@ -683,10 +684,13 @@
                         </div>
                     </div>
                 </div>
+                <button class="btn btn-sm btn-sidebar-open btn-settings-open" id="btn-open-sidebar" type="button" title="Show settings" aria-label="Show settings" aria-controls="chat-sidebar" aria-expanded="false">
+                    <span class="icon icon-sm"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+                </button>
                 <div class="chat-sidebar" id="chat-sidebar">
                     <div class="sidebar-header">
                         <h3>Settings</h3>
-                        <button class="btn-toggle-sidebar" id="btn-collapse-sidebar" title="Collapse sidebar" aria-label="Collapse settings">
+                        <button class="btn-toggle-sidebar" id="btn-collapse-sidebar" type="button" title="Collapse settings" aria-label="Collapse settings" aria-controls="chat-sidebar">
                             <span class="icon icon-sm"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
                         </button>
                     </div>
@@ -757,12 +761,6 @@
                         </div>
                     </div>
                 </div>
-                <button class="btn btn-sm btn-sidebar-open" id="btn-open-history" title="Show conversations" aria-label="Show conversations">
-                    <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
-                </button>
-                <button class="btn btn-sm btn-sidebar-open" id="btn-open-sidebar" title="Show settings" aria-label="Show settings">
-                    <span class="icon icon-sm"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-                </button>
             </div>
         </div>
 
