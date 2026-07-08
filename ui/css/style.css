@@ -2315,6 +2315,64 @@ body.chat-focus-mode #section-chat .chat-main {
 }
 
 .chat-bubble pre code { background: none; padding: 0; color: var(--fg); }
+
+.chat-code-block {
+    margin: var(--space-2) 0;
+    overflow: hidden;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.24);
+}
+
+.chat-code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-height: 30px;
+    padding: 5px var(--space-2) 5px var(--space-3);
+    border-bottom: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.chat-code-lang {
+    min-width: 0;
+    color: var(--fg-muted);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-code-copy {
+    height: 22px;
+    padding: 0 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-xs);
+    background: var(--bg-elevated);
+    color: var(--fg-muted);
+    font-family: var(--font);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color var(--ease-fast), border-color var(--ease-fast), background var(--ease-fast);
+}
+
+.chat-code-copy:hover {
+    color: var(--accent);
+    border-color: var(--accent-border);
+    background: var(--accent-subtle);
+}
+
+.chat-code-block pre {
+    margin: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
 .chat-bubble p { margin-bottom: var(--space-1); }
 .chat-bubble p:last-child { margin-bottom: 0; }
 .chat-bubble ul, .chat-bubble ol { padding-left: 18px; margin: var(--space-1) 0; }

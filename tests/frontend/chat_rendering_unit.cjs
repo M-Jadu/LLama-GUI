@@ -42,6 +42,11 @@ function createElement(tagName) {
         target: "",
         rel: "",
         title: "",
+        _listeners: {},
+        addEventListener(type, handler) {
+            this._listeners[type] = this._listeners[type] || [];
+            this._listeners[type].push(handler);
+        },
         appendChild(child) {
             child.parentNode = this;
             this.children.push(child);
@@ -72,6 +77,18 @@ function createElement(tagName) {
                 stack.push(...child.children);
             }
             return null;
+        },
+        querySelectorAll(selector) {
+            if (!selector.startsWith(".")) return [];
+            const className = selector.slice(1);
+            const matches = [];
+            const stack = [...this.children];
+            while (stack.length) {
+                const child = stack.shift();
+                if (child._classes && child._classes.has(className)) matches.push(child);
+                stack.push(...child.children);
+            }
+            return matches;
         },
     };
     Object.defineProperty(el, "className", {
@@ -104,16 +121,29 @@ function createElement(tagName) {
 }
 
 const elements = new Map();
+let copiedText = "";
 const context = {
     window: { LlamaGui: {} },
     document: {
         createElement,
         getElementById: (id) => elements.get(id) || null,
     },
+    navigator: {
+        clipboard: {
+            writeText: (text) => {
+                copiedText = text;
+                return Promise.resolve();
+            },
+        },
+    },
     URL,
     console,
 };
 context.window.window = context.window;
+context.window.setTimeout = (handler) => {
+    handler();
+    return 1;
+};
 vm.createContext(context);
 vm.runInContext(source, context, { filename: "ui/js/chat-rendering.js" });
 
@@ -147,8 +177,49 @@ const rendering = context.window.LlamaGui.chatRendering;
 {
     const html = rendering.renderMarkdown("```html\n<div onclick=\"bad()\">x</div>\n```");
 
+    assert.match(html, /<div class="chat-code-block" data-code-index="0">/);
+    assert.match(html, /<span class="chat-code-lang">html<\/span>/);
+    assert.match(html, /<button class="chat-code-copy" type="button" data-code-index="0" title="Copy code">Copy<\/button>/);
     assert.match(html, /<pre data-lang="html"><code>&lt;div onclick=&quot;bad\(\)&quot;&gt;x&lt;\/div&gt;<\/code><\/pre>/);
     assert.ok(!html.includes("<div onclick"), "fenced code blocks should stay escaped");
+}
+
+{
+    const html = rendering.renderMarkdown([
+        "```",
+        "echo \"hello\"",
+        "```",
+        "",
+        "```js\"><img src=x onerror=bad()>",
+        "console.log('<safe>');",
+        "```",
+    ].join("\n"));
+
+    assert.match(html, /<span class="chat-code-lang">Code<\/span>/);
+    assert.match(html, /<button class="chat-code-copy" type="button" data-code-index="1" title="Copy code">Copy<\/button>/);
+    assert.match(html, /<code>echo &quot;hello&quot;<\/code>/);
+    assert.match(html, /<span class="chat-code-lang">jsimg<\/span>/);
+    assert.match(html, /<code>console\.log\(&#39;&lt;safe&gt;&#39;\);<\/code>/);
+    assert.ok(!html.includes("<img"), "unsafe language labels should not emit raw HTML");
+}
+
+{
+    const bubble = createElement("div");
+    const button = createElement("button");
+    button.className = "chat-code-copy";
+    button.dataset.codeIndex = "0";
+    bubble.appendChild(button);
+
+    rendering.installChatCodeCopyButtons(bubble, "```js\nconsole.log('<raw copy>');\n```");
+
+    assert.equal(button._listeners.click.length, 1, "copy button should receive one click listener");
+    button._listeners.click[0]({
+        preventDefault() {},
+        stopPropagation() {},
+    });
+
+    assert.equal(copiedText, "console.log('<raw copy>');");
+    assert.equal(button.textContent, "Copy");
 }
 
 {

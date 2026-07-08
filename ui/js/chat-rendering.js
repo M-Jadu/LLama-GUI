@@ -2,12 +2,41 @@
     window.LlamaGui = window.LlamaGui || {};
 
     function escapeHtml(text) {
-        return text
+        return String(text ?? "")
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#39;");
+    }
+
+    function getFencedCodeBlocks(text) {
+        const codeBlocks = [];
+        const withPlaceholders = String(text ?? "").replace(/```([^\n`]*)\n([\s\S]*?)```/g, (_, rawLang, rawCode) => {
+            const index = codeBlocks.length;
+            const lang = String(rawLang || "").trim().split(/\s+/)[0].replace(/[^\w#+.-]/g, "").slice(0, 32);
+            codeBlocks.push({
+                lang,
+                code: String(rawCode || "").replace(/\n$/, ""),
+            });
+            return `\u0000CODE_BLOCK_${index}\u0000`;
+        });
+        return { text: withPlaceholders, codeBlocks };
+    }
+
+    function renderCodeBlock(block, index) {
+        const lang = block.lang || "";
+        const label = lang || "Code";
+        const langAttr = lang ? ` data-lang="${escapeHtml(lang)}"` : "";
+        return [
+            `<div class="chat-code-block" data-code-index="${index}">`,
+            '<div class="chat-code-header">',
+            `<span class="chat-code-lang">${escapeHtml(label)}</span>`,
+            `<button class="chat-code-copy" type="button" data-code-index="${index}" title="Copy code">Copy</button>`,
+            "</div>",
+            `<pre${langAttr}><code>${escapeHtml(block.code)}</code></pre>`,
+            "</div>",
+        ].join("");
     }
 
     function processBlocks(text) {
@@ -136,24 +165,45 @@
     }
 
     function renderMarkdown(text) {
-        let html = escapeHtml(text);
-        const codeBlocks = [];
-
-        // Fenced code blocks ``` ... ```
-        html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-            const langAttr = lang ? ` data-lang="${lang}"` : "";
-            const index = codeBlocks.length;
-            codeBlocks.push(`<pre${langAttr}><code>${code.replace(/\n$/, "")}</code></pre>`);
-            return `\u0000CODE_BLOCK_${index}\u0000`;
-        });
+        const extracted = getFencedCodeBlocks(text);
+        let html = escapeHtml(extracted.text);
 
         // Block-level and inline processing
         html = processBlocks(html);
 
         // Restore code blocks
-        html = html.replace(/\u0000CODE_BLOCK_(\d+)\u0000/g, (_, index) => codeBlocks[Number(index)] || "");
+        html = html.replace(/\u0000CODE_BLOCK_(\d+)\u0000/g, (_, index) => {
+            const blockIndex = Number(index);
+            const block = extracted.codeBlocks[blockIndex];
+            return block ? renderCodeBlock(block, blockIndex) : "";
+        });
 
         return html;
+    }
+
+    function copyTextToClipboard(text) {
+        if (typeof navigator === "undefined") return;
+        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") return;
+        navigator.clipboard.writeText(text).catch((e) => console.debug("Clipboard write failed", e));
+    }
+
+    function installChatCodeCopyButtons(bubble, rawText) {
+        if (!bubble || typeof bubble.querySelectorAll !== "function") return;
+        const { codeBlocks } = getFencedCodeBlocks(rawText);
+        bubble.querySelectorAll(".chat-code-copy").forEach((button) => {
+            const index = Number(button.dataset.codeIndex);
+            const block = Number.isInteger(index) ? codeBlocks[index] : null;
+            if (!block) return;
+            button.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                copyTextToClipboard(block.code);
+                button.textContent = "Copied";
+                window.setTimeout(() => {
+                    button.textContent = "Copy";
+                }, 1200);
+            });
+        });
     }
 
     function renderChatMessage(role, content) {
@@ -173,6 +223,7 @@
         if (role === "assistant") {
             bubble.innerHTML = renderMarkdown(content);
             bubble.dataset.rawText = content;
+            installChatCodeCopyButtons(bubble, content);
         } else {
             bubble.textContent = content;
         }
@@ -288,6 +339,7 @@
         if (!bubble) return;
         const rawText = bubble.dataset.rawText || "";
         bubble.innerHTML = renderMarkdown(rawText);
+        installChatCodeCopyButtons(bubble, rawText);
         delete bubble.dataset.streamingTextInitialized;
         const container = document.getElementById("chat-messages");
         container.scrollTop = container.scrollHeight;
@@ -302,5 +354,6 @@
         removeChatTypingIndicator,
         appendChatStreamToken,
         finalizeChatStreamMarkdown,
+        installChatCodeCopyButtons,
     };
 })();
