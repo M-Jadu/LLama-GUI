@@ -2241,8 +2241,9 @@ body.chat-focus-mode #section-chat .chat-main {
 .chat-message {
     display: flex;
     gap: var(--space-3);
+    width: min(100%, 1040px);
     min-width: 0;
-    max-width: min(860px, 92%);
+    max-width: 100%;
     animation: chatFadeIn 0.2s ease;
 }
 
@@ -2251,14 +2252,23 @@ body.chat-focus-mode #section-chat .chat-main {
     to { opacity: 1; transform: translateY(0); }
 }
 
-.chat-message.user { align-self: flex-end; flex-direction: row-reverse; }
-.chat-message.assistant { align-self: flex-start; }
+.chat-message.user {
+    align-self: center;
+    flex-direction: row-reverse;
+    justify-content: flex-start;
+}
+
+.chat-message.assistant {
+    align-self: center;
+    justify-content: flex-start;
+}
 
 .chat-message-content {
     display: flex;
     flex-direction: column;
     gap: 6px;
     min-width: 0;
+    max-width: min(860px, calc(100% - 40px));
 }
 
 .chat-avatar {
