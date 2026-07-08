@@ -22,6 +22,7 @@
     const CHAT_WEB_SEARCH_MIN_RESULTS = 1;
     const CHAT_WEB_SEARCH_MAX_RESULTS = 10;
     const CHAT_MAX_STORED_CONVERSATIONS = 50;
+    const CHAT_CONSTRAINED_LAYOUT_QUERY = "(max-width: 1320px)";
 
     const chatRendering = window.LlamaGui.chatRendering;
     const {
@@ -176,6 +177,15 @@
         if (collapseButton) {
             collapseButton.setAttribute("aria-expanded", String(!collapsed));
         }
+    }
+
+    function shouldUseConstrainedChatLayout() {
+        return Boolean(window.matchMedia && window.matchMedia(CHAT_CONSTRAINED_LAYOUT_QUERY).matches);
+    }
+
+    function collapseSettingsForConstrainedLayout(sidebar, openButton, collapseButton) {
+        if (!shouldUseConstrainedChatLayout() || !sidebar || sidebar.classList.contains("collapsed")) return;
+        setChatPanelCollapsed(sidebar, openButton, collapseButton, true);
     }
 
     function updateChatFocusButton() {
@@ -741,6 +751,19 @@
 
         const settingsCollapsed = localStorage.getItem(CHAT_SETTINGS_COLLAPSED_STORAGE_KEY) === "true";
         setChatPanelCollapsed(sidebar, btnOpen, btnCollapse, settingsCollapsed);
+        collapseSettingsForConstrainedLayout(sidebar, btnOpen, btnCollapse);
+
+        if (window.matchMedia && sidebar) {
+            const constrainedLayoutMedia = window.matchMedia(CHAT_CONSTRAINED_LAYOUT_QUERY);
+            const onConstrainedLayoutChange = () => {
+                collapseSettingsForConstrainedLayout(sidebar, btnOpen, btnCollapse);
+            };
+            if (constrainedLayoutMedia.addEventListener) {
+                constrainedLayoutMedia.addEventListener("change", onConstrainedLayoutChange);
+            } else if (constrainedLayoutMedia.addListener) {
+                constrainedLayoutMedia.addListener(onConstrainedLayoutChange);
+            }
+        }
 
         if (btnCollapse && sidebar) {
             btnCollapse.addEventListener("click", () => {
