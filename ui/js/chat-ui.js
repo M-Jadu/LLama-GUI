@@ -795,13 +795,6 @@
             clearBtn.addEventListener("click", clearChat);
         }
 
-        document.querySelectorAll("#chat-empty .suggestion-chip").forEach(chip => {
-            chip.addEventListener("click", () => {
-                const prompt = chip.dataset.prompt;
-                if (prompt) sendMessage(prompt);
-            });
-        });
-
         refreshSidebarUI();
     }
 

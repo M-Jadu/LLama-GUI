@@ -2532,32 +2532,6 @@ body.chat-focus-mode #section-chat .chat-main {
 
 .chat-empty-icon { font-size: 40px; opacity: 0.4; }
 .chat-empty h3 { font-size: 16px; font-weight: 600; color: var(--fg); }
-.chat-empty p { font-size: 13px; max-width: 360px; line-height: 1.5; }
-
-.chat-empty .suggestions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: var(--space-2);
-    justify-content: center;
-}
-
-.suggestion-chip {
-    padding: 6px 14px;
-    border: 1px solid var(--border-strong);
-    border-radius: 20px;
-    background: var(--bg-elevated);
-    color: var(--fg-muted);
-    font-size: 12px;
-    cursor: pointer;
-    transition: all var(--ease-fast);
-}
-
-.suggestion-chip:hover {
-    border-color: var(--accent-border);
-    color: var(--accent);
-    background: var(--accent-subtle);
-}
 
 .chat-input-area {
     padding: var(--space-3) var(--space-4);
