@@ -12,7 +12,7 @@ Llama GUI provides a browser UI to:
 - use a beginner-friendly **Quick Launch** tab for fast startup
 - configure and launch `llama-server` or `llama-cli`
 - benchmark local models with `llama-bench` throughput tests and `llama-perplexity`
-- chat with the model directly from a built-in chat interface
+- chat with the model directly from a built-in chat workspace with history, Focus mode, Markdown/code rendering, and collapsed reasoning output
 - optionally search the web from Chat with zero API-key setup, using free DuckDuckGo-backed search
 - monitor process output in real time
 - view live server stats (prompt tokens, generation speed, KV cache usage)
@@ -358,15 +358,17 @@ Default-friendly behavior includes:
 ### Chat
 
 - Built-in chat interface that talks directly to the running `llama-server` via `/v1/chat/completions`
-- Streaming responses - tokens appear incrementally as they're generated
+- Streaming responses - tokens appear incrementally as they're generated, then finalize into formatted Markdown
 - Optional **Web Search** toggle for search-before-answer responses with no user API key or search configuration
 - Web Search uses the local Python server to search, fetch public web pages, inject source excerpts into the prompt, and stream the final answer back through the Chat UI
 - Source chips appear under web-assisted answers so you can open the pages used for context
-- System prompt field in the collapsible right sidebar
+- Focus mode expands Chat into a wider workspace when you want fewer surrounding controls
+- Collapsible conversation history and settings panels keep the message area from feeling cramped
+- System prompt field in the collapsible right settings panel
 - Sampler controls (Temperature, Top-P, Top-K, Min-P, Repeat Penalty, Max Tokens) synced with Quick Launch and Configure
 - Undo last message, regenerate last response, and clear chat actions
-- Markdown rendering in assistant responses (bold, italic, code blocks, strikethrough)
-- Suggestion chips for quick prompts when chat is empty
+- Markdown rendering in assistant responses, including fenced code blocks with copy buttons
+- Reasoning/thinking output is shown in a collapsed panel when the running server streams separate reasoning content
 - Server status badge shows whether `llama-server` is running
 
 ### Presets
