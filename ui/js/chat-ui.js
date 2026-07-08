@@ -117,6 +117,19 @@
         return "";
     }
 
+    function shouldExtractEmbeddedReasoning() {
+        const values = flagCore ? flagCore.getFlagValues() : {};
+        const format = values.reasoning_format || "auto";
+        return format === "auto" || format === "deepseek";
+    }
+
+    function getMessagePreviewText(message) {
+        if (!message) return "";
+        const content = String(message.content || "").trim();
+        const text = content || String(message.reasoning || "").trim();
+        return text.replace(/\n/g, " ").slice(0, 60);
+    }
+
     function isServerRunning() {
         const latestStatus = getLatestStatus ? getLatestStatus() : null;
         return !!(latestStatus && latestStatus.running && latestStatus.active_process_tool === "llama-server");
@@ -348,7 +361,7 @@
                 await reader.cancel().catch((e) => console.debug("Failed to cancel completed chat stream reader", e));
             }
             setChatWebStatus(bubble, "");
-            if (!fullReasoning) {
+            if (!fullReasoning && shouldExtractEmbeddedReasoning()) {
                 const split = splitReasoningFromContent(fullContent);
                 if (split.reasoning) {
                     fullContent = split.content;
@@ -366,8 +379,11 @@
             }
             if (fullContent) {
                 finalizeChatStreamMarkdown(bubble);
+                bubble.classList.remove("hidden");
+            } else if (fullReasoning) {
+                bubble.classList.add("hidden");
             }
-            if (fullContent && !errored) {
+            if ((fullContent || fullReasoning) && !errored) {
                 const assistantMessage = { role: "assistant", content: fullContent, sources: responseSources };
                 if (fullReasoning) assistantMessage.reasoning = fullReasoning;
                 chatMessages.push(assistantMessage);
@@ -607,7 +623,7 @@
             const preview = document.createElement("div");
             preview.className = "chat-history-item-preview";
             const lastMsg = convo.messages[convo.messages.length - 1];
-            preview.textContent = lastMsg ? lastMsg.content.trim().replace(/\n/g, " ").slice(0, 60) : "";
+            preview.textContent = getMessagePreviewText(lastMsg);
 
             const time = document.createElement("div");
             time.className = "chat-history-item-time";
@@ -696,7 +712,7 @@
 
         chatInput.addEventListener("input", () => {
             chatInput.style.height = "auto";
-            chatInput.style.height = Math.min(chatInput.scrollHeight, 160) + "px";
+            chatInput.style.height = Math.min(chatInput.scrollHeight, 220) + "px";
         });
 
         chatInput.addEventListener("keydown", (e) => {

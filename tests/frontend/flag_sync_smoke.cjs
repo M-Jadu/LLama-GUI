@@ -88,6 +88,7 @@ async function main() {
         let statusRunning = false;
         let activeProcessTool = "";
         let installedBackend = "cpu";
+        let chatResponseMode = "ok";
 
         page.on("pageerror", (error) => {
             pageErrors.push(error.message || String(error));
@@ -97,15 +98,31 @@ async function main() {
             const pathName = url.pathname;
             if (pathName === "/api/chat/completions") {
                 chatCompletionBodies.push(JSON.parse(route.request().postData() || "{}"));
-                await route.fulfill({
-                    status: 200,
-                    contentType: "text/event-stream",
-                    body: [
-                        'data: {"choices":[{"delta":{"content":"ok"}}]}',
+                let chatStreamBody = [
+                    'data: {"choices":[{"delta":{"content":"ok"}}]}',
+                    "",
+                    "data: [DONE]",
+                    "",
+                ].join("\n");
+                if (chatResponseMode === "reasoning-only") {
+                    chatStreamBody = [
+                        'data: {"choices":[{"delta":{"reasoning_content":"hidden thought"}}]}',
                         "",
                         "data: [DONE]",
                         "",
-                    ].join("\n"),
+                    ].join("\n");
+                } else if (chatResponseMode === "think-content") {
+                    chatStreamBody = [
+                        'data: {"choices":[{"delta":{"content":"<think>raw thought</think>\\nFinal visible"}}]}',
+                        "",
+                        "data: [DONE]",
+                        "",
+                    ].join("\n");
+                }
+                await route.fulfill({
+                    status: 200,
+                    contentType: "text/event-stream",
+                    body: chatStreamBody,
                 });
                 return;
             }
@@ -398,6 +415,13 @@ async function main() {
         });
         await page.waitForFunction(() => document.querySelector("#chat-slider-temp")?.value === "0.31");
         assert.equal(await page.textContent("#chat-val-temp"), "0.31");
+        await page.fill("#chat-input", Array(40).fill("line").join("\n"));
+        await page.dispatchEvent("#chat-input", "input");
+        const chatInputHeight = await page.locator("#chat-input").evaluate((el) => parseFloat(el.style.height));
+        assert.ok(chatInputHeight <= 220, "chat textarea auto-resize should respect the 220px cap");
+        assert.ok(chatInputHeight > 160, "chat textarea auto-resize should be able to grow beyond the old 160px cap");
+        await page.fill("#chat-input", "");
+        await page.dispatchEvent("#chat-input", "input");
 
         assert.equal(await page.locator("#chat-web-search-max-results").getAttribute("min"), "1");
         assert.equal(await page.locator("#chat-web-search-max-results").getAttribute("max"), "10");
@@ -413,6 +437,48 @@ async function main() {
         );
         assert.equal(chatCompletionBodies.at(-1).web_search, true);
         assert.equal(chatCompletionBodies.at(-1).web_search_max_results, 7);
+        await page.click("#btn-chat-new");
+
+        chatResponseMode = "reasoning-only";
+        await page.evaluate(() => window.LlamaGui.flagCore.setFlagValue("reasoning_format", "deepseek"));
+        await page.fill("#chat-input", "Reason only");
+        await page.click("#btn-chat-send");
+        await page.waitForFunction(() => document.querySelector(".chat-reasoning-body")?.textContent.includes("hidden thought"));
+        assert.equal(await page.locator(".chat-message.assistant .chat-bubble.hidden").count(), 1);
+        const reasoningOnlyMessage = await page.evaluate(() => {
+            const conversations = JSON.parse(localStorage.getItem("llama_gui_conversations") || "[]");
+            const lastMessage = conversations[0]?.messages?.at(-1);
+            return {
+                role: lastMessage?.role,
+                content: lastMessage?.content,
+                reasoning: lastMessage?.reasoning,
+                preview: document.querySelector(".chat-history-item-preview")?.textContent || "",
+            };
+        });
+        assert.equal(reasoningOnlyMessage.role, "assistant");
+        assert.equal(reasoningOnlyMessage.content, "");
+        assert.equal(reasoningOnlyMessage.reasoning, "hidden thought");
+        assert.equal(reasoningOnlyMessage.preview, "hidden thought");
+        await page.click("#btn-chat-new");
+
+        chatResponseMode = "think-content";
+        await page.evaluate(() => window.LlamaGui.flagCore.setFlagValue("reasoning_format", "none"));
+        await page.fill("#chat-input", "Keep raw thinking tags");
+        await page.click("#btn-chat-send");
+        await page.waitForFunction(() => document.querySelector("#chat-messages")?.textContent.includes("<think>raw thought</think>"));
+        assert.equal(await page.locator(".chat-reasoning").count(), 0);
+        const rawThinkMessage = await page.evaluate(() => {
+            const conversations = JSON.parse(localStorage.getItem("llama_gui_conversations") || "[]");
+            const lastMessage = conversations[0]?.messages?.at(-1);
+            return {
+                content: lastMessage?.content,
+                reasoning: lastMessage?.reasoning || "",
+            };
+        });
+        assert.equal(rawThinkMessage.content, "<think>raw thought</think>\nFinal visible");
+        assert.equal(rawThinkMessage.reasoning, "");
+        chatResponseMode = "ok";
+        await page.evaluate(() => window.LlamaGui.flagCore.setFlagValue("reasoning_format", "auto"));
 
         await selectSection(page, "quick-launch");
         await page.fill("#quick-temperature", "0.42");
