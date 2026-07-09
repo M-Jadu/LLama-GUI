@@ -2,7 +2,6 @@ import io
 import json
 import tempfile
 import unittest
-import urllib.error
 import zipfile
 from unittest import mock
 from email.message import Message
@@ -476,11 +475,71 @@ class ExtractedRouteTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = make_context(tmp)
             ctx.state.output_buffer.extend(["one", "two"])
+            ctx.state.output_buffer_next = 2
             response = DummyResponse()
 
             process.get_output(Request("GET", "/api/output", "", {}), response, ctx)
 
-            self.assertEqual(response.payload, {"output": ["one", "two"], "running": False})
+            self.assertEqual(
+                response.payload,
+                {"lines": ["one", "two"], "next_cursor": 2, "dropped": False, "running": False},
+            )
+
+    def test_process_output_cursor_recovers_after_buffer_trim(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            with mock.patch.object(process_manager.config, "PROCESS_OUTPUT_LIMIT", 3), mock.patch.object(
+                process_manager.config, "PROCESS_OUTPUT_TRIM", 2
+            ):
+                process_manager.stream_output(ctx, io.StringIO("one\ntwo\nthree\nfour\nfive\n"))
+
+            response = DummyResponse()
+            process.get_output(Request("GET", "/api/output", "since=0", {}), response, ctx)
+
+            self.assertEqual(response.payload["lines"], ["three", "four", "five"])
+            self.assertEqual(response.payload["next_cursor"], 5)
+            self.assertTrue(response.payload["dropped"])
+
+            next_response = DummyResponse()
+            process.get_output(Request("GET", "/api/output", "since=3", {}), next_response, ctx)
+            self.assertEqual(next_response.payload["lines"], ["four", "five"])
+            self.assertFalse(next_response.payload["dropped"])
+
+    def test_process_output_route_rejects_invalid_cursor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            for query in ("since=invalid", "since=-1"):
+                with self.subTest(query=query):
+                    response = DummyResponse()
+                    process.get_output(Request("GET", "/api/output", query, {}), response, ctx)
+                    self.assertEqual(response.payload, {"error": "Invalid output cursor", "status": 400})
+
+    def test_process_output_stays_running_until_current_readers_finish(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.state.process = SimpleNamespace(poll=lambda: 0)
+            ctx.state.output_generation = 2
+            ctx.state.output_reader_count = 1
+
+            before = process_manager.get_output_snapshot(ctx)
+            process_manager.stream_output(ctx, io.StringIO("final line\n"), generation=2)
+            after = process_manager.get_output_snapshot(ctx, since=0)
+
+            self.assertTrue(before["running"])
+            self.assertEqual(after["lines"], ["final line"])
+            self.assertFalse(after["running"])
+
+    def test_process_output_ignores_readers_from_an_old_generation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.state.output_generation = 2
+            ctx.state.output_reader_count = 2
+
+            process_manager.stream_output(ctx, io.StringIO("old line\n"), generation=1)
+
+            self.assertEqual(ctx.state.output_buffer, [])
+            self.assertEqual(ctx.state.output_buffer_next, 0)
+            self.assertEqual(ctx.state.output_reader_count, 2)
 
     def test_process_send_input_writes_to_running_process(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -985,35 +1044,78 @@ class ExtractedRouteTests(unittest.TestCase):
     def test_fetch_page_text_revalidates_redirect_targets(self):
         headers = Message()
         headers["Location"] = "http://127.0.0.1/private"
-        redirect = urllib.error.HTTPError("https://example.com", 302, "Found", headers, None)
-        opener = SimpleNamespace(open=mock.Mock(side_effect=redirect))
+        public_addresses = [(web_search.socket.AF_INET, web_search.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
 
-        with mock.patch.object(web_search.urllib.request, "build_opener", return_value=opener), mock.patch.object(
+        with mock.patch.object(
             web_search,
-            "validate_public_hostname",
-            side_effect=[(True, ""), (False, "Blocked: refusing to fetch non-public address 127.0.0.1.")],
-        ):
+            "resolve_public_addresses",
+            side_effect=[
+                (public_addresses, ""),
+                (None, "Blocked: refusing to fetch non-public address 127.0.0.1."),
+            ],
+        ), mock.patch.object(
+            web_search,
+            "_open_validated_url",
+            return_value=(302, "Found", headers, b""),
+        ) as open_url:
             result = web_search.fetch_page_text("https://example.com")
 
         self.assertFalse(result["ok"])
         self.assertIn("non-public address 127.0.0.1", result["error"])
+        open_url.assert_called_once()
 
     def test_fetch_page_text_limits_redirect_chains(self):
         headers = Message()
         headers["Location"] = "/next"
-        redirect = urllib.error.HTTPError("https://example.com", 302, "Found", headers, None)
-        opener = SimpleNamespace(open=mock.Mock(side_effect=redirect))
+        public_addresses = [(web_search.socket.AF_INET, web_search.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
 
-        with mock.patch.object(web_search.urllib.request, "build_opener", return_value=opener), mock.patch.object(
+        with mock.patch.object(
             web_search,
-            "validate_public_hostname",
-            return_value=(True, ""),
-        ):
+            "resolve_public_addresses",
+            return_value=(public_addresses, ""),
+        ), mock.patch.object(
+            web_search,
+            "_open_validated_url",
+            return_value=(302, "Found", headers, b""),
+        ) as open_url:
             result = web_search.fetch_page_text("https://example.com")
 
         self.assertFalse(result["ok"])
         self.assertEqual(result["error"], "Failed to fetch URL: too many redirects.")
-        self.assertEqual(opener.open.call_count, 5)
+        self.assertEqual(open_url.call_count, 5)
+
+    def test_web_fetch_connects_to_validated_address_without_resolving_again(self):
+        address = ("93.184.216.34", 443)
+        addresses = [(web_search.socket.AF_INET, web_search.socket.SOCK_STREAM, 6, "", address)]
+        sock = mock.Mock()
+
+        with mock.patch.object(web_search.socket, "socket", return_value=sock) as socket_factory:
+            connected = web_search._connect_validated(addresses, timeout=7)
+
+        self.assertIs(connected, sock)
+        socket_factory.assert_called_once_with(web_search.socket.AF_INET, web_search.socket.SOCK_STREAM, 6)
+        sock.settimeout.assert_called_once_with(7)
+        sock.connect.assert_called_once_with(address)
+
+    def test_https_pinned_connection_preserves_original_hostname_for_tls(self):
+        addresses = [(web_search.socket.AF_INET, web_search.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
+        raw_socket = object()
+        wrapped_socket = object()
+        ssl_context = mock.Mock()
+        ssl_context.wrap_socket.return_value = wrapped_socket
+        connection = web_search._PinnedHTTPSConnection(
+            "example.com",
+            443,
+            addresses,
+            timeout=7,
+            ssl_context=ssl_context,
+        )
+
+        with mock.patch.object(web_search, "_connect_validated", return_value=raw_socket):
+            connection.connect()
+
+        ssl_context.wrap_socket.assert_called_once_with(raw_socket, server_hostname="example.com")
+        self.assertIs(connection.sock, wrapped_socket)
 
     def test_search_route_fetches_url_through_service(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -4,6 +4,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..", "..");
+const outputCursorSource = fs.readFileSync(path.join(ROOT, "ui", "js", "output-cursor.js"), "utf8");
 const source = fs.readFileSync(path.join(ROOT, "ui", "js", "benchmark-ui.js"), "utf8");
 
 const context = {
@@ -25,6 +26,7 @@ const context = {
 
 context.window.window = context.window;
 vm.createContext(context);
+vm.runInContext(outputCursorSource, context, { filename: "ui/js/output-cursor.js" });
 vm.runInContext(source, context, { filename: "ui/js/benchmark-ui.js" });
 
 const adapter = context.window.LlamaGui.benchmarkUi;

@@ -3,8 +3,10 @@ import json
 import subprocess
 import sys
 import unittest
+from contextlib import redirect_stderr
 from email.message import Message
 from pathlib import Path
+from unittest import mock
 
 import backend.app as backend_app
 import server
@@ -198,6 +200,70 @@ class HandlerResponseTests(ServerStateIsolationMixin, unittest.TestCase):
 
         self.assertIs(result, backend_app._BODY_HANDLED)
         self.assertEqual(handler.sent_response, 408)
+
+    def test_content_length_allows_leading_zeros(self):
+        handler = self.make_handler()
+        handler.headers["Content-Length"] = "000000001"
+
+        self.assertEqual(handler.get_request_content_length(), 1)
+        self.assertIsNone(handler.sent_response)
+
+    def test_read_body_rejects_invalid_negative_and_excessive_content_length(self):
+        cases = [
+            ("not-a-number", 400),
+            ("-1", 400),
+            ("9" * 5000, 413),
+            (str(backend_app.MAX_REQUEST_BODY_SIZE + 1), 413),
+        ]
+        for value, expected_status in cases:
+            with self.subTest(value=value):
+                handler = self.make_handler()
+                handler.headers["Content-Length"] = value
+
+                result = handler.read_body()
+
+                self.assertIs(result, backend_app._BODY_HANDLED)
+                self.assertEqual(handler.sent_response, expected_status)
+
+    def test_proxy_body_rejects_invalid_and_excessive_content_length(self):
+        for value, expected_status in (
+            ("invalid", 400),
+            ("-1", 400),
+            ("9" * 5000, 413),
+            (str(backend_app.MAX_REQUEST_BODY_SIZE + 1), 413),
+        ):
+            with self.subTest(value=value):
+                handler = self.make_handler()
+                handler.headers["Content-Length"] = value
+
+                result = handler.get_proxy_request_body()
+
+                self.assertIs(result, backend_app._BODY_HANDLED)
+                self.assertEqual(handler.sent_response, expected_status)
+
+    def test_proxy_failure_logs_detail_but_returns_generic_502(self):
+        handler = self.make_handler()
+        parsed = server.urllib.parse.urlparse("/v1/models")
+        stderr = io.StringIO()
+
+        with mock.patch.object(
+            backend_app.urllib.request,
+            "urlopen",
+            side_effect=OSError("secret local detail"),
+        ), redirect_stderr(stderr):
+            handler.proxy_v1_request("GET", parsed)
+
+        payload = json.loads(handler.wfile.getvalue().decode("utf-8"))
+        self.assertEqual(handler.sent_response, 502)
+        self.assertEqual(
+            payload,
+            {
+                "error": "Failed to reach llama-server. Start it or check the configured API host and port.",
+                "status": 502,
+            },
+        )
+        self.assertNotIn("secret local detail", payload["error"])
+        self.assertIn("secret local detail", stderr.getvalue())
 
     def test_version_ui_asset_urls_rewrites_local_assets(self):
         html = (

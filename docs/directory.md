@@ -136,15 +136,16 @@ The frontend loads scripts in a strict dependency order via `ui/index.html`:
 6. `manager.js` — GitHub releases, install, update, shared `fetchJson()`
 7. `presets.js` — preset CRUD
 8. `app-data.js` — shared Quick Launch, context, sampler, and chat slider data
-9. `sampler-presets.js` — sampler preset storage, import/export, apply behavior, and Configure controls (`window.LlamaGui.samplerPresets`)
-10. `chat-rendering.js` — markdown and low-level chat DOM rendering helpers (`window.LlamaGui.chatRendering`)
-11. `api-tab.js` — API endpoint/snippet rendering helpers (`window.LlamaGui.apiTab`)
-12. `hf-download-ui.js` — Quick Launch Hugging Face downloader UI (`window.LlamaGui.hfDownloadUi`)
-13. `remote-tunnel-ui.js` — API tab Cloudflare tunnel UI (`window.LlamaGui.remoteTunnelUi`)
-14. `quick-launch-ui.js` — Quick Launch controls and shared-state UI sync (`window.LlamaGui.quickLaunchUi`)
-15. `chat-ui.js` — Chat tab state, streaming, history, web search, and sampler controls (`window.LlamaGui.chatUi`)
-16. `benchmark-ui.js` — Benchmarking tab controls, argument adapter, output polling, and session-only summaries (`window.LlamaGui.benchmarkUi`)
-17. `app.js` — main orchestration (wires everything together)
+9. `output-cursor.js` — shared process-output cursor consumer (`window.LlamaGui.outputCursor`)
+10. `sampler-presets.js` — sampler preset storage, import/export, apply behavior, and Configure controls (`window.LlamaGui.samplerPresets`)
+11. `chat-rendering.js` — markdown and low-level chat DOM rendering helpers (`window.LlamaGui.chatRendering`)
+12. `api-tab.js` — API endpoint/snippet rendering helpers (`window.LlamaGui.apiTab`)
+13. `hf-download-ui.js` — Quick Launch Hugging Face downloader UI (`window.LlamaGui.hfDownloadUi`)
+14. `remote-tunnel-ui.js` — API tab Cloudflare tunnel UI (`window.LlamaGui.remoteTunnelUi`)
+15. `quick-launch-ui.js` — Quick Launch controls and shared-state UI sync (`window.LlamaGui.quickLaunchUi`)
+16. `chat-ui.js` — Chat tab state, streaming, history, web search, and sampler controls (`window.LlamaGui.chatUi`)
+17. `benchmark-ui.js` — Benchmarking tab controls, argument adapter, output polling, and session-only summaries (`window.LlamaGui.benchmarkUi`)
+18. `app.js` — main orchestration (wires everything together)
 
 **Do not change this order.** Each file depends on the ones above it. If you add a new module, place it after its dependencies and before its consumers.
 
@@ -166,6 +167,7 @@ The frontend loads scripts in a strict dependency order via `ui/index.html`:
 | `ui/js/manager.js` | `window.LlamaGui.manager` | GitHub release fetching, backend selection, installation progress UI, app update (git status/pull/restart), and the shared `fetchJson()` utility |
 | `ui/js/presets.js` | `window.LlamaGui.presets` | Preset normalization, validation, saving, loading, updating, deleting, exporting, importing, and group-by-model rendering with search and collapsible groups |
 | `ui/js/app-data.js` | (data) | `QUICK_PROFILES`, `BUILTIN_SAMPLER_PRESETS`, `CHAT_SAMPLER_SLIDER_MAP` |
+| `ui/js/output-cursor.js` | `window.LlamaGui.outputCursor` | Shared monotonic cursor consumer for main and benchmark process-output polling |
 | `ui/js/sampler-presets.js` | `window.LlamaGui.samplerPresets` | Sampler preset storage, normalization, apply behavior, import/export, and Configure-tab controls; writes sampler values through injected `flagCore` |
 | `ui/js/chat-rendering.js` | `window.LlamaGui.chatRendering` | Markdown and low-level chat DOM rendering helpers |
 | `ui/js/api-tab.js` | `window.LlamaGui.apiTab` | API tab endpoint/snippet data, base URL helpers, and rendering; reads shared state through injected `flagCore` |
@@ -201,7 +203,7 @@ The frontend loads scripts in a strict dependency order via `ui/index.html`:
 - Command preview and launch args are generated from shared state (`flagCore.getLaunchArgs()`), never per-tab copies.
 - Custom launch args are parsed and appended only by `flagCore.getLaunchArgs()`, after UI-managed flags and before the selected model arg.
 - Benchmarking reads Configure state or saved preset JSON without mutating them, builds tool-compatible benchmark args, can prepare the official WikiText-2 raw test file through `/api/benchmark/wikitext2`, and uses `/api/launch`, `/api/stop`, `/api/output`, and `/api/status` through the existing single process slot.
-- Server output is polled via HTTP endpoint and streamed to the terminal panel.
+- Server output is polled incrementally through the monotonic cursor contract on `/api/output` and streamed to the terminal panel.
 - Chat completions are streamed via SSE from `/api/chat/completions` (backend proxies to `llama-server`).
 - Stats are polled from `llama-server`'s Prometheus `/metrics` endpoint, with KV/context usage falling back through the local `/slots` proxy when `llamacpp:kv_cache_usage_ratio` is unavailable.
 - Remote tunnel status is polled from `/api/remote-tunnel/status`.

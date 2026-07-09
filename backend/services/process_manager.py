@@ -172,23 +172,53 @@ def is_process_running(ctx: AppContext) -> bool:
         return ctx.state.process is not None and ctx.state.process.poll() is None
 
 
-def get_output_snapshot(ctx: AppContext) -> dict[str, Any]:
+def get_output_snapshot(ctx: AppContext, since: Optional[int] = None) -> dict[str, Any]:
     with ctx.state.output_buffer_lock:
-        lines = list(ctx.state.output_buffer)
-    return {"output": lines, "running": is_process_running(ctx)}
+        start_cursor = ctx.state.output_buffer_start
+        next_cursor = ctx.state.output_buffer_next
+        if since is None:
+            offset = 0
+            dropped = False
+        else:
+            dropped = since < start_cursor
+            cursor = max(start_cursor, min(since, next_cursor))
+            offset = cursor - start_cursor
+        lines = list(ctx.state.output_buffer[offset:])
+        readers_active = ctx.state.output_reader_count > 0
+    return {
+        "lines": lines,
+        "next_cursor": next_cursor,
+        "dropped": dropped,
+        "running": is_process_running(ctx) or readers_active,
+    }
 
 
-def stream_output(ctx: AppContext, pipe: Any, is_stderr: bool = False) -> None:
+def stream_output(
+    ctx: AppContext,
+    pipe: Any,
+    is_stderr: bool = False,
+    generation: Optional[int] = None,
+) -> None:
     try:
         for line in iter(pipe.readline, ""):
             if line:
                 decoded = line.rstrip("\n\r")
                 with ctx.state.output_buffer_lock:
+                    if generation is not None and generation != ctx.state.output_generation:
+                        continue
                     ctx.state.output_buffer.append(decoded)
+                    ctx.state.output_buffer_next += 1
                     if len(ctx.state.output_buffer) > config.PROCESS_OUTPUT_LIMIT:
-                        del ctx.state.output_buffer[: config.PROCESS_OUTPUT_TRIM]
+                        trim_count = min(config.PROCESS_OUTPUT_TRIM, len(ctx.state.output_buffer))
+                        del ctx.state.output_buffer[:trim_count]
+                        ctx.state.output_buffer_start += trim_count
     except Exception as exc:
         print(f"[process] output stream reader stopped: {exc}", file=sys.stderr)
+    finally:
+        if generation is not None:
+            with ctx.state.output_buffer_lock:
+                if generation == ctx.state.output_generation:
+                    ctx.state.output_reader_count = max(0, ctx.state.output_reader_count - 1)
 
 
 def flatten_launch_args(args_list: Optional[Iterable[Any]]) -> list[str]:
@@ -552,11 +582,8 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
         args = [str(exe_path), *flatten_launch_args(args_list)]
         env = _build_process_env(ctx)
 
-        with ctx.state.output_buffer_lock:
-            ctx.state.output_buffer.clear()
-
         try:
-            ctx.state.process = subprocess.Popen(
+            process = subprocess.Popen(
                 args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -568,16 +595,32 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
                 if sys.platform == "win32"
                 else 0,
             )
+            ctx.state.process = process
+            with ctx.state.output_buffer_lock:
+                ctx.state.output_buffer.clear()
+                ctx.state.output_buffer_start = ctx.state.output_buffer_next
+                ctx.state.output_generation += 1
+                generation = ctx.state.output_generation
+                ctx.state.output_reader_count = 2
+                output_cursor = ctx.state.output_buffer_next
             threading.Thread(
-                target=stream_output, args=(ctx, ctx.state.process.stdout), daemon=True
+                target=stream_output,
+                args=(ctx, process.stdout, False, generation),
+                daemon=True,
             ).start()
             threading.Thread(
-                target=stream_output, args=(ctx, ctx.state.process.stderr, True), daemon=True
+                target=stream_output,
+                args=(ctx, process.stderr, True, generation),
+                daemon=True,
             ).start()
             ctx.state.active_process_tool = tool
             if tool == "llama-server":
                 parse_launch_api_target(ctx, args_list)
-            return {"pid": ctx.state.process.pid, "command": " ".join(args)}
+            return {
+                "pid": ctx.state.process.pid,
+                "command": " ".join(args),
+                "output_cursor": output_cursor,
+            }
         except Exception as e:
             return {"error": str(e)}
 
