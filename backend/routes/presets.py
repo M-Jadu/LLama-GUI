@@ -2,6 +2,7 @@
 
 import json
 import re
+import sys
 import urllib.parse
 
 
@@ -94,8 +95,11 @@ def list_presets(request, response, ctx):
                 if is_preset_bundle(data):
                     continue
                 presets.append({"name": path.stem, "data": data})
-            except (json.JSONDecodeError, OSError):
-                pass
+            except (json.JSONDecodeError, OSError) as exc:
+                print(
+                    f"[presets] skipping unreadable preset {path.name}: {type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                )
     response.json(presets)
 
 

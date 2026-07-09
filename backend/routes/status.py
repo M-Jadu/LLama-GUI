@@ -43,6 +43,7 @@ def get_status(request, response, ctx):
                 "models_dir": str(ctx.paths.models),
                 "running": running,
                 "active_process_tool": ctx.state.active_process_tool,
+                "last_exit_code": ctx.state.last_exit_code,
                 "api_target": api_target,
                 "platform": services.current_platform,
                 "platform_label": services.get_platform_label(),

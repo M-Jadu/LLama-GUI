@@ -14,6 +14,7 @@ from backend.services import chat as chat_service
 from backend.services import file_picker as file_picker_service
 from backend.services import hf_download as hf_service
 from backend.services import llama_manager
+from backend.services import process_manager
 from backend.services import web_search as web_search_service
 
 
@@ -550,6 +551,168 @@ class RuntimeDependencyValidationTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertFalse(result["checked"])
         self.assertEqual(result["unchecked_tools"], ["llama-server"])
+
+    def test_validate_macos_runtime_dependencies_caches_repeat_calls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.make_runtime_context(tmp)
+            (ctx.paths.llama_bin / "llama-server").write_text("binary")
+            (ctx.paths.llama_bin / "libllama-common.0.dylib").write_text("lib")
+
+            with mock.patch.object(
+                llama_manager,
+                "get_macos_rpath_libraries",
+                return_value=["libllama-common.0.dylib"],
+            ) as probe:
+                first = llama_manager.validate_runtime_dependencies(ctx, ["llama-server"])
+                second = llama_manager.validate_runtime_dependencies(ctx, ["llama-server"])
+
+        self.assertEqual(probe.call_count, 1)
+        self.assertEqual(first, second)
+
+    def test_validate_macos_runtime_cache_expires_after_ttl(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.make_runtime_context(tmp)
+            (ctx.paths.llama_bin / "llama-server").write_text("binary")
+
+            with mock.patch.object(
+                llama_manager, "RUNTIME_HEALTH_CACHE_TTL_SECONDS", 0.0
+            ), mock.patch.object(
+                llama_manager,
+                "get_macos_rpath_libraries",
+                return_value=[],
+            ) as probe:
+                llama_manager.validate_runtime_dependencies(ctx, ["llama-server"])
+                llama_manager.validate_runtime_dependencies(ctx, ["llama-server"])
+
+        self.assertEqual(probe.call_count, 2)
+
+    def test_validate_macos_runtime_cache_cleared_by_invalidation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.make_runtime_context(tmp)
+            (ctx.paths.llama_bin / "llama-server").write_text("binary")
+
+            with mock.patch.object(
+                llama_manager,
+                "get_macos_rpath_libraries",
+                return_value=[],
+            ) as probe:
+                llama_manager.validate_runtime_dependencies(ctx, ["llama-server"])
+                ctx.state.clear_runtime_health_cache()
+                llama_manager.validate_runtime_dependencies(ctx, ["llama-server"])
+
+        self.assertEqual(probe.call_count, 2)
+
+    def test_validate_macos_runtime_cache_keyed_by_backend(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.make_runtime_context(tmp)
+            (ctx.paths.llama_bin / "llama-server").write_text("binary")
+
+            with mock.patch.object(
+                llama_manager,
+                "get_macos_rpath_libraries",
+                return_value=[],
+            ) as probe:
+                llama_manager.validate_runtime_dependencies(ctx, ["llama-server"])
+                ctx.services.load_config = lambda: {"backend": "custom"}
+                llama_manager.validate_runtime_dependencies(ctx, ["llama-server"])
+
+        self.assertEqual(probe.call_count, 2)
+
+    def test_remove_llama_files_clears_runtime_health_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.make_runtime_context(tmp)
+            ctx.services.save_config = lambda cfg: None
+            ctx.state.runtime_health_cache[("cpu", ("llama-server",))] = (0.0, {"ok": True})
+
+            process_manager.remove_llama_files(ctx)
+
+        self.assertEqual(ctx.state.runtime_health_cache, {})
+
+
+class FakeLaunchedProcess:
+    def __init__(self, returncode=None):
+        self.returncode = returncode
+        self.signals = []
+        self.killed = False
+        self.stdin = None
+
+    def poll(self):
+        return self.returncode
+
+    def send_signal(self, sig):
+        self.signals.append(sig)
+        if self.returncode is None:
+            self.returncode = 0
+
+    def terminate(self):
+        self.send_signal("terminate")
+
+    def wait(self, timeout=None):
+        if self.returncode is None:
+            self.returncode = 0
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
+        self.returncode = -9
+
+
+class ProcessStateReapTests(unittest.TestCase):
+    def make_exited_context(self, exit_code):
+        ctx = AppContext()
+        ctx.state.process = FakeLaunchedProcess(returncode=exit_code)
+        ctx.state.active_process_tool = "llama-server"
+        return ctx
+
+    def test_is_process_running_reaps_naturally_exited_process(self):
+        ctx = self.make_exited_context(3)
+
+        self.assertFalse(process_manager.is_process_running(ctx))
+
+        self.assertIsNone(ctx.state.process)
+        self.assertIsNone(ctx.state.active_process_tool)
+        self.assertEqual(ctx.state.last_exit_code, 3)
+
+    def test_stop_process_reaps_naturally_exited_process(self):
+        ctx = self.make_exited_context(1)
+
+        self.assertFalse(process_manager.stop_process(ctx))
+
+        self.assertIsNone(ctx.state.process)
+        self.assertIsNone(ctx.state.active_process_tool)
+        self.assertEqual(ctx.state.last_exit_code, 1)
+
+    def test_stop_process_clears_state_for_running_process(self):
+        ctx = AppContext()
+        process = FakeLaunchedProcess(returncode=None)
+        ctx.state.process = process
+        ctx.state.active_process_tool = "llama-server"
+
+        self.assertTrue(process_manager.stop_process(ctx))
+
+        self.assertEqual(len(process.signals), 1)
+        self.assertIsNone(ctx.state.process)
+        self.assertIsNone(ctx.state.active_process_tool)
+        self.assertEqual(ctx.state.last_exit_code, 0)
+
+    def test_send_input_reaps_naturally_exited_process(self):
+        ctx = self.make_exited_context(0)
+
+        self.assertFalse(process_manager.send_input(ctx, "hello"))
+
+        self.assertIsNone(ctx.state.process)
+        self.assertIsNone(ctx.state.active_process_tool)
+        self.assertEqual(ctx.state.last_exit_code, 0)
+
+    def test_is_process_running_true_for_live_process(self):
+        ctx = AppContext()
+        ctx.state.process = FakeLaunchedProcess(returncode=None)
+        ctx.state.active_process_tool = "llama-cli"
+
+        self.assertTrue(process_manager.is_process_running(ctx))
+
+        self.assertIsNotNone(ctx.state.process)
+        self.assertEqual(ctx.state.active_process_tool, "llama-cli")
 
 
 class LlamaManagerDownloadTests(unittest.TestCase):
