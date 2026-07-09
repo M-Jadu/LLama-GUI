@@ -1,11 +1,11 @@
 """Web search and page text extraction helpers."""
 
 import html
+import http.client
 import ipaddress
 import re
 import socket
 import sys
-import urllib.error
 import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
@@ -98,13 +98,13 @@ def html_to_readable_text(raw_html: str) -> str:
         return re.sub(r"\s+", " ", text).strip()
 
 
-def validate_public_hostname(hostname: str, port: int) -> tuple[bool, str]:
+def resolve_public_addresses(hostname: str, port: int) -> tuple[Optional[list[Any]], str]:
     try:
         infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
     except OSError as exc:
-        return False, f"Failed to resolve host: {exc}"
+        return None, f"Failed to resolve host: {exc}"
     if not infos:
-        return False, f"Failed to resolve host: no addresses for {hostname!r}"
+        return None, f"Failed to resolve host: no addresses for {hostname!r}"
     for *_, sockaddr in infos:
         ip = ipaddress.ip_address(sockaddr[0])
         if (
@@ -115,8 +115,13 @@ def validate_public_hostname(hostname: str, port: int) -> tuple[bool, str]:
             or ip.is_reserved
             or ip.is_unspecified
         ):
-            return False, f"Blocked: refusing to fetch non-public address {ip}."
-    return True, ""
+            return None, f"Blocked: refusing to fetch non-public address {ip}."
+    return infos, ""
+
+
+def validate_public_hostname(hostname: str, port: int) -> tuple[bool, str]:
+    addresses, reason = resolve_public_addresses(hostname, port)
+    return addresses is not None, reason
 
 
 class ManualRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -125,6 +130,87 @@ class ManualRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 
 NoRedirect = ManualRedirectHandler
+
+
+def _connect_validated(addresses: list[Any], timeout: int, source_address: Any = None) -> Any:
+    last_error = None
+    for family, socktype, proto, _, sockaddr in addresses:
+        sock = socket.socket(family, socktype, proto)
+        try:
+            sock.settimeout(timeout)
+            if source_address:
+                sock.bind(source_address)
+            sock.connect(sockaddr)
+            return sock
+        except OSError as exc:
+            last_error = exc
+            sock.close()
+    if last_error is not None:
+        raise last_error
+    raise OSError("No validated addresses available")
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, host: str, port: int, addresses: list[Any], timeout: int) -> None:
+        self._validated_addresses = addresses
+        super().__init__(host, port=port, timeout=timeout)
+
+    def connect(self) -> None:
+        self.sock = _connect_validated(
+            self._validated_addresses,
+            self.timeout,
+            self.source_address,
+        )
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        addresses: list[Any],
+        timeout: int,
+        ssl_context: Optional[Any],
+    ) -> None:
+        self._validated_addresses = addresses
+        super().__init__(host, port=port, timeout=timeout, context=ssl_context)
+
+    def connect(self) -> None:
+        sock = _connect_validated(
+            self._validated_addresses,
+            self.timeout,
+            self.source_address,
+        )
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+def _open_validated_url(
+    parsed: urllib.parse.ParseResult,
+    addresses: list[Any],
+    timeout: int,
+    ssl_context: Optional[Any],
+) -> tuple[int, str, Any, bytes]:
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    connection_class = _PinnedHTTPSConnection if parsed.scheme == "https" else _PinnedHTTPConnection
+    if parsed.scheme == "https":
+        connection = connection_class(parsed.hostname, port, addresses, timeout, ssl_context)
+    else:
+        connection = connection_class(parsed.hostname, port, addresses, timeout)
+    target = urllib.parse.urlunparse(("", "", parsed.path or "/", parsed.params, parsed.query, ""))
+    try:
+        connection.request(
+            "GET",
+            target,
+            headers={
+                "User-Agent": config.WEB_SEARCH_USER_AGENT,
+                "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.2",
+            },
+        )
+        response = connection.getresponse()
+        raw = response.read(config.WEB_SEARCH_FETCH_BYTES)
+        return response.status, response.reason, response.headers, raw
+    finally:
+        connection.close()
 
 
 def fetch_page_text(
@@ -140,43 +226,37 @@ def fetch_page_text(
         return {"ok": False, "error": "Blocked: URL is missing a hostname."}
 
     current_url = urllib.parse.urlunparse(parsed)
-    handlers = [ManualRedirectHandler]
-    if ssl_context is not None:
-        handlers.append(urllib.request.HTTPSHandler(context=ssl_context))
-    opener = urllib.request.build_opener(*handlers)
     for _ in range(5):
         parsed = urllib.parse.urlparse(current_url)
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        ok, reason = validate_public_hostname(parsed.hostname, port)
-        if not ok:
+        addresses, reason = resolve_public_addresses(parsed.hostname, port)
+        if addresses is None:
             return {"ok": False, "error": reason}
 
-        req = urllib.request.Request(
-            current_url,
-            headers={
-                "User-Agent": config.WEB_SEARCH_USER_AGENT,
-                "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.2",
-            },
-        )
         try:
-            resp = opener.open(req, timeout=timeout)
-            raw = resp.read(config.WEB_SEARCH_FETCH_BYTES)
-            charset = resp.headers.get_content_charset() or "utf-8"
+            status, status_reason, headers, raw = _open_validated_url(
+                parsed,
+                addresses,
+                timeout,
+                ssl_context,
+            )
+            if status in {301, 302, 303, 307, 308}:
+                location = headers.get("Location")
+                if not location:
+                    return {"ok": False, "error": "Failed to fetch URL: redirect missing Location header."}
+                next_url = urllib.parse.urljoin(current_url, location)
+                next_parsed = urllib.parse.urlparse(next_url)
+                if next_parsed.scheme not in {"http", "https"} or not next_parsed.hostname:
+                    return {"ok": False, "error": "Blocked: redirect target is not a valid http/https URL."}
+                current_url = next_url
+                continue
+            if status >= 300:
+                return {"ok": False, "error": f"Failed to fetch URL: HTTP {status} {status_reason}"}
+            charset = headers.get_content_charset() or "utf-8"
             text = html_to_readable_text(raw.decode(charset, errors="replace"))
             if len(text) > max_chars:
                 text = text[:max_chars].rstrip() + f"\n\n... (truncated, {len(text)} chars total)"
             return {"ok": True, "url": current_url, "text": text or "(page returned no readable text)"}
-        except urllib.error.HTTPError as exc:
-            if exc.code not in {301, 302, 303, 307, 308}:
-                return {"ok": False, "error": f"Failed to fetch URL: HTTP {exc.code} {getattr(exc, 'reason', '')}"}
-            location = exc.headers.get("Location")
-            if not location:
-                return {"ok": False, "error": "Failed to fetch URL: redirect missing Location header."}
-            next_url = urllib.parse.urljoin(current_url, location)
-            next_parsed = urllib.parse.urlparse(next_url)
-            if next_parsed.scheme not in {"http", "https"} or not next_parsed.hostname:
-                return {"ok": False, "error": "Blocked: redirect target is not a valid http/https URL."}
-            current_url = next_url
         except Exception as exc:
             return {"ok": False, "error": f"Failed to fetch URL: {exc}"}
 

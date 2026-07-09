@@ -1,11 +1,26 @@
 """Routes for llama.cpp process management."""
 
+import urllib.parse
+
 from ..http import sanitize_error
 from ..services import process_manager
 
 
 def get_output(request, response, ctx):
-    response.json(process_manager.get_output_snapshot(ctx))
+    params = urllib.parse.parse_qs(request.query, keep_blank_values=True)
+    raw_since = params.get("since", [None])[-1]
+    if raw_since is None:
+        since = None
+    else:
+        try:
+            since = int(raw_since)
+        except (TypeError, ValueError):
+            response.error("Invalid output cursor", 400)
+            return
+        if since < 0:
+            response.error("Invalid output cursor", 400)
+            return
+    response.json(process_manager.get_output_snapshot(ctx, since=since))
 
 
 def launch(request, response, ctx):

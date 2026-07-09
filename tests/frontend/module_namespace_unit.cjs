@@ -65,6 +65,7 @@ for (const scriptFile of scriptFiles) {
 
 const expectedNamespaces = [
     "flagCore",
+    "outputCursor",
     "themeUi",
     "configFlagsUi",
     "quickLaunchUi",

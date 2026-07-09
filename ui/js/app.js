@@ -6,10 +6,10 @@ function debounce(fn, ms) {
 const flagCore = window.LlamaGui.flagCore;
 const configFlagsUi = window.LlamaGui.configFlagsUi;
 const themeUi = window.LlamaGui.themeUi;
+const processOutputCursor = window.LlamaGui.outputCursor.create(appendOutput);
 flagCore.setCurrentToolValue("llama-server");
 flagCore.replaceFlagValues(getDefaultValues());
 let outputTimer = null;
-let lastOutputLen = 0;
 let statsTimer = null;
 let memoryEstimateRequestId = 0;
 let pollOutputActive = false;
@@ -619,7 +619,7 @@ async function launchLlama() {
             appendOutput("Started " + tool + " (PID: " + launchResult.pid + ")");
             appendOutput(launchResult.command);
             appendOutput("---");
-            startOutputPolling();
+            startOutputPolling(launchResult.output_cursor);
             updateServerAddressPreview();
 
             if (tool === "llama-server") {
@@ -668,8 +668,8 @@ async function stopLlama() {
     await refreshRuntimeStatusPanels();
 }
 
-function startOutputPolling() {
-    lastOutputLen = 0;
+function startOutputPolling(initialCursor = null) {
+    processOutputCursor.reset(initialCursor);
     serverReadyNotified = false;
     pollOutputFailCount = 0;
     if (outputTimer) clearInterval(outputTimer);
@@ -872,18 +872,17 @@ function getSlotKvUsage(slots) {
 async function pollOutput() {
     if (pollOutputActive) return;
     pollOutputActive = true;
+    let request = null;
     try {
-        const data = await fetchJson("/api/output");
-        if (data.output.length > lastOutputLen) {
-            const newLines = data.output.slice(lastOutputLen);
-            for (const line of newLines) {
-                appendOutput(line);
-                if (!serverReadyNotified && /HTTP server listening/i.test(line)) {
-                    serverReadyNotified = true;
-                    showToast("Server is ready!", "success");
-                }
+        request = processOutputCursor.getRequest();
+        const data = await fetchJson(request.url);
+        const consumed = processOutputCursor.consume(data, request.epoch);
+        if (!consumed.current) return;
+        for (const line of consumed.lines) {
+            if (!serverReadyNotified && /HTTP server listening/i.test(line)) {
+                serverReadyNotified = true;
+                showToast("Server is ready!", "success");
             }
-            lastOutputLen = data.output.length;
         }
         if (!data.running) {
             stopOutputPolling();
@@ -898,6 +897,7 @@ async function pollOutput() {
         }
         pollOutputFailCount = 0;
     } catch (e) {
+        if (request && !processOutputCursor.isCurrent(request.epoch)) return;
         pollOutputFailCount++;
         if (pollOutputFailCount <= 5) {
             appendOutput("Output polling error (retry " + pollOutputFailCount + "/5): " + e.message);
@@ -927,7 +927,7 @@ function appendOutput(text) {
 
 function clearOutput() {
     document.getElementById("output-terminal").innerHTML = "";
-    lastOutputLen = 0;
+    processOutputCursor.reset();
 }
 
 async function sendInput() {
