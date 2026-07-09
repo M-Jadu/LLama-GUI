@@ -1,5 +1,6 @@
 """llama.cpp release management, download, and install helpers."""
 
+import copy
 import hashlib
 import json
 import os
@@ -285,12 +286,12 @@ def validate_runtime_dependencies(
     with ctx.state.runtime_health_lock:
         cached = ctx.state.runtime_health_cache.get(cache_key)
         if cached is not None and now - cached[0] < RUNTIME_HEALTH_CACHE_TTL_SECONDS:
-            return dict(cached[1])
+            return copy.deepcopy(cached[1])
 
     result = _validate_runtime_dependencies_uncached(ctx, tool_names, cfg)
     with ctx.state.runtime_health_lock:
         ctx.state.runtime_health_cache[cache_key] = (time.monotonic(), result)
-    return dict(result)
+    return copy.deepcopy(result)
 
 
 def _validate_runtime_dependencies_uncached(

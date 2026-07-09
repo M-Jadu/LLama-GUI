@@ -132,7 +132,7 @@ class ManualRedirectHandler(urllib.request.HTTPRedirectHandler):
 NoRedirect = ManualRedirectHandler
 
 
-def _connect_validated(addresses: list[Any], timeout: int, source_address: Any = None) -> Any:
+def _connect_validated(addresses: list[Any], timeout: float, source_address: Any = None) -> Any:
     last_error = None
     for family, socktype, proto, _, sockaddr in addresses:
         sock = socket.socket(family, socktype, proto)
@@ -151,7 +151,7 @@ def _connect_validated(addresses: list[Any], timeout: int, source_address: Any =
 
 
 class _PinnedHTTPConnection(http.client.HTTPConnection):
-    def __init__(self, host: str, port: int, addresses: list[Any], timeout: int) -> None:
+    def __init__(self, host: str, port: int, addresses: list[Any], timeout: float) -> None:
         self._validated_addresses = addresses
         super().__init__(host, port=port, timeout=timeout)
 
@@ -169,7 +169,7 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         host: str,
         port: int,
         addresses: list[Any],
-        timeout: int,
+        timeout: float,
         ssl_context: Optional[Any],
     ) -> None:
         self._validated_addresses = addresses
@@ -187,9 +187,11 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
 def _open_validated_url(
     parsed: urllib.parse.ParseResult,
     addresses: list[Any],
-    timeout: int,
+    timeout: float,
     ssl_context: Optional[Any],
 ) -> tuple[int, str, Any, bytes]:
+    # Connects directly to the pre-validated addresses (no system proxy
+    # support): routing through a proxy would bypass the SSRF IP pinning.
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     connection_class = _PinnedHTTPSConnection if parsed.scheme == "https" else _PinnedHTTPConnection
     if parsed.scheme == "https":

@@ -212,6 +212,7 @@ class HandlerResponseTests(ServerStateIsolationMixin, unittest.TestCase):
         cases = [
             ("not-a-number", 400),
             ("-1", 400),
+            ("١٢٣", 400),  # non-ASCII Unicode digits pass isdecimal()
             ("9" * 5000, 413),
             (str(backend_app.MAX_REQUEST_BODY_SIZE + 1), 413),
         ]

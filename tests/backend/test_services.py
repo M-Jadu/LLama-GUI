@@ -1,7 +1,9 @@
+import contextlib
 import hashlib
 import io
 import json
 import pathlib
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -694,6 +696,34 @@ class ProcessStateReapTests(unittest.TestCase):
         self.assertIsNone(ctx.state.process)
         self.assertIsNone(ctx.state.active_process_tool)
         self.assertEqual(ctx.state.last_exit_code, 0)
+
+    def test_stop_process_keeps_state_when_process_survives_kill(self):
+        class UnkillableProcess(FakeLaunchedProcess):
+            pid = 4242
+
+            def send_signal(self, sig):
+                self.signals.append(sig)
+
+            def terminate(self):
+                self.send_signal("terminate")
+
+            def wait(self, timeout=None):
+                raise subprocess.TimeoutExpired(cmd="llama-server", timeout=timeout)
+
+        ctx = AppContext()
+        process = UnkillableProcess(returncode=None)
+        process.kill = lambda: None
+        ctx.state.process = process
+        ctx.state.active_process_tool = "llama-server"
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr):
+            stopped = process_manager.stop_process(ctx)
+
+        self.assertFalse(stopped)
+        self.assertIs(ctx.state.process, process)
+        self.assertEqual(ctx.state.active_process_tool, "llama-server")
+        self.assertIn("survived kill", stderr.getvalue())
 
     def test_send_input_reaps_naturally_exited_process(self):
         ctx = self.make_exited_context(0)

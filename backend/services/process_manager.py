@@ -198,12 +198,17 @@ def get_output_snapshot(ctx: AppContext, since: Optional[int] = None) -> dict[st
             offset = cursor - start_cursor
         lines = list(ctx.state.output_buffer[offset:])
         readers_active = ctx.state.output_reader_count > 0
-    return {
+    snapshot = {
         "lines": lines,
         "next_cursor": next_cursor,
         "dropped": dropped,
         "running": is_process_running(ctx) or readers_active,
     }
+    if since is None:
+        # Deprecated alias for consumers that poll without a cursor and still
+        # read the pre-cursor "output" key.
+        snapshot["output"] = lines
+    return snapshot
 
 
 def stream_output(
@@ -596,6 +601,7 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
         args = [str(exe_path), *flatten_launch_args(args_list)]
         env = _build_process_env(ctx)
 
+        process = None
         try:
             process = subprocess.Popen(
                 args,
@@ -637,6 +643,19 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
                 "output_cursor": output_cursor,
             }
         except Exception as e:
+            if process is not None:
+                # Popen succeeded but wiring up state failed; don't leave an
+                # untracked process running.
+                try:
+                    process.kill()
+                    process.wait(timeout=5)
+                except Exception as cleanup_exc:
+                    print(
+                        f"[process] failed to clean up partially launched process: {cleanup_exc}",
+                        file=sys.stderr,
+                    )
+                ctx.state.process = None
+                ctx.state.active_process_tool = None
             return {"error": str(e)}
 
 
@@ -656,6 +675,14 @@ def stop_process(ctx: AppContext) -> bool:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     pass
+            if process.poll() is None:
+                # Keep tracking the process so a new launch can't run
+                # alongside one that refused to die.
+                print(
+                    f"[process] PID {process.pid} survived kill; still tracking it",
+                    file=sys.stderr,
+                )
+                return False
             ctx.state.last_exit_code = process.poll()
             ctx.state.process = None
             ctx.state.active_process_tool = None
