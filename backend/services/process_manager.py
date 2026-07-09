@@ -167,9 +167,22 @@ _ESTIMATE_BOOL_FLAGS = {
 }
 
 
+def _reap_finished_process(ctx: AppContext) -> None:
+    """Clear state left behind by a process that exited on its own.
+
+    Caller must hold ctx.state.process_lock.
+    """
+    process = ctx.state.process
+    if process is not None and process.poll() is not None:
+        ctx.state.last_exit_code = process.poll()
+        ctx.state.process = None
+        ctx.state.active_process_tool = None
+
+
 def is_process_running(ctx: AppContext) -> bool:
     with ctx.state.process_lock:
-        return ctx.state.process is not None and ctx.state.process.poll() is None
+        _reap_finished_process(ctx)
+        return ctx.state.process is not None
 
 
 def get_output_snapshot(ctx: AppContext, since: Optional[int] = None) -> dict[str, Any]:
@@ -553,7 +566,8 @@ def _build_process_env(ctx: AppContext) -> dict[str, str]:
 
 def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]]) -> dict[str, Any]:
     with ctx.state.process_lock:
-        if ctx.state.process and ctx.state.process.poll() is None:
+        _reap_finished_process(ctx)
+        if ctx.state.process is not None:
             return {"error": "A process is already running"}
 
         exe_name = ctx.services.get_tool_filename(tool)
@@ -614,6 +628,7 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
                 daemon=True,
             ).start()
             ctx.state.active_process_tool = tool
+            ctx.state.last_exit_code = None
             if tool == "llama-server":
                 parse_launch_api_target(ctx, args_list)
             return {
@@ -627,27 +642,37 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
 
 def stop_process(ctx: AppContext) -> bool:
     with ctx.state.process_lock:
-        if ctx.state.process and ctx.state.process.poll() is None:
+        process = ctx.state.process
+        if process is not None and process.poll() is None:
             if sys.platform == "win32":
-                ctx.state.process.send_signal(signal.CTRL_BREAK_EVENT)
+                process.send_signal(signal.CTRL_BREAK_EVENT)
             else:
-                ctx.state.process.terminate()
+                process.terminate()
             try:
-                ctx.state.process.wait(timeout=5)
+                process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                ctx.state.process.kill()
+                process.kill()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+            ctx.state.last_exit_code = process.poll()
+            ctx.state.process = None
             ctx.state.active_process_tool = None
             return True
+        _reap_finished_process(ctx)
         return False
 
 
 def send_input(ctx: AppContext, text: str) -> bool:
     with ctx.state.process_lock:
-        if ctx.state.process and ctx.state.process.poll() is None:
+        _reap_finished_process(ctx)
+        process = ctx.state.process
+        if process is not None:
             try:
-                if ctx.state.process.stdin:
-                    ctx.state.process.stdin.write(text + "\n")
-                    ctx.state.process.stdin.flush()
+                if process.stdin:
+                    process.stdin.write(text + "\n")
+                    process.stdin.flush()
                     return True
             except Exception as exc:
                 print(f"[process] failed to send input: {exc}", file=sys.stderr)
@@ -674,5 +699,6 @@ def remove_llama_files(ctx: AppContext) -> int:
         shutil.rmtree(llama_dll_dir)
 
     ctx.services.save_config({"version": None, "backend": None, "tag": None})
+    ctx.state.clear_runtime_health_cache()
 
     return removed_files

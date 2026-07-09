@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.request
 import zipfile
 from typing import Any, Callable, Iterable, Mapping, Optional
@@ -18,6 +19,11 @@ from ..context import AppContext
 
 
 RPATH_LIBRARY_RE = re.compile(r"^\s*@rpath/([^\s(]+)")
+
+# Runtime dependency validation shells out to otool on macOS, so results are
+# cached briefly. Config-changing operations (install, cleanup, backend
+# activation) clear the cache to keep /api/status fresh.
+RUNTIME_HEALTH_CACHE_TTL_SECONDS = 5.0
 
 # Optional llamacpp-rocm backend (https://github.com/lemonade-sdk/llamacpp-rocm).
 # Publishes nightly ROCm 7 llama.cpp archives for Windows and Ubuntu, one asset
@@ -264,12 +270,38 @@ def validate_runtime_dependencies(
             "missing_runtime_files": [],
         }
 
+    tool_names = tuple(tools) if tools is not None else ()
+    if not tool_names:
+        tool_names = ("llama-cli", "llama-server")
+
+    try:
+        cfg = dict(ctx.services.load_config())
+    except Exception as e:
+        print(f"[llama_manager] load_config failed during runtime validation: {e}", file=sys.stderr)
+        cfg = {}
+
+    cache_key = (cfg.get("backend"), tool_names)
+    now = time.monotonic()
+    with ctx.state.runtime_health_lock:
+        cached = ctx.state.runtime_health_cache.get(cache_key)
+        if cached is not None and now - cached[0] < RUNTIME_HEALTH_CACHE_TTL_SECONDS:
+            return dict(cached[1])
+
+    result = _validate_runtime_dependencies_uncached(ctx, tool_names, cfg)
+    with ctx.state.runtime_health_lock:
+        ctx.state.runtime_health_cache[cache_key] = (time.monotonic(), result)
+    return dict(result)
+
+
+def _validate_runtime_dependencies_uncached(
+    ctx: AppContext, tool_names: tuple[str, ...], cfg: Mapping[str, Any]
+) -> dict[str, Any]:
     required: set[str] = set()
     checked_tools: list[str] = []
     unchecked_tools: list[str] = []
     missing_executables: list[str] = []
 
-    for tool in tools or ("llama-cli", "llama-server"):
+    for tool in tool_names:
         exe_path = ctx.services.find_tool_executable(tool)
         if not exe_path.exists():
             missing_executables.append(ctx.services.get_tool_filename(tool))
@@ -285,11 +317,6 @@ def validate_runtime_dependencies(
         ):
             unchecked_tools.append(tool)
 
-    try:
-        cfg = dict(ctx.services.load_config())
-    except Exception as e:
-        print(f"[llama_manager] load_config failed during runtime validation: {e}", file=sys.stderr)
-        cfg = {}
     runtime_dir = (
         ctx.paths.llama_custom_bin
         if cfg.get("backend") == "custom"
@@ -360,6 +387,7 @@ def activate_custom_backend(ctx: AppContext) -> dict[str, Any]:
         cfg["backend"] = "custom"
         cfg["tag"] = "custom"
         ctx.services.save_config(cfg)
+        ctx.state.clear_runtime_health_cache()
         return {
             "ok": True,
             "found": found,
@@ -699,6 +727,7 @@ def install_release(
         ctx.services.save_config(
             {"version": release.get("name", tag), "backend": backend, "tag": tag}
         )
+        ctx.state.clear_runtime_health_cache()
         set_download_progress(
             ctx, status="done", message=f"Installed {tag} ({backend})"
         )

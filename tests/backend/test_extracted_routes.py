@@ -1,3 +1,4 @@
+import contextlib
 import io
 import json
 import tempfile
@@ -172,6 +173,22 @@ class ExtractedRouteTests(unittest.TestCase):
             )
             presets.delete_preset(delete_request, delete_response, ctx)
             self.assertEqual(delete_response.payload, {"deleted": True})
+
+    def test_list_presets_skips_malformed_file_with_stderr_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.paths.presets.mkdir(parents=True)
+            (ctx.paths.presets / "Good.json").write_text(json.dumps({"temperature": 0.7}))
+            (ctx.paths.presets / "Broken.json").write_text("{not valid json")
+            response = DummyResponse()
+            stderr = io.StringIO()
+
+            with contextlib.redirect_stderr(stderr):
+                presets.list_presets(Request("GET", "/api/presets", "", {}), response, ctx)
+
+            self.assertEqual(response.payload, [{"name": "Good", "data": {"temperature": 0.7}}])
+            self.assertIn("Broken.json", stderr.getvalue())
+            self.assertIn("JSONDecodeError", stderr.getvalue())
             self.assertFalse((ctx.paths.presets / "My_Preset.json").exists())
 
     def test_preset_delete_uses_same_sanitizer_as_save(self):
@@ -361,6 +378,7 @@ class ExtractedRouteTests(unittest.TestCase):
                 llama_tools=["llama-cli", "llama-server"],
                 load_config=lambda: {"tag": "b1", "backend": "cpu"},
             )
+            ctx.state.last_exit_code = 7
             response = DummyResponse()
 
             status.get_status(Request("GET", "/api/status", "", {}), response, ctx)
@@ -368,6 +386,8 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertTrue(response.payload["installed"])
             self.assertEqual(response.payload["models_dir"], str(ctx.paths.models))
             self.assertEqual(response.payload["available_backends"], [{"id": "cpu", "label": "CPU"}])
+            self.assertIsNone(response.payload["active_process_tool"])
+            self.assertEqual(response.payload["last_exit_code"], 7)
 
     def test_status_route_marks_install_stale_when_runtime_library_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
