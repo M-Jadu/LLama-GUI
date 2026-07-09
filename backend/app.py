@@ -609,7 +609,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         raw_length = self.headers.get("Content-Length")
         if raw_length is None:
             return 0
-        if not raw_length.isdecimal():
+        # ASCII-only so the length-based comparison below stays lexicographically
+        # correct (isdecimal alone also accepts non-ASCII Unicode digits).
+        if not (raw_length.isascii() and raw_length.isdecimal()):
             self.send_error_json("Invalid Content-Length header", 400)
             return _BODY_HANDLED
         normalized_length = raw_length.lstrip("0") or "0"

@@ -173,6 +173,7 @@ class ExtractedRouteTests(unittest.TestCase):
             )
             presets.delete_preset(delete_request, delete_response, ctx)
             self.assertEqual(delete_response.payload, {"deleted": True})
+            self.assertFalse((ctx.paths.presets / "My_Preset.json").exists())
 
     def test_list_presets_skips_malformed_file_with_stderr_warning(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -189,7 +190,6 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertEqual(response.payload, [{"name": "Good", "data": {"temperature": 0.7}}])
             self.assertIn("Broken.json", stderr.getvalue())
             self.assertIn("JSONDecodeError", stderr.getvalue())
-            self.assertFalse((ctx.paths.presets / "My_Preset.json").exists())
 
     def test_preset_delete_uses_same_sanitizer_as_save(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -502,7 +502,13 @@ class ExtractedRouteTests(unittest.TestCase):
 
             self.assertEqual(
                 response.payload,
-                {"lines": ["one", "two"], "next_cursor": 2, "dropped": False, "running": False},
+                {
+                    "lines": ["one", "two"],
+                    "next_cursor": 2,
+                    "dropped": False,
+                    "running": False,
+                    "output": ["one", "two"],
+                },
             )
 
     def test_process_output_cursor_recovers_after_buffer_trim(self):
