@@ -70,7 +70,15 @@ class ServerState:
     process_lock: threading.Lock = field(default_factory=threading.Lock)
     output_buffer: list[str] = field(default_factory=list)
     output_buffer_lock: threading.Lock = field(default_factory=threading.Lock)
+    output_buffer_start: int = 0
+    output_buffer_next: int = 0
+    output_generation: int = 0
+    output_reader_count: int = 0
     active_process_tool: Optional[str] = None
+    last_exit_code: Optional[int] = None
+
+    runtime_health_cache: dict[Any, tuple[float, dict[str, Any]]] = field(default_factory=dict)
+    runtime_health_lock: threading.Lock = field(default_factory=threading.Lock)
 
     download_progress: AtomicDict = field(
         default_factory=lambda: AtomicDict(default_download_progress())
@@ -96,3 +104,7 @@ class ServerState:
         default_factory=lambda: AtomicDict(default_llama_api_target())
     )
     llama_api_target_lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def clear_runtime_health_cache(self) -> None:
+        with self.runtime_health_lock:
+            self.runtime_health_cache.clear()

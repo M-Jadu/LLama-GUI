@@ -93,7 +93,8 @@
     let refreshRuntimeStatusPanels = null;
     let statusTimer = null;
     let outputTimer = null;
-    let lastOutputLen = 0;
+    let pollOutputActive = false;
+    const processOutputCursor = root.outputCursor.create(appendOutput);
     let outputLines = [];
     let cachedPresets = [];
     let cachedModels = [];
@@ -687,7 +688,7 @@
         const terminal = byId("benchmark-output-terminal");
         if (terminal) terminal.textContent = "";
         outputLines = [];
-        lastOutputLen = 0;
+        processOutputCursor.reset();
         renderSummary();
     }
 
@@ -717,14 +718,14 @@
     }
 
     async function pollOutput() {
-        if (!fetchJson) return;
+        if (!fetchJson || pollOutputActive) return;
+        pollOutputActive = true;
+        let request = null;
         try {
-            const data = await fetchJson("/api/output");
-            const lines = Array.isArray(data.output) ? data.output : [];
-            if (lines.length > lastOutputLen) {
-                for (const line of lines.slice(lastOutputLen)) appendOutput(line);
-                lastOutputLen = lines.length;
-            }
+            request = processOutputCursor.getRequest();
+            const data = await fetchJson(request.url);
+            const consumed = processOutputCursor.consume(data, request.epoch);
+            if (!consumed.current) return;
             if (!data.running) {
                 stopOutputPolling();
                 appendOutput("--- Benchmark process exited ---");
@@ -732,15 +733,18 @@
                 if (refreshRuntimeStatusPanels) refreshRuntimeStatusPanels();
             }
         } catch (e) {
+            if (request && !processOutputCursor.isCurrent(request.epoch)) return;
             appendOutput("Output polling error: " + e.message);
             stopOutputPolling();
             setRunningState(false);
+        } finally {
+            pollOutputActive = false;
         }
     }
 
-    function startOutputPolling() {
+    function startOutputPolling(initialCursor = null) {
         stopOutputPolling();
-        lastOutputLen = 0;
+        processOutputCursor.reset(initialCursor);
         outputTimer = setInterval(pollOutput, 300);
     }
 
@@ -767,7 +771,7 @@
                 body: JSON.stringify({ tool: result.tool, args: result.args }),
             });
             appendOutput("PID: " + launchResult.pid);
-            startOutputPolling();
+            startOutputPolling(launchResult.output_cursor);
             if (refreshRuntimeStatusPanels) refreshRuntimeStatusPanels();
         } catch (e) {
             appendOutput("ERROR: " + e.message);

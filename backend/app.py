@@ -20,6 +20,7 @@ from backend.config import (
     LLAMA_GRAMMARS_DIR,
     LLAMA_HOST,
     LLAMA_PORT,
+    MAX_REQUEST_BODY_SIZE,
     MODELS_DIR,
     PRESETS_DIR,
     REQUEST_BODY_TIMEOUT_SECONDS,
@@ -591,13 +592,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         Response(self).bytes(body, content_type="text/html; charset=utf-8")
 
     def read_body(self):
-        MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
-        length = int(self.headers.get("Content-Length", 0))
+        length = self.get_request_content_length()
+        if length is _BODY_HANDLED:
+            return _BODY_HANDLED
         if length == 0:
             return {}
-        if length > MAX_BODY_SIZE:
-            self.send_error_json(f"Request body too large (max {MAX_BODY_SIZE // (1024 * 1024)} MB)", 413)
-            return _BODY_HANDLED
         try:
             return json.loads(self.read_request_bytes(length))
         except (TimeoutError, socket.timeout):
@@ -605,6 +604,30 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return _BODY_HANDLED
         except (json.JSONDecodeError, UnicodeDecodeError):
             return None
+
+    def get_request_content_length(self):
+        raw_length = self.headers.get("Content-Length")
+        if raw_length is None:
+            return 0
+        # ASCII-only so the length-based comparison below stays lexicographically
+        # correct (isdecimal alone also accepts non-ASCII Unicode digits).
+        if not (raw_length.isascii() and raw_length.isdecimal()):
+            self.send_error_json("Invalid Content-Length header", 400)
+            return _BODY_HANDLED
+        normalized_length = raw_length.lstrip("0") or "0"
+        max_length = str(MAX_REQUEST_BODY_SIZE)
+        if len(normalized_length) > len(max_length) or (
+            len(normalized_length) == len(max_length) and normalized_length > max_length
+        ):
+            max_mb = MAX_REQUEST_BODY_SIZE // (1024 * 1024)
+            self.send_error_json(f"Request body too large (max {max_mb} MB)", 413)
+            return _BODY_HANDLED
+        length = int(normalized_length)
+        if length > MAX_REQUEST_BODY_SIZE:
+            max_mb = MAX_REQUEST_BODY_SIZE // (1024 * 1024)
+            self.send_error_json(f"Request body too large (max {max_mb} MB)", 413)
+            return _BODY_HANDLED
+        return length
 
     def read_request_bytes(self, length):
         deadline = time.monotonic() + REQUEST_BODY_TIMEOUT_SECONDS
@@ -649,8 +672,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return get_access_control_origin(self.headers, self.get_allowed_request_origins())
 
     def get_proxy_request_body(self):
-        length = int(self.headers.get("Content-Length", 0))
-        if length <= 0:
+        length = self.get_request_content_length()
+        if length is _BODY_HANDLED:
+            return _BODY_HANDLED
+        if length == 0:
             return None
         return self.read_request_bytes(length)
 
@@ -687,6 +712,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             data = self.get_proxy_request_body() if method in {"POST", "PUT", "PATCH"} else None
         except (TimeoutError, socket.timeout):
             self.send_error_json("Request body timed out", 408)
+            return
+        if data is _BODY_HANDLED:
             return
 
         headers = {}
@@ -740,11 +767,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         except Exception as exc:
-            self.send_proxy_error(
-                f"Failed to reach llama-server at {target['host']}:{target['port']}. "
-                "Start llama-server or check the API host/port before using the /v1 proxy. "
-                f"Details: {exc}"
-            )
+            print(f"[v1 proxy] {type(exc).__name__}: {exc}", file=sys.stderr)
+            self.send_proxy_error("Failed to reach llama-server. Start it or check the configured API host and port.")
 
     def dispatch_api_request(self, method, parsed, body=None):
         path = parsed.path

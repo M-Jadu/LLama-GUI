@@ -167,28 +167,76 @@ _ESTIMATE_BOOL_FLAGS = {
 }
 
 
+def _reap_finished_process(ctx: AppContext) -> None:
+    """Clear state left behind by a process that exited on its own.
+
+    Caller must hold ctx.state.process_lock.
+    """
+    process = ctx.state.process
+    if process is not None and process.poll() is not None:
+        ctx.state.last_exit_code = process.poll()
+        ctx.state.process = None
+        ctx.state.active_process_tool = None
+
+
 def is_process_running(ctx: AppContext) -> bool:
     with ctx.state.process_lock:
-        return ctx.state.process is not None and ctx.state.process.poll() is None
+        _reap_finished_process(ctx)
+        return ctx.state.process is not None
 
 
-def get_output_snapshot(ctx: AppContext) -> dict[str, Any]:
+def get_output_snapshot(ctx: AppContext, since: Optional[int] = None) -> dict[str, Any]:
     with ctx.state.output_buffer_lock:
-        lines = list(ctx.state.output_buffer)
-    return {"output": lines, "running": is_process_running(ctx)}
+        start_cursor = ctx.state.output_buffer_start
+        next_cursor = ctx.state.output_buffer_next
+        if since is None:
+            offset = 0
+            dropped = False
+        else:
+            dropped = since < start_cursor
+            cursor = max(start_cursor, min(since, next_cursor))
+            offset = cursor - start_cursor
+        lines = list(ctx.state.output_buffer[offset:])
+        readers_active = ctx.state.output_reader_count > 0
+    snapshot = {
+        "lines": lines,
+        "next_cursor": next_cursor,
+        "dropped": dropped,
+        "running": is_process_running(ctx) or readers_active,
+    }
+    if since is None:
+        # Deprecated alias for consumers that poll without a cursor and still
+        # read the pre-cursor "output" key.
+        snapshot["output"] = lines
+    return snapshot
 
 
-def stream_output(ctx: AppContext, pipe: Any, is_stderr: bool = False) -> None:
+def stream_output(
+    ctx: AppContext,
+    pipe: Any,
+    is_stderr: bool = False,
+    generation: Optional[int] = None,
+) -> None:
     try:
         for line in iter(pipe.readline, ""):
             if line:
                 decoded = line.rstrip("\n\r")
                 with ctx.state.output_buffer_lock:
+                    if generation is not None and generation != ctx.state.output_generation:
+                        continue
                     ctx.state.output_buffer.append(decoded)
+                    ctx.state.output_buffer_next += 1
                     if len(ctx.state.output_buffer) > config.PROCESS_OUTPUT_LIMIT:
-                        del ctx.state.output_buffer[: config.PROCESS_OUTPUT_TRIM]
+                        trim_count = min(config.PROCESS_OUTPUT_TRIM, len(ctx.state.output_buffer))
+                        del ctx.state.output_buffer[:trim_count]
+                        ctx.state.output_buffer_start += trim_count
     except Exception as exc:
         print(f"[process] output stream reader stopped: {exc}", file=sys.stderr)
+    finally:
+        if generation is not None:
+            with ctx.state.output_buffer_lock:
+                if generation == ctx.state.output_generation:
+                    ctx.state.output_reader_count = max(0, ctx.state.output_reader_count - 1)
 
 
 def flatten_launch_args(args_list: Optional[Iterable[Any]]) -> list[str]:
@@ -523,7 +571,8 @@ def _build_process_env(ctx: AppContext) -> dict[str, str]:
 
 def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]]) -> dict[str, Any]:
     with ctx.state.process_lock:
-        if ctx.state.process and ctx.state.process.poll() is None:
+        _reap_finished_process(ctx)
+        if ctx.state.process is not None:
             return {"error": "A process is already running"}
 
         exe_name = ctx.services.get_tool_filename(tool)
@@ -552,11 +601,9 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
         args = [str(exe_path), *flatten_launch_args(args_list)]
         env = _build_process_env(ctx)
 
-        with ctx.state.output_buffer_lock:
-            ctx.state.output_buffer.clear()
-
+        process = None
         try:
-            ctx.state.process = subprocess.Popen(
+            process = subprocess.Popen(
                 args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -568,43 +615,91 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
                 if sys.platform == "win32"
                 else 0,
             )
+            ctx.state.process = process
+            with ctx.state.output_buffer_lock:
+                ctx.state.output_buffer.clear()
+                ctx.state.output_buffer_start = ctx.state.output_buffer_next
+                ctx.state.output_generation += 1
+                generation = ctx.state.output_generation
+                ctx.state.output_reader_count = 2
+                output_cursor = ctx.state.output_buffer_next
             threading.Thread(
-                target=stream_output, args=(ctx, ctx.state.process.stdout), daemon=True
+                target=stream_output,
+                args=(ctx, process.stdout, False, generation),
+                daemon=True,
             ).start()
             threading.Thread(
-                target=stream_output, args=(ctx, ctx.state.process.stderr, True), daemon=True
+                target=stream_output,
+                args=(ctx, process.stderr, True, generation),
+                daemon=True,
             ).start()
             ctx.state.active_process_tool = tool
+            ctx.state.last_exit_code = None
             if tool == "llama-server":
                 parse_launch_api_target(ctx, args_list)
-            return {"pid": ctx.state.process.pid, "command": " ".join(args)}
+            return {
+                "pid": ctx.state.process.pid,
+                "command": " ".join(args),
+                "output_cursor": output_cursor,
+            }
         except Exception as e:
+            if process is not None:
+                # Popen succeeded but wiring up state failed; don't leave an
+                # untracked process running.
+                try:
+                    process.kill()
+                    process.wait(timeout=5)
+                except Exception as cleanup_exc:
+                    print(
+                        f"[process] failed to clean up partially launched process: {cleanup_exc}",
+                        file=sys.stderr,
+                    )
+                ctx.state.process = None
+                ctx.state.active_process_tool = None
             return {"error": str(e)}
 
 
 def stop_process(ctx: AppContext) -> bool:
     with ctx.state.process_lock:
-        if ctx.state.process and ctx.state.process.poll() is None:
+        process = ctx.state.process
+        if process is not None and process.poll() is None:
             if sys.platform == "win32":
-                ctx.state.process.send_signal(signal.CTRL_BREAK_EVENT)
+                process.send_signal(signal.CTRL_BREAK_EVENT)
             else:
-                ctx.state.process.terminate()
+                process.terminate()
             try:
-                ctx.state.process.wait(timeout=5)
+                process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                ctx.state.process.kill()
+                process.kill()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+            if process.poll() is None:
+                # Keep tracking the process so a new launch can't run
+                # alongside one that refused to die.
+                print(
+                    f"[process] PID {process.pid} survived kill; still tracking it",
+                    file=sys.stderr,
+                )
+                return False
+            ctx.state.last_exit_code = process.poll()
+            ctx.state.process = None
             ctx.state.active_process_tool = None
             return True
+        _reap_finished_process(ctx)
         return False
 
 
 def send_input(ctx: AppContext, text: str) -> bool:
     with ctx.state.process_lock:
-        if ctx.state.process and ctx.state.process.poll() is None:
+        _reap_finished_process(ctx)
+        process = ctx.state.process
+        if process is not None:
             try:
-                if ctx.state.process.stdin:
-                    ctx.state.process.stdin.write(text + "\n")
-                    ctx.state.process.stdin.flush()
+                if process.stdin:
+                    process.stdin.write(text + "\n")
+                    process.stdin.flush()
                     return True
             except Exception as exc:
                 print(f"[process] failed to send input: {exc}", file=sys.stderr)
@@ -631,5 +726,6 @@ def remove_llama_files(ctx: AppContext) -> int:
         shutil.rmtree(llama_dll_dir)
 
     ctx.services.save_config({"version": None, "backend": None, "tag": None})
+    ctx.state.clear_runtime_health_cache()
 
     return removed_files
