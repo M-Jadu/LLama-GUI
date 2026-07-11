@@ -26,6 +26,7 @@ CLOUDFLARED_DIR = TOOLS_DIR / "cloudflared"
 
 DEFAULT_GUI_HOST = "127.0.0.1"
 DEFAULT_GUI_PORT = 5240
+SUPERVISOR_RESTART_EXIT_CODE = 75
 REQUEST_BODY_TIMEOUT_SECONDS = 30
 MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024
 
@@ -62,9 +63,14 @@ def parse_gui_allowed_hosts(value: object) -> tuple[str, ...]:
     return tuple(hosts)
 
 
+def parse_bool_env(value: object) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 GUI_HOST = parse_gui_host(os.environ.get("LLAMA_GUI_HOST"), DEFAULT_GUI_HOST)
 GUI_PORT = parse_gui_port(os.environ.get("LLAMA_GUI_PORT"), DEFAULT_GUI_PORT)
 GUI_ALLOWED_HOSTS = parse_gui_allowed_hosts(os.environ.get("LLAMA_GUI_ALLOWED_HOSTS"))
+SUPERVISED = parse_bool_env(os.environ.get("LLAMA_GUI_SUPERVISED"))
 LLAMA_HOST = "127.0.0.1"
 LLAMA_PORT = 8080
 

@@ -260,6 +260,16 @@ LLAMA_GUI_HOST=0.0.0.0 LLAMA_GUI_ALLOWED_HOSTS=llama-box.local python server.py
 
 Do not expose this admin UI directly to the public internet. Llama GUI does not enforce its own authentication layer; use a trusted network, VPN, or authenticated reverse proxy.
 
+### External Process Supervisors
+
+Launchers and service managers can keep ownership of the Python process while preserving automatic restarts after an in-app update:
+
+```bash
+LLAMA_GUI_SUPERVISED=1 python server.py
+```
+
+In supervised mode, a restart request performs normal runtime cleanup and exits with status `75`. The external supervisor should restart the same command only for that status. Ordinary shutdowns exit with status `0`. Without `LLAMA_GUI_SUPERVISED`, Llama GUI keeps its normal standalone behavior and starts the replacement Python process itself.
+
 ## First-Run Checklist (60 Seconds)
 
 Use this as a quick onboarding flow for a fresh setup:

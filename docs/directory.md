@@ -519,6 +519,8 @@ Frontend tunnel controls, status rendering, URL rendering, copy wiring, start/st
 4. `POST /api/app-update` runs `git pull --ff-only`, then reinstalls `requirements.txt` via pip.
 5. After success, the server restarts and the frontend reloads with cache busting.
 
+When `LLAMA_GUI_SUPERVISED=1`, restart requests exit cleanly with status `75` instead of spawning a detached replacement process. An external launcher or service manager can use that status to relaunch `python server.py`; ordinary shutdowns still exit with status `0`. Standalone launches retain the existing self-restart behavior.
+
 ### Dependency Installation
 
 `install_python_dependencies()` runs `pip install -r requirements.txt` and reports success/failure. Called after git pull and exposed as `POST /api/install-deps`.
