@@ -170,7 +170,7 @@
                     </div>
 
                     <div id="custom-backend-info" style="display:none;">
-                        <div class="status-box info" style="margin-top:8px;">
+                        <div class="status-box info">
                             <strong>Custom Backend Setup:</strong><br>
                             Place your pre-compiled llama.cpp binaries in:<br>
                             <code>llama/custom/bin/</code><br><br>
@@ -481,7 +481,7 @@
                             <div class="card-title">Launch Preview</div>
                         </div>
                         <div class="launch-preview-badges">
-                            <div id="quick-server-address" class="server-address hidden" style="margin:0;padding:0;border:none;background:none;">
+                            <div id="quick-server-address" class="server-address server-address-bare hidden">
                                 <span class="badge badge-accent"><span class="badge-dot"></span> <a id="quick-server-url" href="#" target="_blank" class="badge-link"></a></span>
                                 <span class="server-sep">|</span>
                                 <a id="quick-server-webui" href="#" target="_blank" class="server-link">Web UI</a>
@@ -489,7 +489,7 @@
                                     <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
                                 </button>
                             </div>
-                            <label class="toggle" style="font-size:11px;">
+                            <label class="toggle toggle-sm">
                                 <input type="checkbox" id="quick-metrics-toggle" checked />
                                 <span class="toggle-track"><span class="toggle-thumb"></span></span>
                                 Stats bar
@@ -526,7 +526,7 @@
                     <div class="page-title">Configure &amp; Launch</div>
                 </div>
                 <div class="input-row">
-                    <label class="form-label" style="margin:0;">Tool:</label>
+                    <label class="form-label form-label-inline">Tool:</label>
                     <select id="tool-select">
                         <option value="llama-cli">llama-cli (Interactive Chat)</option>
                         <option value="llama-server" selected>llama-server (HTTP API)</option>
@@ -618,7 +618,7 @@
         <!-- ═══ CHAT ═══ -->
         <div class="section-panel" id="section-chat" style="display:none;">
             <div class="chat-header-bar">
-                <div style="display:flex; align-items:center; gap:var(--space-2);">
+                <div class="chat-header-title">
                     <h2>Chat</h2>
                     <span class="badge badge-green" id="chat-status-badge" style="display:none;"><span class="badge-dot"></span> Server Running</span>
                     <span class="badge badge-neutral" id="chat-no-server-badge">No Server</span>
@@ -661,7 +661,7 @@
                     <div class="chat-messages" id="chat-messages">
                         <div class="chat-empty" id="chat-empty">
                             <div class="chat-empty-icon">
-                                <span class="icon" style="width:40px;height:40px;color:var(--fg-faint);"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                                <span class="icon chat-empty-glyph"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
                             </div>
                             <h3>Start a conversation</h3>
                         </div>
@@ -970,77 +970,88 @@
                                     <p class="help-text">Scoring window size. Smaller values are faster and avoid long-context setup issues.</p>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-batch">Batch Size</label>
-                                    <input id="benchmark-ppl-batch" type="number" min="1" max="131072" step="1" value="2048">
-                                    <p class="help-text">How many tokens llama.cpp processes per batch during evaluation.</p>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-ubatch">Micro Batch Size</label>
-                                    <input id="benchmark-ppl-ubatch" type="number" min="1" max="131072" step="1" value="512">
-                                    <p class="help-text">Smaller micro batches can reduce memory pressure on large models.</p>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-threads">Threads</label>
-                                    <input id="benchmark-ppl-threads" type="number" min="-1" max="256" step="1" value="-1">
-                                    <p class="help-text">CPU worker threads. Leave -1 to let llama.cpp choose.</p>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-gpu-layers">GPU Layers</label>
-                                    <input id="benchmark-ppl-gpu-layers" type="text" value="auto">
-                                    <p class="help-text">Use auto for llama.cpp's default GPU offload choice, or enter a layer count.</p>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-flash-attn">Flash Attention</label>
-                                    <select id="benchmark-ppl-flash-attn">
-                                        <option value="auto">Auto</option>
-                                        <option value="on">On</option>
-                                        <option value="off">Off</option>
-                                    </select>
-                                    <p class="help-text">Auto lets llama.cpp choose whether flash attention is supported.</p>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-cache-k">K Cache Type</label>
-                                    <select id="benchmark-ppl-cache-k">
-                                        <option value="f16">f16</option>
-                                        <option value="bf16">bf16</option>
-                                        <option value="q8_0">q8_0</option>
-                                        <option value="q4_0">q4_0</option>
-                                        <option value="q4_1">q4_1</option>
-                                    </select>
-                                    <p class="help-text">Lower precision can reduce memory use, but may affect scores.</p>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-cache-v">V Cache Type</label>
-                                    <select id="benchmark-ppl-cache-v">
-                                        <option value="f16">f16</option>
-                                        <option value="bf16">bf16</option>
-                                        <option value="q8_0">q8_0</option>
-                                        <option value="q4_0">q4_0</option>
-                                        <option value="q4_1">q4_1</option>
-                                    </select>
-                                    <p class="help-text">Usually match K cache unless you are comparing memory tradeoffs.</p>
-                                </div>
-                                <div class="form-group">
                                     <label class="form-label" for="benchmark-chunks">Chunks</label>
                                     <input id="benchmark-chunks" type="number" min="-1" step="1" value="5">
                                     <p class="help-text">Limits how much of the file to evaluate. Start small, then increase for steadier scores.</p>
                                 </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-stride">PPL Stride</label>
-                                    <input id="benchmark-ppl-stride" type="number" min="0" step="1" value="0">
-                                    <p class="help-text">Controls the overlap between scoring windows. Leave 0 for llama.cpp's default behavior.</p>
-                                </div>
                             </div>
-                            <label class="toggle-row benchmark-toggle">
-                                <input id="benchmark-ppl-mmap" type="checkbox" checked>
-                                <span>Memory map model</span>
-                            </label>
-                            <p class="help-text">Uses llama.cpp's default mmap loading. Turn this off to pass --no-mmap when testing model-load or tensor-placement issues.</p>
-                            <label class="toggle-row benchmark-toggle">
-                                <input id="benchmark-warmup" type="checkbox" checked>
-                                <span>Warmup</span>
-                            </label>
-                            <p class="help-text">Runs a small warmup first so load/setup overhead is less likely to skew the score.</p>
+                            <details class="benchmark-advanced">
+                                <summary>
+                                    <span class="benchmark-advanced-chevron"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span>
+                                    Advanced settings
+                                    <span class="benchmark-advanced-hint">batch sizes, threads, GPU offload, cache types</span>
+                                </summary>
+                                <div class="benchmark-advanced-body">
+                                    <div class="benchmark-controls-grid">
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-batch">Batch Size</label>
+                                            <input id="benchmark-ppl-batch" type="number" min="1" max="131072" step="1" value="2048">
+                                            <p class="help-text">How many tokens llama.cpp processes per batch during evaluation.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-ubatch">Micro Batch Size</label>
+                                            <input id="benchmark-ppl-ubatch" type="number" min="1" max="131072" step="1" value="512">
+                                            <p class="help-text">Smaller micro batches can reduce memory pressure on large models.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-threads">Threads</label>
+                                            <input id="benchmark-ppl-threads" type="number" min="-1" max="256" step="1" value="-1">
+                                            <p class="help-text">CPU worker threads. Leave -1 to let llama.cpp choose.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-gpu-layers">GPU Layers</label>
+                                            <input id="benchmark-ppl-gpu-layers" type="text" value="auto">
+                                            <p class="help-text">Use auto for llama.cpp's default GPU offload choice, or enter a layer count.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-flash-attn">Flash Attention</label>
+                                            <select id="benchmark-ppl-flash-attn">
+                                                <option value="auto">Auto</option>
+                                                <option value="on">On</option>
+                                                <option value="off">Off</option>
+                                            </select>
+                                            <p class="help-text">Auto lets llama.cpp choose whether flash attention is supported.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-cache-k">K Cache Type</label>
+                                            <select id="benchmark-ppl-cache-k">
+                                                <option value="f16">f16</option>
+                                                <option value="bf16">bf16</option>
+                                                <option value="q8_0">q8_0</option>
+                                                <option value="q4_0">q4_0</option>
+                                                <option value="q4_1">q4_1</option>
+                                            </select>
+                                            <p class="help-text">Lower precision can reduce memory use, but may affect scores.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-cache-v">V Cache Type</label>
+                                            <select id="benchmark-ppl-cache-v">
+                                                <option value="f16">f16</option>
+                                                <option value="bf16">bf16</option>
+                                                <option value="q8_0">q8_0</option>
+                                                <option value="q4_0">q4_0</option>
+                                                <option value="q4_1">q4_1</option>
+                                            </select>
+                                            <p class="help-text">Usually match K cache unless you are comparing memory tradeoffs.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-stride">PPL Stride</label>
+                                            <input id="benchmark-ppl-stride" type="number" min="0" step="1" value="0">
+                                            <p class="help-text">Controls the overlap between scoring windows. Leave 0 for llama.cpp's default behavior.</p>
+                                        </div>
+                                    </div>
+                                    <label class="toggle-row benchmark-toggle">
+                                        <input id="benchmark-ppl-mmap" type="checkbox" checked>
+                                        <span>Memory map model</span>
+                                    </label>
+                                    <p class="help-text">Uses llama.cpp's default mmap loading. Turn this off to pass --no-mmap when testing model-load or tensor-placement issues.</p>
+                                    <label class="toggle-row benchmark-toggle">
+                                        <input id="benchmark-warmup" type="checkbox" checked>
+                                        <span>Warmup</span>
+                                    </label>
+                                    <p class="help-text">Runs a small warmup first so load/setup overhead is less likely to skew the score.</p>
+                                </div>
+                            </details>
                         </div>
 
                         <div class="launch-bar benchmark-launch-bar">
@@ -1183,7 +1194,7 @@
 <script src="/js/theme-ui.js?v=revamp-1"></script>
 <script src="/js/flag-core.js?v=revamp-1"></script>
 <script src="/js/config-flags-ui.js?v=revamp-1"></script>
-<script src="/js/manager.js?v=revamp-1"></script>
+<script src="/js/manager.js?v=revamp-2"></script>
 <script src="/js/presets.js?v=revamp-2"></script>
 <script src="/js/app-data.js?v=revamp-1"></script>
 <script src="/js/output-cursor.js?v=revamp-1"></script>
@@ -1194,7 +1205,7 @@
 <script src="/js/remote-tunnel-ui.js?v=revamp-1"></script>
 <script src="/js/quick-launch-ui.js?v=revamp-1"></script>
 <script src="/js/chat-ui.js?v=revamp-1"></script>
-<script src="/js/benchmark-ui.js?v=revamp-1"></script>
+<script src="/js/benchmark-ui.js?v=revamp-2"></script>
 <script src="/js/app.js?v=revamp-2"></script>
 </body>
 </html>

@@ -357,7 +357,7 @@
         container.textContent = "";
         if (!items || items.length === 0) {
             const empty = document.createElement("div");
-            empty.className = "benchmark-empty";
+            empty.className = "empty-state empty-state-sm";
             empty.textContent = emptyText;
             container.appendChild(empty);
             return;
@@ -707,7 +707,15 @@
         const el = byId("benchmark-summary");
         if (!el) return;
         const summary = parseBenchSummary(outputLines);
-        el.textContent = summary.length ? `Throughput observed: ${summary.join(", ")}` : "Summary appears here when benchmark output includes recognizable throughput data.";
+        el.textContent = "";
+        if (summary.length) {
+            el.textContent = `Throughput observed: ${summary.join(", ")}`;
+            return;
+        }
+        const empty = document.createElement("div");
+        empty.className = "empty-state empty-state-sm";
+        empty.textContent = "Summary appears here when benchmark output includes recognizable throughput data.";
+        el.appendChild(empty);
     }
 
     function stopOutputPolling() {

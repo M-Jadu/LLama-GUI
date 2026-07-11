@@ -481,6 +481,30 @@ body.chat-focus-mode .main-content {
 
 .stacked-cards { display: grid; gap: var(--space-4); }
 
+/* shared empty-state block: centered muted text, optional title line */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 2px;
+    padding: var(--space-5) var(--space-4);
+    color: var(--fg-faint);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.empty-state-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--fg-muted);
+}
+
+.empty-state p { margin: 0; max-width: 360px; }
+
+.empty-state-sm { padding: var(--space-3); }
+
 .card.card-danger { border-color: var(--red-border); }
 .card.card-danger:hover {
     border-color: var(--red-border);
@@ -525,6 +549,8 @@ body.chat-focus-mode .main-content {
     margin-bottom: var(--space-2);
 }
 
+.form-label-inline { margin-bottom: 0; }
+
 .form-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; margin-bottom: var(--space-4); }
 .input-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 
@@ -565,6 +591,8 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
 }
 
 /* Toggle */
+.toggle.toggle-sm { font-size: 11px; }
+
 .toggle {
     position: relative;
     display: inline-flex;
@@ -1344,6 +1372,14 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
     flex-wrap: wrap;
 }
 
+/* inline variant used inside card headers (no box chrome of its own) */
+.server-address-bare {
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+}
+
 .server-label {
     font-size: 11px;
     font-weight: 600;
@@ -1632,6 +1668,51 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
     margin-top: var(--space-4);
 }
 
+.benchmark-advanced {
+    margin: var(--space-2) 0 var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-raised);
+}
+
+.benchmark-advanced summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    cursor: pointer;
+    list-style: none;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg-muted);
+    user-select: none;
+    transition: color var(--ease-fast);
+}
+
+.benchmark-advanced summary::-webkit-details-marker { display: none; }
+.benchmark-advanced summary:hover { color: var(--fg); }
+
+.benchmark-advanced-chevron {
+    display: inline-flex;
+    color: var(--fg-faint);
+    transition: transform var(--ease-med);
+}
+
+.benchmark-advanced[open] .benchmark-advanced-chevron { transform: rotate(90deg); }
+
+.benchmark-advanced-hint {
+    margin-left: auto;
+    font-weight: 400;
+    font-size: 11px;
+    color: var(--fg-faint);
+    text-align: right;
+}
+
+.benchmark-advanced-body {
+    padding: var(--space-3);
+    border-top: 1px solid var(--border);
+}
+
 .benchmark-list {
     display: grid;
     gap: var(--space-2);
@@ -1662,11 +1743,7 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
     overflow-wrap: anywhere;
 }
 
-.benchmark-empty {
-    color: var(--fg-muted);
-    font-size: 12px;
-    line-height: 1.5;
-}
+.benchmark-summary .empty-state { padding: var(--space-1); }
 
 .benchmark-summary {
     margin-bottom: var(--space-2);
@@ -2229,6 +2306,10 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
 #installed-info .exe-ok { color: var(--green); }
 #installed-info .exe-missing { color: var(--red); }
 
+.installed-info-hint { color: var(--fg-muted); }
+.installed-info-note { color: var(--fg-muted); margin-bottom: var(--space-2); }
+.installed-info-warning { color: var(--yellow); margin-bottom: var(--space-2); }
+
 /* ════════════════════════════════════════════
    MODAL
    ════════════════════════════════════════════ */
@@ -2433,6 +2514,18 @@ body.chat-focus-mode .stats-bar { left: 0; }
     font-weight: 700;
     color: var(--fg-bright);
     margin: 0;
+}
+
+.chat-header-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.chat-empty-glyph {
+    width: 40px;
+    height: 40px;
+    color: var(--fg-faint);
 }
 
 .chat-header-actions {
