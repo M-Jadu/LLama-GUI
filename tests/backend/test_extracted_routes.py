@@ -2586,6 +2586,24 @@ class LifecycleTests(unittest.TestCase):
         wait_args = mock_wait.call_args.args
         self.assertEqual(wait_args[:2], ("127.0.0.2", 61234))
 
+    def test_supervised_restart_requests_clean_external_relaunch(self):
+        self.ctx.config = ServerConfig(supervised=True)
+        self.ctx.state.gui_server = mock.Mock()
+
+        with mock.patch("backend.services.lifecycle.subprocess.Popen") as mock_popen:
+            result = lifecycle_service.restart_gui_server(self.ctx)
+
+        self.assertTrue(result)
+        self.assertTrue(self.ctx.state.restart_requested.is_set())
+        self.ctx.state.gui_server.shutdown.assert_called_once()
+        mock_popen.assert_not_called()
+        self.assertEqual(lifecycle_service.get_gui_exit_code(self.ctx), 75)
+
+    def test_supervised_normal_shutdown_keeps_success_exit_code(self):
+        self.ctx.config = ServerConfig(supervised=True)
+
+        self.assertEqual(lifecycle_service.get_gui_exit_code(self.ctx), 0)
+
     # --- Service: open_folder_in_file_manager ---
 
     def test_open_folder_windows(self):

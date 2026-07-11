@@ -23,4 +23,4 @@ sys.modules[__name__].__class__ = _ServerModule
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

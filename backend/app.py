@@ -908,6 +908,7 @@ API_ROUTER = (
 
 def main():
     port = GUI_PORT
+    APP_CONTEXT.state.restart_requested.clear()
     for d in [
         MODELS_DIR,
         PRESETS_DIR,
@@ -944,10 +945,11 @@ def main():
         pass
     finally:
         lifecycle_service.cleanup_gui_server(APP_CONTEXT)
+    return lifecycle_service.get_gui_exit_code(APP_CONTEXT)
 
 
 configure_services(APP_CONTEXT)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

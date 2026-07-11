@@ -20,6 +20,7 @@ class BackendConfigTests(unittest.TestCase):
         self.assertEqual(server_config.gui_port, 5240)
         self.assertEqual(server_config.llama_port, 8080)
         self.assertEqual(server_config.gui_host, "127.0.0.1")
+        self.assertFalse(server_config.supervised)
 
     def test_gui_env_parsers_accept_valid_values(self):
         self.assertEqual(config.parse_gui_host("0.0.0.0"), "0.0.0.0")
@@ -38,6 +39,12 @@ class BackendConfigTests(unittest.TestCase):
         self.assertEqual(config.parse_gui_port("not-a-port"), 5240)
         self.assertEqual(config.parse_gui_port("70000"), 5240)
         self.assertEqual(config.parse_gui_allowed_hosts("192.168.1.0/24,,\n"), ())
+
+    def test_bool_env_parser_accepts_explicit_true_values(self):
+        for value in ("1", "true", "TRUE", "yes", "on"):
+            self.assertTrue(config.parse_bool_env(value))
+        for value in (None, "", "0", "false", "off", "unexpected"):
+            self.assertFalse(config.parse_bool_env(value))
 
 
 class AtomicDictTests(unittest.TestCase):
@@ -70,6 +77,7 @@ class ServerStateTests(unittest.TestCase):
         self.assertEqual(state.model_download.snapshot()["status"], "idle")
         self.assertEqual(state.remote_tunnel.snapshot()["message"], "Remote tunnel is not running.")
         self.assertEqual(state.llama_api_target.snapshot(), {"host": "127.0.0.1", "port": 8080})
+        self.assertFalse(state.restart_requested.is_set())
 
     def test_app_context_groups_paths_config_and_state(self):
         ctx = AppContext()

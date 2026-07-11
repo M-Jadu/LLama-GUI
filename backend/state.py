@@ -76,6 +76,7 @@ class ServerState:
     output_reader_count: int = 0
     active_process_tool: Optional[str] = None
     last_exit_code: Optional[int] = None
+    restart_requested: threading.Event = field(default_factory=threading.Event)
 
     runtime_health_cache: dict[Any, tuple[float, dict[str, Any]]] = field(default_factory=dict)
     runtime_health_lock: threading.Lock = field(default_factory=threading.Lock)

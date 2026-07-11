@@ -11,6 +11,7 @@ from ..config import (
     RESTART_PORT_WAIT_ATTEMPTS,
     RESTART_PORT_WAIT_SECONDS,
     RESTART_STARTUP_DELAY_SECONDS,
+    SUPERVISOR_RESTART_EXIT_CODE,
 )
 
 
@@ -64,6 +65,12 @@ def restart_gui_server(ctx):
     if server is None:
         return False
 
+    if ctx.config.supervised:
+        ctx.state.restart_requested.set()
+        print("Restart requested; handing control back to the external supervisor.")
+        threading.Thread(target=server.shutdown, daemon=True).start()
+        return True
+
     stop_runtime_services(ctx)
     restart_script = str(ctx.paths.root / "server.py")
     gui_host = ctx.config.gui_host
@@ -100,6 +107,12 @@ def restart_gui_server(ctx):
     threading.Thread(target=_restart, daemon=False).start()
     threading.Thread(target=server.shutdown, daemon=True).start()
     return True
+
+
+def get_gui_exit_code(ctx):
+    if ctx.config.supervised and ctx.state.restart_requested.is_set():
+        return SUPERVISOR_RESTART_EXIT_CODE
+    return 0
 
 
 def open_folder_in_file_manager(target):

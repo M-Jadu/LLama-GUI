@@ -29,6 +29,7 @@ class AppPaths:
 class ServerConfig:
     gui_host: str = config.GUI_HOST
     gui_port: int = config.GUI_PORT
+    supervised: bool = config.SUPERVISED
     llama_host: str = config.LLAMA_HOST
     llama_port: int = config.LLAMA_PORT
     github_api: str = config.GITHUB_API
