@@ -1074,44 +1074,51 @@
                     <div class="page-title">Presets</div>
                     <div class="page-title-sub">Save, load, and manage preset configurations.</div>
                 </div>
+                <div class="presets-header-actions">
+                    <button class="btn" id="btn-import-preset">Import JSON</button>
+                    <button class="btn" id="btn-export-all-presets">Export All</button>
+                </div>
             </div>
 
-            <div class="card">
-                <div id="preset-status" class="status-box"></div>
-                <div class="presets-toolbar">
-                    <div class="presets-save">
-                        <label class="form-label" for="preset-name-input">Save Current Configuration</label>
-                        <div class="input-row">
-                            <input type="text" id="preset-name-input" placeholder="Preset name..." />
-                            <button class="btn btn-primary" id="btn-save-preset">Save</button>
+            <div id="preset-status" class="status-box"></div>
+
+            <div class="presets-save-bar">
+                <label class="presets-save-label" for="preset-name-input">Save current config</label>
+                <input type="text" id="preset-name-input" placeholder="Preset name..." />
+                <button class="btn btn-primary" id="btn-save-preset">Save</button>
+                <span class="presets-save-hint">Captures the active Configure settings</span>
+            </div>
+            <input type="file" id="preset-import" accept=".json" style="display:none" />
+
+            <div class="presets-workspace">
+                <section class="presets-browser" id="presets-browser" aria-label="Saved presets">
+                    <div class="presets-browser-toolbar">
+                        <div class="presets-search-wrap">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                            <input type="text" id="preset-search" placeholder="Search presets or models..." />
                         </div>
+                        <button id="btn-presets-expand-all" class="presets-icon-btn" type="button" title="Expand all model groups" aria-label="Expand all model groups">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m7 8 5 5 5-5"/><path d="m7 14 5 5 5-5" opacity="0.4"/></svg>
+                        </button>
+                        <button id="btn-presets-collapse-all" class="presets-icon-btn" type="button" title="Collapse all model groups" aria-label="Collapse all model groups">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m7 16 5-5 5 5"/><path d="m7 10 5-5 5 5" opacity="0.4"/></svg>
+                        </button>
                     </div>
-                    <input type="file" id="preset-import" accept=".json" style="display:none" />
-                    <button class="btn presets-import-btn" id="btn-export-all-presets">Export All</button>
-                    <button class="btn presets-import-btn" id="btn-import-preset">Import JSON</button>
-                </div>
-                <div class="presets-workspace">
-                    <div class="presets-main">
-                        <div class="presets-list-header">
-                            <h3>Saved Presets</h3>
-                            <div class="presets-list-actions">
-                                <input type="text" id="preset-search" placeholder="Search presets..." />
-                                <button id="btn-presets-expand-all" class="btn btn-sm" type="button" title="Expand all model groups">Expand All</button>
-                                <button id="btn-presets-collapse-all" class="btn btn-sm" type="button" title="Collapse all model groups">Collapse All</button>
-                            </div>
-                        </div>
-                        <div class="presets-bulk-bar">
-                            <div id="presets-selection-count" class="presets-selection-count">0 selected</div>
-                            <div class="presets-bulk-actions">
-                                <button id="btn-presets-select-all" class="btn btn-sm" type="button">Select All</button>
-                                <button id="btn-presets-select-none" class="btn btn-sm" type="button">Select None</button>
-                                <button id="btn-presets-delete-selected" class="btn btn-sm btn-danger" type="button">Delete Selected</button>
-                            </div>
-                        </div>
-                        <div id="presets-list"></div>
+                    <div class="presets-filters">
+                        <button id="preset-filter-all" class="preset-chip active" type="button">All</button>
+                        <button id="preset-filter-warnings" class="preset-chip preset-chip-warn" type="button">&#9888; Warnings</button>
+                        <span id="presets-count-line" class="presets-count-line"></span>
                     </div>
-                    <aside id="preset-detail-panel" class="preset-detail-panel" aria-label="Selected preset details"></aside>
-                </div>
+                    <div id="presets-list" class="presets-browser-list"></div>
+                    <div class="presets-bulk-bar">
+                        <span id="presets-selection-count" class="presets-selection-count">0 selected</span>
+                        <button id="btn-presets-select-all" class="btn btn-sm btn-ghost" type="button">Select All</button>
+                        <button id="btn-presets-select-none" class="btn btn-sm btn-ghost" type="button">Clear</button>
+                        <button id="btn-presets-export-selected" class="btn btn-sm" type="button" title="Export selected presets as a JSON file">Export</button>
+                        <button id="btn-presets-delete-selected" class="btn btn-sm btn-danger" type="button">Delete</button>
+                    </div>
+                </section>
+                <aside id="preset-detail-panel" class="preset-detail-panel" aria-label="Selected preset details"></aside>
             </div>
         </div>
 
@@ -1156,7 +1163,7 @@
 <script src="/js/flag-core.js?v=revamp-1"></script>
 <script src="/js/config-flags-ui.js?v=revamp-1"></script>
 <script src="/js/manager.js?v=revamp-1"></script>
-<script src="/js/presets.js?v=revamp-1"></script>
+<script src="/js/presets.js?v=revamp-2"></script>
 <script src="/js/app-data.js?v=revamp-1"></script>
 <script src="/js/output-cursor.js?v=revamp-1"></script>
 <script src="/js/sampler-presets.js?v=revamp-1"></script>
