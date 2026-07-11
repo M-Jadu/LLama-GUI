@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="dark">
     <title>Llama GUI - llama.cpp Launcher</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>🦙</text></svg>">
+    <link rel="icon" type="image/png" href="/assets/app-logo.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -142,76 +142,69 @@
                 </div>
             </div>
 
-            <div class="card">
-                <div id="install-status" class="status-box"></div>
+            <div class="stacked-cards">
+                <div class="card">
+                    <h3>Install</h3>
+                    <div id="install-status" class="status-box"></div>
 
-                <div id="installed-backend-summary" class="installed-backend-summary" aria-live="polite">
-                    Installed backend: checking...
-                </div>
+                    <div id="installed-backend-summary" class="installed-backend-summary" aria-live="polite">
+                        Installed backend: checking...
+                    </div>
 
-                <div class="form-group" id="release-group">
-                    <label class="form-label">Version</label>
-                    <div class="input-row">
-                        <select id="release-select"><option value="">Loading...</option></select>
-                        <button id="refresh-releases" class="btn btn-sm" title="Refresh releases" aria-label="Refresh releases">
-                            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
-                        </button>
+                    <div class="form-group" id="release-group">
+                        <label class="form-label">Version</label>
+                        <div class="input-row">
+                            <select id="release-select"><option value="">Loading...</option></select>
+                            <button id="refresh-releases" class="btn btn-sm" title="Refresh releases" aria-label="Refresh releases">
+                                <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Backend to install</label>
+                        <select id="backend-select">
+                            <option value="">Loading available backends...</option>
+                        </select>
+                        <p class="help-text">ROCm (Lemonade) builds target a specific AMD GPU architecture &mdash; choose the gfx target matching your GPU (e.g. gfx110X = RDNA3, gfx103X = RDNA2, gfx1150/gfx1151 = Ryzen AI).</p>
+                    </div>
+
+                    <div id="custom-backend-info" style="display:none;">
+                        <div class="status-box info" style="margin-top:8px;">
+                            <strong>Custom Backend Setup:</strong><br>
+                            Place your pre-compiled llama.cpp binaries in:<br>
+                            <code>llama/custom/bin/</code><br><br>
+                            Expected executables: <code>llama-server</code>, <code>llama-cli</code>, <code>llama-bench</code>, <code>llama-perplexity</code><br>
+                            Runtime libraries (.dll, .so, .dylib) should also be placed in the same directory.<br><br>
+                            Click "Activate Custom" below once your binaries are in place.
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <button id="btn-install" class="btn btn-primary">Install</button>
+                        <button id="btn-update" class="btn">Check for Updates</button>
+                        <button id="btn-repair" class="btn hidden">Repair Install</button>
+                    </div>
+
+                    <div id="download-progress" class="progress-container hidden">
+                        <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+                        <span id="progress-text">0%</span>
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label">Backend to install</label>
-                    <select id="backend-select">
-                        <option value="">Loading available backends...</option>
-                    </select>
-                    <div style="font-size:12px;color:var(--fg-muted);margin-top:var(--space-1);line-height:1.45;">ROCm (Lemonade) builds target a specific AMD GPU architecture &mdash; choose the gfx target matching your GPU (e.g. gfx110X = RDNA3, gfx103X = RDNA2, gfx1150/gfx1151 = Ryzen AI).</div>
-                </div>
-
-                <div id="custom-backend-info" style="display:none;">
-                    <div class="status-box info" style="margin-top:8px;">
-                        <strong>Custom Backend Setup:</strong><br>
-                        Place your pre-compiled llama.cpp binaries in:<br>
-                        <code>llama/custom/bin/</code><br><br>
-                        Expected executables: <code>llama-server</code>, <code>llama-cli</code>, <code>llama-bench</code>, <code>llama-perplexity</code><br>
-                        Runtime libraries (.dll, .so, .dylib) should also be placed in the same directory.<br><br>
-                        Click "Activate Custom" below once your binaries are in place.
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <button id="btn-install" class="btn btn-primary">Install</button>
-                    <button id="btn-update" class="btn">Check for Updates</button>
-                    <button id="btn-repair" class="btn hidden">Repair Install</button>
-                </div>
-
-                <div id="download-progress" class="progress-container hidden">
-                    <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
-                    <span id="progress-text">0%</span>
-                </div>
-
-                <div class="section">
+                <div class="card">
                     <h3>Installed</h3>
                     <div id="installed-info"></div>
-                </div>
-
-                <div class="section">
-                    <h3>Folders</h3>
-                    <div class="form-row">
-                        <button id="btn-open-models" class="btn" type="button">Open Models</button>
-                        <button id="btn-open-llama" class="btn" type="button">Open llama.cpp</button>
+                    <div class="section">
+                        <h3>Folders</h3>
+                        <div class="form-row">
+                            <button id="btn-open-models" class="btn" type="button">Open Models</button>
+                            <button id="btn-open-llama" class="btn" type="button">Open llama.cpp</button>
+                        </div>
                     </div>
                 </div>
 
-                <div class="section">
-                    <h3>Maintenance</h3>
-                    <div class="form-row">
-                        <button id="btn-remove-llama" class="btn btn-danger">Remove llama.cpp Files</button>
-                        <button id="btn-restart-app" class="btn" type="button">Restart Python Server</button>
-                        <button id="btn-stop-app" class="btn btn-danger" type="button">Stop Python Server</button>
-                    </div>
-                </div>
-
-                <div class="section">
+                <div class="card">
                     <h3>Llama GUI App Updates</h3>
                     <div id="app-update-status" class="status-box"></div>
                     <div class="form-row">
@@ -222,6 +215,16 @@
                         Repository:
                         <a href="https://github.com/thomas9120/LLama-GUI.git" target="_blank" rel="noopener noreferrer" class="server-link">github.com/thomas9120/LLama-GUI.git</a>
                     </p>
+                </div>
+
+                <div class="card card-danger">
+                    <h3>Danger Zone</h3>
+                    <p class="help-text">These actions remove files or stop the app itself. They ask for confirmation, but use them deliberately.</p>
+                    <div class="form-row">
+                        <button id="btn-remove-llama" class="btn btn-danger">Remove llama.cpp Files</button>
+                        <button id="btn-restart-app" class="btn" type="button">Restart Python Server</button>
+                        <button id="btn-stop-app" class="btn btn-danger" type="button">Stop Python Server</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -494,7 +497,13 @@
                         </div>
                     </div>
                     <p class="help-text">Quick Launch uses the same shared settings as Configure. You can always switch over for full control.</p>
-                    <div class="code-block" id="quick-command-preview"></div>
+                    <div class="code-block-wrap">
+                        <div class="code-block" id="quick-command-preview"></div>
+                        <button id="btn-copy-quick-command" class="btn btn-xs btn-ghost code-block-copy" type="button" title="Copy command" aria-label="Copy Quick Launch command">
+                            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+                            Copy
+                        </button>
+                    </div>
                     <div id="quick-launch-status" class="quick-launch-status" role="status" aria-live="polite"></div>
                     <div class="quick-actions">
                         <button id="btn-quick-launch" class="btn btn-primary btn-lg" type="button">
@@ -580,7 +589,13 @@
                     Stop
                 </button>
                 <div class="command-preview">
-                    <label class="form-label">Command Preview</label>
+                    <div class="command-preview-head">
+                        <label class="form-label">Command Preview</label>
+                        <button id="btn-copy-command" class="btn btn-xs btn-ghost command-copy-btn" type="button" title="Copy command" aria-label="Copy launch command">
+                            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+                            Copy
+                        </button>
+                    </div>
                     <code id="command-preview-text"></code>
                 </div>
             </div>
@@ -1038,7 +1053,13 @@
                                 Stop
                             </button>
                             <div class="command-preview">
-                                <label class="form-label">Command Preview</label>
+                                <div class="command-preview-head">
+                                    <label class="form-label">Command Preview</label>
+                                    <button id="btn-copy-benchmark-command" class="btn btn-xs btn-ghost command-copy-btn" type="button" title="Copy command" aria-label="Copy benchmark command">
+                                        <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+                                        Copy
+                                    </button>
+                                </div>
                                 <code id="benchmark-command-preview"></code>
                             </div>
                         </div>
@@ -1158,7 +1179,7 @@
 <script src="/js/flags/chat-templates.js?v=revamp-1"></script>
 <script src="/js/flags/definitions.js?v=revamp-1"></script>
 <script src="/js/flags/helpers.js?v=revamp-1"></script>
-<script src="/js/flag-validation.js?v=revamp-1"></script>
+<script src="/js/flag-validation.js?v=revamp-2"></script>
 <script src="/js/theme-ui.js?v=revamp-1"></script>
 <script src="/js/flag-core.js?v=revamp-1"></script>
 <script src="/js/config-flags-ui.js?v=revamp-1"></script>
@@ -1174,6 +1195,6 @@
 <script src="/js/quick-launch-ui.js?v=revamp-1"></script>
 <script src="/js/chat-ui.js?v=revamp-1"></script>
 <script src="/js/benchmark-ui.js?v=revamp-1"></script>
-<script src="/js/app.js?v=revamp-1"></script>
+<script src="/js/app.js?v=revamp-2"></script>
 </body>
 </html>

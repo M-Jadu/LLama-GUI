@@ -123,8 +123,10 @@
                 addError(`Flag ${label} has unsupported type "${flag.type}".`);
             }
             if (Object.prototype.hasOwnProperty.call(flag, "false_flag")) {
-                if (flag.type !== "bool") {
-                    addError(`Flag ${label} has false_flag but is not type bool.`);
+                // enum flags may pair a false_flag with an enabled/disabled toggle
+                // (e.g. kv_unified emits --no-kv-unified when disabled)
+                if (flag.type !== "bool" && flag.type !== "enum") {
+                    addError(`Flag ${label} has false_flag but is not type bool or enum.`);
                 } else if (!hasText(flag.false_flag)) {
                     addError(`Flag ${label} has an empty false_flag.`);
                 } else {
