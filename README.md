@@ -127,6 +127,8 @@ If you use [Pinokio](https://pinokio.computer/), you can install and launch Llam
 
 The Pinokio launcher clones this app, installs the Python dependencies, and starts the local web UI. Llama GUI's own **Install** tab still manages `llama.cpp` backend downloads, models, presets, and server launches.
 
+In-app updates and Python-server restarts remain automatic under Pinokio, and the launcher keeps the app checkout clean so no patch-related stash step is required.
+
 ## Screenshots
 
 | Quick Launch | Configure |
