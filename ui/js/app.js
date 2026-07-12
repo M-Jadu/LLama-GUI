@@ -380,6 +380,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (btnSendInput) btnSendInput.addEventListener("click", sendInput);
     const btnCopyServerUrl = document.getElementById("btn-copy-server-url");
     if (btnCopyServerUrl) btnCopyServerUrl.addEventListener("click", copyServerUrl);
+    wireCommandCopyButton("btn-copy-command", "command-preview-text");
+    wireCommandCopyButton("btn-copy-quick-command", "quick-command-preview");
+    wireCommandCopyButton("btn-copy-benchmark-command", "benchmark-command-preview");
     const btnSavePreset = document.getElementById("btn-save-preset");
     if (btnSavePreset) btnSavePreset.addEventListener("click", savePreset);
     const btnImportPreset = document.getElementById("btn-import-preset");
@@ -964,6 +967,21 @@ function copyQuickServerUrl() {
 
 function copyText(text) {
     navigator.clipboard.writeText(text).catch((e) => console.debug("Clipboard write failed", e));
+}
+
+function wireCommandCopyButton(buttonId, previewId) {
+    const button = document.getElementById(buttonId);
+    if (!button) return;
+    button.addEventListener("click", () => {
+        const preview = document.getElementById(previewId);
+        const command = preview ? preview.textContent.trim() : "";
+        if (!command) {
+            showToast("No command to copy yet", "info");
+            return;
+        }
+        copyText(command);
+        showToast("Command copied", "info");
+    });
 }
 
 function dismissToast(toast) {

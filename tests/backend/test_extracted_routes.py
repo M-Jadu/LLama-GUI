@@ -161,7 +161,31 @@ class ExtractedRouteTests(unittest.TestCase):
 
             list_response = DummyResponse()
             presets.list_presets(Request("GET", "/api/presets", "", {}), list_response, ctx)
-            self.assertEqual(list_response.payload, [{"name": "My_Preset", "data": {"temperature": 0.7}}])
+            self.assertEqual(len(list_response.payload), 1)
+            listed = list_response.payload[0]
+            self.assertEqual(listed["name"], "My_Preset")
+            self.assertEqual(listed["data"], {"temperature": 0.7})
+            self.assertIsInstance(listed["created"], float)
+            self.assertIsInstance(listed["modified"], float)
+
+            created = listed["created"]
+            update_response = DummyResponse()
+            with mock.patch("backend.routes.presets.time.time", return_value=created + 1000):
+                presets.save_preset(
+                    Request(
+                        "POST",
+                        "/api/presets",
+                        "",
+                        {},
+                        body={"name": "My/Preset", "data": {"temperature": 0.8}},
+                    ),
+                    update_response,
+                    ctx,
+                )
+            updated_list_response = DummyResponse()
+            presets.list_presets(Request("GET", "/api/presets", "", {}), updated_list_response, ctx)
+            self.assertEqual(updated_list_response.payload[0]["created"], created)
+            self.assertEqual(updated_list_response.payload[0]["data"], {"temperature": 0.8})
 
             delete_response = DummyResponse()
             delete_request = Request(
@@ -174,6 +198,10 @@ class ExtractedRouteTests(unittest.TestCase):
             presets.delete_preset(delete_request, delete_response, ctx)
             self.assertEqual(delete_response.payload, {"deleted": True})
             self.assertFalse((ctx.paths.presets / "My_Preset.json").exists())
+            self.assertEqual(
+                json.loads((ctx.paths.presets / ".preset-created-times").read_text(encoding="utf-8")),
+                {},
+            )
 
     def test_list_presets_skips_malformed_file_with_stderr_warning(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -187,7 +215,9 @@ class ExtractedRouteTests(unittest.TestCase):
             with contextlib.redirect_stderr(stderr):
                 presets.list_presets(Request("GET", "/api/presets", "", {}), response, ctx)
 
-            self.assertEqual(response.payload, [{"name": "Good", "data": {"temperature": 0.7}}])
+            self.assertEqual(len(response.payload), 1)
+            self.assertEqual(response.payload[0]["name"], "Good")
+            self.assertEqual(response.payload[0]["data"], {"temperature": 0.7})
             self.assertIn("Broken.json", stderr.getvalue())
             self.assertIn("JSONDecodeError", stderr.getvalue())
 
@@ -258,9 +288,11 @@ class ExtractedRouteTests(unittest.TestCase):
             response = DummyResponse()
             presets.list_presets(Request("GET", "/api/presets", "", {}), response, ctx)
 
+            self.assertEqual(len(response.payload), 1)
+            self.assertEqual(response.payload[0]["name"], "single")
             self.assertEqual(
-                response.payload,
-                [{"name": "single", "data": {"model": "model.gguf", "flags": {"ctx_size": 4096}}}],
+                response.payload[0]["data"],
+                {"model": "model.gguf", "flags": {"ctx_size": 4096}},
             )
 
     def test_preset_shortcut_exports_cmd_that_opens_preset_without_llama_launch(self):

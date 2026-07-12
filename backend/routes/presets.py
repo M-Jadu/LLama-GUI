@@ -3,7 +3,11 @@
 import json
 import re
 import sys
+import time
 import urllib.parse
+
+
+_PRESET_CREATED_TIMES_FILE = ".preset-created-times"
 
 
 def sanitize_preset_name(name):
@@ -22,6 +26,54 @@ def get_preset_file_path(presets_dir, safe_name):
 
 def is_preset_bundle(data):
     return isinstance(data, dict) and isinstance(data.get("presets"), list)
+
+
+def _is_valid_timestamp(value):
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and value > 0
+
+
+def _load_preset_created_times(presets_dir):
+    metadata_file = presets_dir / _PRESET_CREATED_TIMES_FILE
+    try:
+        data = json.loads(metadata_file.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return {}
+        return {
+            str(name): float(created)
+            for name, created in data.items()
+            if _is_valid_timestamp(created)
+        }
+    except FileNotFoundError:
+        return {}
+    except (json.JSONDecodeError, OSError) as exc:
+        print(
+            f"[presets] failed to read creation metadata: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        return {}
+
+
+def _save_preset_created_times(presets_dir, created_times):
+    metadata_file = presets_dir / _PRESET_CREATED_TIMES_FILE
+    try:
+        metadata_file.write_text(
+            json.dumps(created_times, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        print(
+            f"[presets] failed to save creation metadata: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+
+
+def _initial_preset_created_time(stat_result):
+    birth_time = getattr(stat_result, "st_birthtime", None)
+    if _is_valid_timestamp(birth_time):
+        return float(birth_time)
+    if sys.platform == "win32" and _is_valid_timestamp(stat_result.st_ctime):
+        return float(stat_result.st_ctime)
+    return float(stat_result.st_mtime)
 
 
 def get_shortcut_filename(safe_name):
@@ -88,18 +140,40 @@ def list_presets(request, response, ctx):
     presets = []
     presets_dir = ctx.paths.presets
     if presets_dir.exists():
+        created_times = _load_preset_created_times(presets_dir)
+        existing_names = set()
+        metadata_changed = False
         for path in sorted(presets_dir.glob("*.json")):
             try:
                 with open(path, "r") as preset_file:
                     data = json.load(preset_file)
                 if is_preset_bundle(data):
                     continue
-                presets.append({"name": path.stem, "data": data})
+                stat_result = path.stat()
+                existing_names.add(path.name)
+                created = created_times.get(path.name)
+                if not _is_valid_timestamp(created):
+                    created = _initial_preset_created_time(stat_result)
+                    created_times[path.name] = created
+                    metadata_changed = True
+                presets.append({
+                    "name": path.stem,
+                    "data": data,
+                    "created": created,
+                    "modified": stat_result.st_mtime,
+                })
             except (json.JSONDecodeError, OSError) as exc:
                 print(
                     f"[presets] skipping unreadable preset {path.name}: {type(exc).__name__}: {exc}",
                     file=sys.stderr,
                 )
+        stale_names = set(created_times) - existing_names
+        if stale_names:
+            for name in stale_names:
+                del created_times[name]
+            metadata_changed = True
+        if metadata_changed:
+            _save_preset_created_times(presets_dir, created_times)
     response.json(presets)
 
 
@@ -122,8 +196,16 @@ def save_preset(request, response, ctx):
         response.error("Invalid preset name", 400)
         return
 
+    created_times = _load_preset_created_times(presets_dir)
+    if not _is_valid_timestamp(created_times.get(preset_file.name)):
+        if preset_file.exists():
+            created_times[preset_file.name] = _initial_preset_created_time(preset_file.stat())
+        else:
+            created_times[preset_file.name] = time.time()
+
     with open(preset_file, "w") as preset_handle:
         json.dump(data, preset_handle, indent=2)
+    _save_preset_created_times(presets_dir, created_times)
     response.json({"saved": True, "name": safe_name})
 
 
@@ -170,6 +252,10 @@ def delete_preset(request, response, ctx):
         return
     if preset_file.exists():
         preset_file.unlink()
+        created_times = _load_preset_created_times(ctx.paths.presets)
+        if preset_file.name in created_times:
+            del created_times[preset_file.name]
+            _save_preset_created_times(ctx.paths.presets, created_times)
         response.json({"deleted": True})
     else:
         response.error("Preset not found", 404)

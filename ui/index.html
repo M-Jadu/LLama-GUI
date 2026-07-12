@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="dark">
     <title>Llama GUI - llama.cpp Launcher</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>🦙</text></svg>">
+    <link rel="icon" type="image/png" href="/assets/app-logo.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -142,76 +142,69 @@
                 </div>
             </div>
 
-            <div class="card">
-                <div id="install-status" class="status-box"></div>
+            <div class="stacked-cards">
+                <div class="card">
+                    <h3>Install</h3>
+                    <div id="install-status" class="status-box"></div>
 
-                <div id="installed-backend-summary" class="installed-backend-summary" aria-live="polite">
-                    Installed backend: checking...
-                </div>
+                    <div id="installed-backend-summary" class="installed-backend-summary" aria-live="polite">
+                        Installed backend: checking...
+                    </div>
 
-                <div class="form-group" id="release-group">
-                    <label class="form-label">Version</label>
-                    <div class="input-row">
-                        <select id="release-select"><option value="">Loading...</option></select>
-                        <button id="refresh-releases" class="btn btn-sm" title="Refresh releases" aria-label="Refresh releases">
-                            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
-                        </button>
+                    <div class="form-group" id="release-group">
+                        <label class="form-label">Version</label>
+                        <div class="input-row">
+                            <select id="release-select"><option value="">Loading...</option></select>
+                            <button id="refresh-releases" class="btn btn-sm" title="Refresh releases" aria-label="Refresh releases">
+                                <span class="icon icon-sm"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Backend to install</label>
+                        <select id="backend-select">
+                            <option value="">Loading available backends...</option>
+                        </select>
+                        <p class="help-text">ROCm (Lemonade) builds target a specific AMD GPU architecture &mdash; choose the gfx target matching your GPU (e.g. gfx110X = RDNA3, gfx103X = RDNA2, gfx1150/gfx1151 = Ryzen AI).</p>
+                    </div>
+
+                    <div id="custom-backend-info" style="display:none;">
+                        <div class="status-box info">
+                            <strong>Custom Backend Setup:</strong><br>
+                            Place your pre-compiled llama.cpp binaries in:<br>
+                            <code>llama/custom/bin/</code><br><br>
+                            Expected executables: <code>llama-server</code>, <code>llama-cli</code>, <code>llama-bench</code>, <code>llama-perplexity</code><br>
+                            Runtime libraries (.dll, .so, .dylib) should also be placed in the same directory.<br><br>
+                            Click "Activate Custom" below once your binaries are in place.
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <button id="btn-install" class="btn btn-primary">Install</button>
+                        <button id="btn-update" class="btn">Check for Updates</button>
+                        <button id="btn-repair" class="btn hidden">Repair Install</button>
+                    </div>
+
+                    <div id="download-progress" class="progress-container hidden">
+                        <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+                        <span id="progress-text">0%</span>
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label">Backend to install</label>
-                    <select id="backend-select">
-                        <option value="">Loading available backends...</option>
-                    </select>
-                    <div style="font-size:12px;color:var(--fg-muted);margin-top:var(--space-1);line-height:1.45;">ROCm (Lemonade) builds target a specific AMD GPU architecture &mdash; choose the gfx target matching your GPU (e.g. gfx110X = RDNA3, gfx103X = RDNA2, gfx1150/gfx1151 = Ryzen AI).</div>
-                </div>
-
-                <div id="custom-backend-info" style="display:none;">
-                    <div class="status-box info" style="margin-top:8px;">
-                        <strong>Custom Backend Setup:</strong><br>
-                        Place your pre-compiled llama.cpp binaries in:<br>
-                        <code>llama/custom/bin/</code><br><br>
-                        Expected executables: <code>llama-server</code>, <code>llama-cli</code>, <code>llama-bench</code>, <code>llama-perplexity</code><br>
-                        Runtime libraries (.dll, .so, .dylib) should also be placed in the same directory.<br><br>
-                        Click "Activate Custom" below once your binaries are in place.
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <button id="btn-install" class="btn btn-primary">Install</button>
-                    <button id="btn-update" class="btn">Check for Updates</button>
-                    <button id="btn-repair" class="btn hidden">Repair Install</button>
-                </div>
-
-                <div id="download-progress" class="progress-container hidden">
-                    <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
-                    <span id="progress-text">0%</span>
-                </div>
-
-                <div class="section">
+                <div class="card">
                     <h3>Installed</h3>
                     <div id="installed-info"></div>
-                </div>
-
-                <div class="section">
-                    <h3>Folders</h3>
-                    <div class="form-row">
-                        <button id="btn-open-models" class="btn" type="button">Open Models</button>
-                        <button id="btn-open-llama" class="btn" type="button">Open llama.cpp</button>
+                    <div class="section">
+                        <h3>Folders</h3>
+                        <div class="form-row">
+                            <button id="btn-open-models" class="btn" type="button">Open Models</button>
+                            <button id="btn-open-llama" class="btn" type="button">Open llama.cpp</button>
+                        </div>
                     </div>
                 </div>
 
-                <div class="section">
-                    <h3>Maintenance</h3>
-                    <div class="form-row">
-                        <button id="btn-remove-llama" class="btn btn-danger">Remove llama.cpp Files</button>
-                        <button id="btn-restart-app" class="btn" type="button">Restart Python Server</button>
-                        <button id="btn-stop-app" class="btn btn-danger" type="button">Stop Python Server</button>
-                    </div>
-                </div>
-
-                <div class="section">
+                <div class="card">
                     <h3>Llama GUI App Updates</h3>
                     <div id="app-update-status" class="status-box"></div>
                     <div class="form-row">
@@ -222,6 +215,16 @@
                         Repository:
                         <a href="https://github.com/thomas9120/LLama-GUI.git" target="_blank" rel="noopener noreferrer" class="server-link">github.com/thomas9120/LLama-GUI.git</a>
                     </p>
+                </div>
+
+                <div class="card card-danger">
+                    <h3>Danger Zone</h3>
+                    <p class="help-text">These actions remove files or stop the app itself. They ask for confirmation, but use them deliberately.</p>
+                    <div class="form-row">
+                        <button id="btn-remove-llama" class="btn btn-danger">Remove llama.cpp Files</button>
+                        <button id="btn-restart-app" class="btn" type="button">Restart Python Server</button>
+                        <button id="btn-stop-app" class="btn btn-danger" type="button">Stop Python Server</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -478,7 +481,7 @@
                             <div class="card-title">Launch Preview</div>
                         </div>
                         <div class="launch-preview-badges">
-                            <div id="quick-server-address" class="server-address hidden" style="margin:0;padding:0;border:none;background:none;">
+                            <div id="quick-server-address" class="server-address server-address-bare hidden">
                                 <span class="badge badge-accent"><span class="badge-dot"></span> <a id="quick-server-url" href="#" target="_blank" class="badge-link"></a></span>
                                 <span class="server-sep">|</span>
                                 <a id="quick-server-webui" href="#" target="_blank" class="server-link">Web UI</a>
@@ -486,7 +489,7 @@
                                     <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
                                 </button>
                             </div>
-                            <label class="toggle" style="font-size:11px;">
+                            <label class="toggle toggle-sm">
                                 <input type="checkbox" id="quick-metrics-toggle" checked />
                                 <span class="toggle-track"><span class="toggle-thumb"></span></span>
                                 Stats bar
@@ -494,7 +497,13 @@
                         </div>
                     </div>
                     <p class="help-text">Quick Launch uses the same shared settings as Configure. You can always switch over for full control.</p>
-                    <div class="code-block" id="quick-command-preview"></div>
+                    <div class="code-block-wrap">
+                        <div class="code-block" id="quick-command-preview"></div>
+                        <button id="btn-copy-quick-command" class="btn btn-xs btn-ghost code-block-copy" type="button" title="Copy command" aria-label="Copy Quick Launch command">
+                            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+                            Copy
+                        </button>
+                    </div>
                     <div id="quick-launch-status" class="quick-launch-status" role="status" aria-live="polite"></div>
                     <div class="quick-actions">
                         <button id="btn-quick-launch" class="btn btn-primary btn-lg" type="button">
@@ -517,7 +526,7 @@
                     <div class="page-title">Configure &amp; Launch</div>
                 </div>
                 <div class="input-row">
-                    <label class="form-label" style="margin:0;">Tool:</label>
+                    <label class="form-label form-label-inline">Tool:</label>
                     <select id="tool-select">
                         <option value="llama-cli">llama-cli (Interactive Chat)</option>
                         <option value="llama-server" selected>llama-server (HTTP API)</option>
@@ -580,7 +589,13 @@
                     Stop
                 </button>
                 <div class="command-preview">
-                    <label class="form-label">Command Preview</label>
+                    <div class="command-preview-head">
+                        <label class="form-label">Command Preview</label>
+                        <button id="btn-copy-command" class="btn btn-xs btn-ghost command-copy-btn" type="button" title="Copy command" aria-label="Copy launch command">
+                            <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+                            Copy
+                        </button>
+                    </div>
                     <code id="command-preview-text"></code>
                 </div>
             </div>
@@ -603,7 +618,7 @@
         <!-- ═══ CHAT ═══ -->
         <div class="section-panel" id="section-chat" style="display:none;">
             <div class="chat-header-bar">
-                <div style="display:flex; align-items:center; gap:var(--space-2);">
+                <div class="chat-header-title">
                     <h2>Chat</h2>
                     <span class="badge badge-green" id="chat-status-badge" style="display:none;"><span class="badge-dot"></span> Server Running</span>
                     <span class="badge badge-neutral" id="chat-no-server-badge">No Server</span>
@@ -646,7 +661,7 @@
                     <div class="chat-messages" id="chat-messages">
                         <div class="chat-empty" id="chat-empty">
                             <div class="chat-empty-icon">
-                                <span class="icon" style="width:40px;height:40px;color:var(--fg-faint);"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                                <span class="icon chat-empty-glyph"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
                             </div>
                             <h3>Start a conversation</h3>
                         </div>
@@ -955,77 +970,88 @@
                                     <p class="help-text">Scoring window size. Smaller values are faster and avoid long-context setup issues.</p>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-batch">Batch Size</label>
-                                    <input id="benchmark-ppl-batch" type="number" min="1" max="131072" step="1" value="2048">
-                                    <p class="help-text">How many tokens llama.cpp processes per batch during evaluation.</p>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-ubatch">Micro Batch Size</label>
-                                    <input id="benchmark-ppl-ubatch" type="number" min="1" max="131072" step="1" value="512">
-                                    <p class="help-text">Smaller micro batches can reduce memory pressure on large models.</p>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-threads">Threads</label>
-                                    <input id="benchmark-ppl-threads" type="number" min="-1" max="256" step="1" value="-1">
-                                    <p class="help-text">CPU worker threads. Leave -1 to let llama.cpp choose.</p>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-gpu-layers">GPU Layers</label>
-                                    <input id="benchmark-ppl-gpu-layers" type="text" value="auto">
-                                    <p class="help-text">Use auto for llama.cpp's default GPU offload choice, or enter a layer count.</p>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-flash-attn">Flash Attention</label>
-                                    <select id="benchmark-ppl-flash-attn">
-                                        <option value="auto">Auto</option>
-                                        <option value="on">On</option>
-                                        <option value="off">Off</option>
-                                    </select>
-                                    <p class="help-text">Auto lets llama.cpp choose whether flash attention is supported.</p>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-cache-k">K Cache Type</label>
-                                    <select id="benchmark-ppl-cache-k">
-                                        <option value="f16">f16</option>
-                                        <option value="bf16">bf16</option>
-                                        <option value="q8_0">q8_0</option>
-                                        <option value="q4_0">q4_0</option>
-                                        <option value="q4_1">q4_1</option>
-                                    </select>
-                                    <p class="help-text">Lower precision can reduce memory use, but may affect scores.</p>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-cache-v">V Cache Type</label>
-                                    <select id="benchmark-ppl-cache-v">
-                                        <option value="f16">f16</option>
-                                        <option value="bf16">bf16</option>
-                                        <option value="q8_0">q8_0</option>
-                                        <option value="q4_0">q4_0</option>
-                                        <option value="q4_1">q4_1</option>
-                                    </select>
-                                    <p class="help-text">Usually match K cache unless you are comparing memory tradeoffs.</p>
-                                </div>
-                                <div class="form-group">
                                     <label class="form-label" for="benchmark-chunks">Chunks</label>
                                     <input id="benchmark-chunks" type="number" min="-1" step="1" value="5">
                                     <p class="help-text">Limits how much of the file to evaluate. Start small, then increase for steadier scores.</p>
                                 </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="benchmark-ppl-stride">PPL Stride</label>
-                                    <input id="benchmark-ppl-stride" type="number" min="0" step="1" value="0">
-                                    <p class="help-text">Controls the overlap between scoring windows. Leave 0 for llama.cpp's default behavior.</p>
-                                </div>
                             </div>
-                            <label class="toggle-row benchmark-toggle">
-                                <input id="benchmark-ppl-mmap" type="checkbox" checked>
-                                <span>Memory map model</span>
-                            </label>
-                            <p class="help-text">Uses llama.cpp's default mmap loading. Turn this off to pass --no-mmap when testing model-load or tensor-placement issues.</p>
-                            <label class="toggle-row benchmark-toggle">
-                                <input id="benchmark-warmup" type="checkbox" checked>
-                                <span>Warmup</span>
-                            </label>
-                            <p class="help-text">Runs a small warmup first so load/setup overhead is less likely to skew the score.</p>
+                            <details class="benchmark-advanced">
+                                <summary>
+                                    <span class="benchmark-advanced-chevron"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span>
+                                    Advanced settings
+                                    <span class="benchmark-advanced-hint">batch sizes, threads, GPU offload, cache types</span>
+                                </summary>
+                                <div class="benchmark-advanced-body">
+                                    <div class="benchmark-controls-grid">
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-batch">Batch Size</label>
+                                            <input id="benchmark-ppl-batch" type="number" min="1" max="131072" step="1" value="2048">
+                                            <p class="help-text">How many tokens llama.cpp processes per batch during evaluation.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-ubatch">Micro Batch Size</label>
+                                            <input id="benchmark-ppl-ubatch" type="number" min="1" max="131072" step="1" value="512">
+                                            <p class="help-text">Smaller micro batches can reduce memory pressure on large models.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-threads">Threads</label>
+                                            <input id="benchmark-ppl-threads" type="number" min="-1" max="256" step="1" value="-1">
+                                            <p class="help-text">CPU worker threads. Leave -1 to let llama.cpp choose.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-gpu-layers">GPU Layers</label>
+                                            <input id="benchmark-ppl-gpu-layers" type="text" value="auto">
+                                            <p class="help-text">Use auto for llama.cpp's default GPU offload choice, or enter a layer count.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-flash-attn">Flash Attention</label>
+                                            <select id="benchmark-ppl-flash-attn">
+                                                <option value="auto">Auto</option>
+                                                <option value="on">On</option>
+                                                <option value="off">Off</option>
+                                            </select>
+                                            <p class="help-text">Auto lets llama.cpp choose whether flash attention is supported.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-cache-k">K Cache Type</label>
+                                            <select id="benchmark-ppl-cache-k">
+                                                <option value="f16">f16</option>
+                                                <option value="bf16">bf16</option>
+                                                <option value="q8_0">q8_0</option>
+                                                <option value="q4_0">q4_0</option>
+                                                <option value="q4_1">q4_1</option>
+                                            </select>
+                                            <p class="help-text">Lower precision can reduce memory use, but may affect scores.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-cache-v">V Cache Type</label>
+                                            <select id="benchmark-ppl-cache-v">
+                                                <option value="f16">f16</option>
+                                                <option value="bf16">bf16</option>
+                                                <option value="q8_0">q8_0</option>
+                                                <option value="q4_0">q4_0</option>
+                                                <option value="q4_1">q4_1</option>
+                                            </select>
+                                            <p class="help-text">Usually match K cache unless you are comparing memory tradeoffs.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="benchmark-ppl-stride">PPL Stride</label>
+                                            <input id="benchmark-ppl-stride" type="number" min="0" step="1" value="0">
+                                            <p class="help-text">Controls the overlap between scoring windows. Leave 0 for llama.cpp's default behavior.</p>
+                                        </div>
+                                    </div>
+                                    <label class="toggle-row benchmark-toggle">
+                                        <input id="benchmark-ppl-mmap" type="checkbox" checked>
+                                        <span>Memory map model</span>
+                                    </label>
+                                    <p class="help-text">Uses llama.cpp's default mmap loading. Turn this off to pass --no-mmap when testing model-load or tensor-placement issues.</p>
+                                    <label class="toggle-row benchmark-toggle">
+                                        <input id="benchmark-warmup" type="checkbox" checked>
+                                        <span>Warmup</span>
+                                    </label>
+                                    <p class="help-text">Runs a small warmup first so load/setup overhead is less likely to skew the score.</p>
+                                </div>
+                            </details>
                         </div>
 
                         <div class="launch-bar benchmark-launch-bar">
@@ -1038,7 +1064,13 @@
                                 Stop
                             </button>
                             <div class="command-preview">
-                                <label class="form-label">Command Preview</label>
+                                <div class="command-preview-head">
+                                    <label class="form-label">Command Preview</label>
+                                    <button id="btn-copy-benchmark-command" class="btn btn-xs btn-ghost command-copy-btn" type="button" title="Copy command" aria-label="Copy benchmark command">
+                                        <span class="icon icon-sm"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+                                        Copy
+                                    </button>
+                                </div>
                                 <code id="benchmark-command-preview"></code>
                             </div>
                         </div>
@@ -1074,44 +1106,57 @@
                     <div class="page-title">Presets</div>
                     <div class="page-title-sub">Save, load, and manage preset configurations.</div>
                 </div>
+                <div class="presets-header-actions">
+                    <button class="btn" id="btn-import-preset">Import JSON</button>
+                    <button class="btn" id="btn-export-all-presets">Export All</button>
+                </div>
             </div>
 
-            <div class="card">
-                <div id="preset-status" class="status-box"></div>
-                <div class="presets-toolbar">
-                    <div class="presets-save">
-                        <label class="form-label" for="preset-name-input">Save Current Configuration</label>
-                        <div class="input-row">
-                            <input type="text" id="preset-name-input" placeholder="Preset name..." />
-                            <button class="btn btn-primary" id="btn-save-preset">Save</button>
+            <div id="preset-status" class="status-box"></div>
+
+            <div class="presets-save-bar">
+                <label class="presets-save-label" for="preset-name-input">Save current config</label>
+                <input type="text" id="preset-name-input" placeholder="Preset name..." aria-label="Preset name" />
+                <button class="btn btn-primary" id="btn-save-preset">Save</button>
+                <span class="presets-save-hint">Captures the active Configure settings</span>
+            </div>
+            <input type="file" id="preset-import" accept=".json" style="display:none" />
+
+            <div class="presets-workspace">
+                <section class="presets-browser" id="presets-browser" aria-label="Saved presets">
+                    <div class="presets-browser-toolbar">
+                        <div class="presets-search-wrap">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                            <input type="text" id="preset-search" placeholder="Search presets or models..." />
                         </div>
+                        <select id="preset-sort" class="preset-sort-select" title="Sort presets" aria-label="Sort presets">
+                            <option value="name">Name</option>
+                            <option value="recent">Recently used</option>
+                            <option value="added">Date added</option>
+                        </select>
+                        <button id="btn-presets-expand-all" class="presets-icon-btn" type="button" title="Expand all model groups" aria-label="Expand all model groups">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m7 8 5 5 5-5"/><path d="m7 14 5 5 5-5" opacity="0.4"/></svg>
+                        </button>
+                        <button id="btn-presets-collapse-all" class="presets-icon-btn" type="button" title="Collapse all model groups" aria-label="Collapse all model groups">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m7 16 5-5 5 5"/><path d="m7 10 5-5 5 5" opacity="0.4"/></svg>
+                        </button>
                     </div>
-                    <input type="file" id="preset-import" accept=".json" style="display:none" />
-                    <button class="btn presets-import-btn" id="btn-export-all-presets">Export All</button>
-                    <button class="btn presets-import-btn" id="btn-import-preset">Import JSON</button>
-                </div>
-                <div class="presets-workspace">
-                    <div class="presets-main">
-                        <div class="presets-list-header">
-                            <h3>Saved Presets</h3>
-                            <div class="presets-list-actions">
-                                <input type="text" id="preset-search" placeholder="Search presets..." />
-                                <button id="btn-presets-expand-all" class="btn btn-sm" type="button" title="Expand all model groups">Expand All</button>
-                                <button id="btn-presets-collapse-all" class="btn btn-sm" type="button" title="Collapse all model groups">Collapse All</button>
-                            </div>
-                        </div>
-                        <div class="presets-bulk-bar">
-                            <div id="presets-selection-count" class="presets-selection-count">0 selected</div>
-                            <div class="presets-bulk-actions">
-                                <button id="btn-presets-select-all" class="btn btn-sm" type="button">Select All</button>
-                                <button id="btn-presets-select-none" class="btn btn-sm" type="button">Select None</button>
-                                <button id="btn-presets-delete-selected" class="btn btn-sm btn-danger" type="button">Delete Selected</button>
-                            </div>
-                        </div>
-                        <div id="presets-list"></div>
+                    <div class="presets-filters">
+                        <button id="preset-filter-all" class="preset-chip active" type="button">All</button>
+                        <button id="preset-filter-warnings" class="preset-chip preset-chip-warn" type="button">&#9888; Warnings</button>
+                        <button id="preset-favorites-first" class="preset-chip preset-chip-favorite active" type="button" aria-pressed="true" title="Keep favorite presets and model groups above other results">&#9733; Favorites first</button>
+                        <span id="presets-count-line" class="presets-count-line"></span>
                     </div>
-                    <aside id="preset-detail-panel" class="preset-detail-panel" aria-label="Selected preset details"></aside>
-                </div>
+                    <div id="presets-list" class="presets-browser-list"></div>
+                    <div class="presets-bulk-bar">
+                        <span id="presets-selection-count" class="presets-selection-count">0 selected</span>
+                        <button id="btn-presets-select-all" class="btn btn-sm btn-ghost" type="button">Select All</button>
+                        <button id="btn-presets-select-none" class="btn btn-sm btn-ghost" type="button">Clear</button>
+                        <button id="btn-presets-export-selected" class="btn btn-sm" type="button" title="Export selected presets as a JSON file">Export</button>
+                        <button id="btn-presets-delete-selected" class="btn btn-sm btn-danger" type="button">Delete</button>
+                    </div>
+                </section>
+                <aside id="preset-detail-panel" class="preset-detail-panel" aria-label="Selected preset details"></aside>
             </div>
         </div>
 
@@ -1151,12 +1196,12 @@
 <script src="/js/flags/chat-templates.js?v=revamp-1"></script>
 <script src="/js/flags/definitions.js?v=revamp-1"></script>
 <script src="/js/flags/helpers.js?v=revamp-1"></script>
-<script src="/js/flag-validation.js?v=revamp-1"></script>
+<script src="/js/flag-validation.js?v=revamp-2"></script>
 <script src="/js/theme-ui.js?v=revamp-1"></script>
 <script src="/js/flag-core.js?v=revamp-1"></script>
 <script src="/js/config-flags-ui.js?v=revamp-1"></script>
-<script src="/js/manager.js?v=revamp-1"></script>
-<script src="/js/presets.js?v=revamp-1"></script>
+<script src="/js/manager.js?v=revamp-2"></script>
+<script src="/js/presets.js?v=revamp-3"></script>
 <script src="/js/app-data.js?v=revamp-1"></script>
 <script src="/js/output-cursor.js?v=revamp-1"></script>
 <script src="/js/sampler-presets.js?v=revamp-1"></script>
@@ -1166,7 +1211,7 @@
 <script src="/js/remote-tunnel-ui.js?v=revamp-1"></script>
 <script src="/js/quick-launch-ui.js?v=revamp-1"></script>
 <script src="/js/chat-ui.js?v=revamp-1"></script>
-<script src="/js/benchmark-ui.js?v=revamp-1"></script>
-<script src="/js/app.js?v=revamp-1"></script>
+<script src="/js/benchmark-ui.js?v=revamp-2"></script>
+<script src="/js/app.js?v=revamp-2"></script>
 </body>
 </html>

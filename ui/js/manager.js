@@ -396,7 +396,7 @@ function updateStatusUI(status) {
         exeTitle.textContent = "Available tools:";
         exeWrap.appendChild(exeTitle);
         const exeHint = document.createElement("span");
-        exeHint.style.color = "var(--fg-dim)";
+        exeHint.className = "installed-info-hint";
         exeHint.textContent = " Core launch tools are required; benchmark and utility tools are optional.";
         exeWrap.appendChild(exeHint);
         exeWrap.appendChild(document.createElement("br"));
@@ -418,8 +418,7 @@ function updateStatusUI(status) {
             ? status.missing_runtime_files.filter(Boolean)
             : [];
         const warning = document.createElement("div");
-        warning.style.color = "var(--yellow)";
-        warning.style.marginBottom = "8px";
+        warning.className = "installed-info-warning";
         warning.textContent = missingRuntimeFiles.length > 0
             ? "Configuration exists, but required llama.cpp runtime libraries are missing."
             : "Configuration exists, but required llama.cpp executables are missing.";
@@ -427,8 +426,7 @@ function updateStatusUI(status) {
 
         if (missingRuntimeFiles.length > 0) {
             const missing = document.createElement("div");
-            missing.style.color = "var(--fg-dim)";
-            missing.style.marginBottom = "8px";
+            missing.className = "installed-info-note";
             const shown = missingRuntimeFiles.slice(0, 8).join(", ");
             const extra = missingRuntimeFiles.length > 8 ? `, and ${missingRuntimeFiles.length - 8} more` : "";
             missing.textContent = "Missing runtime libraries: " + shown + extra;
@@ -436,7 +434,7 @@ function updateStatusUI(status) {
         }
 
         const hint = document.createElement("div");
-        hint.style.color = "var(--fg-dim)";
+        hint.className = "installed-info-hint";
         hint.textContent = status.backend === "custom"
             ? "Add llama-cli and llama-server to llama/custom/bin/, then click Activate Custom again."
             : "Click Repair Install to reinstall the configured version/backend and restore binaries.";
@@ -445,14 +443,21 @@ function updateStatusUI(status) {
         appendRow("Version (config)", String(status.version));
         appendRow("Backend (config)", String(status.backend));
     } else {
-        const empty = document.createElement("span");
-        empty.style.color = "var(--fg-dim)";
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        const title = document.createElement("div");
+        title.className = "empty-state-title";
+        const hint = document.createElement("p");
         const platformText = status.platform_label ? `${status.platform_label} (${status.arch})` : "this system";
         if (!status.available_backends || status.available_backends.length === 0) {
-            empty.textContent = `No prebuilt llama.cpp backends are configured for ${platformText}.`;
+            title.textContent = "No prebuilt backends available";
+            hint.textContent = `No prebuilt llama.cpp backends are configured for ${platformText}.`;
         } else {
-            empty.textContent = `No llama.cpp installation found for ${platformText}. Select a version above and click Install.`;
+            title.textContent = "No llama.cpp installed";
+            hint.textContent = `Select a version above and click Install to set up llama.cpp for ${platformText}.`;
         }
+        empty.appendChild(title);
+        empty.appendChild(hint);
         info.appendChild(empty);
     }
 }
