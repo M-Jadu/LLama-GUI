@@ -1116,7 +1116,7 @@
 
             <div class="presets-save-bar">
                 <label class="presets-save-label" for="preset-name-input">Save current config</label>
-                <input type="text" id="preset-name-input" placeholder="Preset name..." />
+                <input type="text" id="preset-name-input" placeholder="Preset name..." aria-label="Preset name" />
                 <button class="btn btn-primary" id="btn-save-preset">Save</button>
                 <span class="presets-save-hint">Captures the active Configure settings</span>
             </div>
@@ -1144,6 +1144,7 @@
                     <div class="presets-filters">
                         <button id="preset-filter-all" class="preset-chip active" type="button">All</button>
                         <button id="preset-filter-warnings" class="preset-chip preset-chip-warn" type="button">&#9888; Warnings</button>
+                        <button id="preset-favorites-first" class="preset-chip preset-chip-favorite active" type="button" aria-pressed="true" title="Keep favorite presets and model groups above other results">&#9733; Favorites first</button>
                         <span id="presets-count-line" class="presets-count-line"></span>
                     </div>
                     <div id="presets-list" class="presets-browser-list"></div>

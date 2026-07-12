@@ -1913,6 +1913,12 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
     border-color: var(--yellow-border);
 }
 
+.preset-chip.preset-chip-favorite.active {
+    background: var(--yellow-subtle);
+    color: var(--yellow);
+    border-color: var(--yellow-border);
+}
+
 .presets-count-line {
     margin-left: auto;
     font-size: 11px;
@@ -2073,15 +2079,31 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
 
 .preset-item-favorite { box-shadow: inset 2px 0 0 var(--yellow); }
 
-.preset-row-star {
-    display: inline-flex;
-    flex-shrink: 0;
-    color: var(--yellow);
-}
-
 .preset-favorite-btn.active {
     color: var(--yellow);
     border-color: var(--yellow-border);
+    background: var(--yellow-subtle);
+}
+
+.preset-row-favorite {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--fg-faint);
+    cursor: pointer;
+}
+
+.preset-row-favorite:hover,
+.preset-row-favorite:focus-visible,
+.preset-row-favorite.active {
+    color: var(--yellow);
     background: var(--yellow-subtle);
 }
 
@@ -2101,17 +2123,20 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
 .preset-item.selected .preset-row-load,
 .preset-row-load:focus-visible { opacity: 1; }
 
-/* bulk bar — appears only when something is checked */
+/* bulk actions remain visible so selection capabilities are discoverable */
 .presets-bulk-bar {
-    display: none;
+    display: flex;
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
-    border-top: 1px solid var(--accent-border);
-    background: var(--accent-subtle);
+    border-top: 1px solid var(--border);
+    background: var(--bg-raised);
 }
 
-.presets-browser.has-checked .presets-bulk-bar { display: flex; }
+.presets-browser.has-checked .presets-bulk-bar {
+    border-color: var(--accent-border);
+    background: var(--accent-subtle);
+}
 
 .presets-selection-count {
     flex: 1;
@@ -3458,9 +3483,19 @@ body.chat-focus-mode .mobile-toggle { display: none !important; }
     .benchmark-controls-grid { grid-template-columns: 1fr; }
     .launch-bar { flex-direction: column; align-items: stretch; }
     .api-url-row { flex-direction: column; align-items: stretch; }
-    .presets-save-bar { flex-wrap: wrap; }
-    .presets-save-bar input { flex: 1 1 160px; max-width: none; }
+    .presets-save-bar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: var(--space-2);
+    }
+    .presets-save-label { grid-column: 1 / -1; }
+    .presets-save-bar input { width: 100%; max-width: none; }
     .presets-save-hint { display: none; }
+    .presets-browser-toolbar { flex-wrap: wrap; }
+    .presets-search-wrap { flex: 1 1 100%; }
+    .preset-sort-select { flex: 1 1 auto; max-width: none; }
+    .presets-filters { flex-wrap: wrap; }
+    .presets-count-line { margin-left: 0; flex: 1 1 100%; }
     .presets-workspace { grid-template-columns: 1fr; }
     .presets-bulk-bar { flex-wrap: wrap; }
     .presets-bulk-bar .btn { flex: 1 1 90px; }
