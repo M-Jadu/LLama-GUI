@@ -94,7 +94,15 @@ def list_presets(request, response, ctx):
                     data = json.load(preset_file)
                 if is_preset_bundle(data):
                     continue
-                presets.append({"name": path.stem, "data": data})
+                stat_result = path.stat()
+                presets.append({
+                    "name": path.stem,
+                    "data": data,
+                    # st_ctime is creation time on Windows; on POSIX it degrades
+                    # to inode-change time, which is still a usable "added" proxy
+                    "created": stat_result.st_ctime,
+                    "modified": stat_result.st_mtime,
+                })
             except (json.JSONDecodeError, OSError) as exc:
                 print(
                     f"[presets] skipping unreadable preset {path.name}: {type(exc).__name__}: {exc}",

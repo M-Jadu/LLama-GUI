@@ -1846,6 +1846,15 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
     padding-left: 28px;
 }
 
+.preset-sort-select {
+    flex-shrink: 0;
+    width: auto;
+    max-width: 150px;
+    font-size: 12px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+}
+
 .presets-icon-btn {
     display: inline-flex;
     align-items: center;
@@ -2061,6 +2070,20 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
 
 .preset-item.selected .preset-name { color: var(--fg-bright); }
 .preset-meta { font-size: 10.5px; color: var(--fg-faint); }
+
+.preset-item-favorite { box-shadow: inset 2px 0 0 var(--yellow); }
+
+.preset-row-star {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--yellow);
+}
+
+.preset-favorite-btn.active {
+    color: var(--yellow);
+    border-color: var(--yellow-border);
+    background: var(--yellow-subtle);
+}
 
 .preset-row-warn {
     color: var(--yellow);

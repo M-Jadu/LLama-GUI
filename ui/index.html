@@ -1129,6 +1129,11 @@
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
                             <input type="text" id="preset-search" placeholder="Search presets or models..." />
                         </div>
+                        <select id="preset-sort" class="preset-sort-select" title="Sort presets" aria-label="Sort presets">
+                            <option value="name">Name</option>
+                            <option value="recent">Recently used</option>
+                            <option value="added">Date added</option>
+                        </select>
                         <button id="btn-presets-expand-all" class="presets-icon-btn" type="button" title="Expand all model groups" aria-label="Expand all model groups">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m7 8 5 5 5-5"/><path d="m7 14 5 5 5-5" opacity="0.4"/></svg>
                         </button>
@@ -1195,7 +1200,7 @@
 <script src="/js/flag-core.js?v=revamp-1"></script>
 <script src="/js/config-flags-ui.js?v=revamp-1"></script>
 <script src="/js/manager.js?v=revamp-2"></script>
-<script src="/js/presets.js?v=revamp-2"></script>
+<script src="/js/presets.js?v=revamp-3"></script>
 <script src="/js/app-data.js?v=revamp-1"></script>
 <script src="/js/output-cursor.js?v=revamp-1"></script>
 <script src="/js/sampler-presets.js?v=revamp-1"></script>

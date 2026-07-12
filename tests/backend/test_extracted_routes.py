@@ -161,7 +161,12 @@ class ExtractedRouteTests(unittest.TestCase):
 
             list_response = DummyResponse()
             presets.list_presets(Request("GET", "/api/presets", "", {}), list_response, ctx)
-            self.assertEqual(list_response.payload, [{"name": "My_Preset", "data": {"temperature": 0.7}}])
+            self.assertEqual(len(list_response.payload), 1)
+            listed = list_response.payload[0]
+            self.assertEqual(listed["name"], "My_Preset")
+            self.assertEqual(listed["data"], {"temperature": 0.7})
+            self.assertIsInstance(listed["created"], float)
+            self.assertIsInstance(listed["modified"], float)
 
             delete_response = DummyResponse()
             delete_request = Request(
@@ -187,7 +192,9 @@ class ExtractedRouteTests(unittest.TestCase):
             with contextlib.redirect_stderr(stderr):
                 presets.list_presets(Request("GET", "/api/presets", "", {}), response, ctx)
 
-            self.assertEqual(response.payload, [{"name": "Good", "data": {"temperature": 0.7}}])
+            self.assertEqual(len(response.payload), 1)
+            self.assertEqual(response.payload[0]["name"], "Good")
+            self.assertEqual(response.payload[0]["data"], {"temperature": 0.7})
             self.assertIn("Broken.json", stderr.getvalue())
             self.assertIn("JSONDecodeError", stderr.getvalue())
 
@@ -258,9 +265,11 @@ class ExtractedRouteTests(unittest.TestCase):
             response = DummyResponse()
             presets.list_presets(Request("GET", "/api/presets", "", {}), response, ctx)
 
+            self.assertEqual(len(response.payload), 1)
+            self.assertEqual(response.payload[0]["name"], "single")
             self.assertEqual(
-                response.payload,
-                [{"name": "single", "data": {"model": "model.gguf", "flags": {"ctx_size": 4096}}}],
+                response.payload[0]["data"],
+                {"model": "model.gguf", "flags": {"ctx_size": 4096}},
             )
 
     def test_preset_shortcut_exports_cmd_that_opens_preset_without_llama_launch(self):

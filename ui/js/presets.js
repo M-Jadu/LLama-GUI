@@ -107,14 +107,76 @@ function getPresetWarnings(presetData) {
 }
 
 const PRESET_GROUP_STATE_STORAGE_KEY = "llama_gui_preset_group_state_v1";
+const PRESET_FAVORITES_STORAGE_KEY = "llama_gui_preset_favorites_v1";
+const PRESET_LAST_USED_STORAGE_KEY = "llama_gui_preset_last_used_v1";
+const PRESET_SORT_STORAGE_KEY = "llama_gui_preset_sort_v1";
+const PRESET_SORT_MODES = new Set(["name", "recent", "added"]);
 const NO_MODEL_PRESET_GROUP_KEY = "__no_model__";
 
 let presetStatusTimer = null;
 let presetSearchQuery = "";
 let presetWarningFilterActive = false;
+let presetSortMode = loadPresetSortMode();
 let currentPresetGroups = [];
 let selectedPresetName = "";
 let selectedPresetNames = new Set();
+
+function loadPresetJsonMap(storageKey) {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function savePresetJsonMap(storageKey, map) {
+    localStorage.setItem(storageKey, JSON.stringify(map));
+}
+
+function loadPresetSortMode() {
+    const stored = localStorage.getItem(PRESET_SORT_STORAGE_KEY) || "";
+    return PRESET_SORT_MODES.has(stored) ? stored : "name";
+}
+
+function isPresetFavorite(name) {
+    return loadPresetJsonMap(PRESET_FAVORITES_STORAGE_KEY)[name] === true;
+}
+
+function togglePresetFavorite(name) {
+    const favorites = loadPresetJsonMap(PRESET_FAVORITES_STORAGE_KEY);
+    if (favorites[name]) {
+        delete favorites[name];
+    } else {
+        favorites[name] = true;
+    }
+    savePresetJsonMap(PRESET_FAVORITES_STORAGE_KEY, favorites);
+}
+
+function getPresetLastUsed(name) {
+    const value = loadPresetJsonMap(PRESET_LAST_USED_STORAGE_KEY)[name];
+    return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function markPresetUsed(name) {
+    const lastUsed = loadPresetJsonMap(PRESET_LAST_USED_STORAGE_KEY);
+    lastUsed[name] = Date.now();
+    savePresetJsonMap(PRESET_LAST_USED_STORAGE_KEY, lastUsed);
+}
+
+function prunePresetLocalState(existingNames) {
+    for (const storageKey of [PRESET_FAVORITES_STORAGE_KEY, PRESET_LAST_USED_STORAGE_KEY]) {
+        const map = loadPresetJsonMap(storageKey);
+        let changed = false;
+        for (const name of Object.keys(map)) {
+            if (!existingNames.has(name)) {
+                delete map[name];
+                changed = true;
+            }
+        }
+        if (changed) savePresetJsonMap(storageKey, map);
+    }
+}
 
 function getModelQuantLabel(modelLabel) {
     const match = String(modelLabel || "").replace(/\.gguf$/i, "")
@@ -184,6 +246,10 @@ function buildPresetGroups(presets) {
             toolText: presetData.tool || "Keep current tool",
             flagCount: Object.keys(presetData.flags || {}).length,
             warnings,
+            // backend sends epoch seconds; convert to ms to match Date.now()
+            created: typeof preset.created === "number" ? preset.created * 1000 : 0,
+            lastUsed: getPresetLastUsed(preset.name),
+            favorite: isPresetFavorite(preset.name),
         };
 
         if (!groupsByKey.has(groupKey)) {
@@ -199,21 +265,32 @@ function buildPresetGroups(presets) {
     }
 
     const query = presetSearchQuery.trim().toLowerCase();
+    const compareEntries = (a, b) => {
+        if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
+        if (presetSortMode === "recent" && b.lastUsed !== a.lastUsed) return b.lastUsed - a.lastUsed;
+        if (presetSortMode === "added" && b.created !== a.created) return b.created - a.created;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    };
     const groups = Array.from(groupsByKey.values()).map((group) => {
         const entries = group.entries
             .filter((entry) => !query || getPresetSearchText(entry).includes(query))
             .filter((entry) => !presetWarningFilterActive || entry.warnings.length > 0)
-            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+            .sort(compareEntries);
         return {
             ...group,
             entries,
             visibleWarningCount: entries.reduce((count, entry) => count + entry.warnings.length, 0),
+            sortValue: entries.reduce(
+                (best, entry) => Math.max(best, presetSortMode === "recent" ? entry.lastUsed : entry.created),
+                0
+            ),
         };
     }).filter((group) => group.entries.length > 0);
 
     groups.sort((a, b) => {
         if (a.key === NO_MODEL_PRESET_GROUP_KEY) return 1;
         if (b.key === NO_MODEL_PRESET_GROUP_KEY) return -1;
+        if (presetSortMode !== "name" && b.sortValue !== a.sortValue) return b.sortValue - a.sortValue;
         return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
     });
 
@@ -281,6 +358,8 @@ const PRESET_ICON_WARNING = '<svg width="14" height="14" viewBox="0 0 24 24" fil
 const PRESET_ICON_CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
 const PRESET_ICON_CHEVRON = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
 const PRESET_ICON_EMPTY = '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>';
+const PRESET_ICON_STAR = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>';
+const PRESET_ICON_STAR_OUTLINE = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>';
 
 function createPresetIcon(svgMarkup) {
     const wrap = document.createElement("span");
@@ -348,6 +427,21 @@ function renderPresetDetailPanel() {
     actions.appendChild(createPresetButton("Update from Current", "btn btn-sm", () => updatePreset(entry.name), "Overwrite this preset with current Configure values"));
     actions.appendChild(createPresetButton("Export", "btn btn-sm", () => exportPreset(entry.name)));
     actions.appendChild(createPresetButton("Shortcut", "btn btn-sm", () => exportPresetShortcut(entry.name), "Export a Windows shortcut for this preset"));
+
+    const favoriteBtn = document.createElement("button");
+    favoriteBtn.type = "button";
+    favoriteBtn.className = entry.favorite ? "btn btn-sm preset-favorite-btn active" : "btn btn-sm preset-favorite-btn";
+    favoriteBtn.title = entry.favorite ? "Remove from favorites" : "Add to favorites";
+    favoriteBtn.setAttribute("aria-pressed", String(entry.favorite));
+    favoriteBtn.appendChild(createPresetIcon(entry.favorite ? PRESET_ICON_STAR : PRESET_ICON_STAR_OUTLINE));
+    favoriteBtn.appendChild(document.createTextNode(entry.favorite ? " Favorited" : " Favorite"));
+    favoriteBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        togglePresetFavorite(entry.name);
+        loadPresets();
+    });
+    actions.appendChild(favoriteBtn);
+
     const spacer = document.createElement("span");
     spacer.className = "preset-detail-actions-spacer";
     actions.appendChild(spacer);
@@ -502,6 +596,15 @@ function renderPresetEntry(entry) {
     nameEl.title = entry.name;
     titleRow.appendChild(nameEl);
 
+    if (entry.favorite) {
+        el.classList.add("preset-item-favorite");
+        const star = document.createElement("span");
+        star.className = "preset-row-star";
+        star.title = "Favorite preset";
+        star.appendChild(createPresetIcon(PRESET_ICON_STAR));
+        titleRow.appendChild(star);
+    }
+
     const metaEl = document.createElement("div");
     metaEl.className = "preset-meta";
     metaEl.textContent = `${entry.toolText} · ${entry.flagCount} flag${entry.flagCount === 1 ? "" : "s"}`;
@@ -633,6 +736,7 @@ async function loadPresets() {
     container.textContent = "";
     try {
         const presets = await fetchJson("/api/presets");
+        prunePresetLocalState(new Set(presets.map((preset) => preset.name)));
         currentPresetGroups = buildPresetGroups(presets);
         const visibleEntries = getVisiblePresetEntries();
         const visibleNames = new Set(visibleEntries.map((entry) => entry.name));
@@ -663,6 +767,16 @@ function initPresetLibraryControls() {
                 presetSearchQuery = "";
                 loadPresets();
             }
+        });
+    }
+
+    const sortSelect = document.getElementById("preset-sort");
+    if (sortSelect) {
+        sortSelect.value = presetSortMode;
+        sortSelect.addEventListener("change", () => {
+            presetSortMode = PRESET_SORT_MODES.has(sortSelect.value) ? sortSelect.value : "name";
+            localStorage.setItem(PRESET_SORT_STORAGE_KEY, presetSortMode);
+            loadPresets();
         });
     }
 
@@ -800,6 +914,7 @@ async function loadPreset(name) {
             }
             applyPresetModel(presetData.model);
             flagCore.applyFlagValues(presetData.flags);
+            markPresetUsed(name);
             if (warnings.length > 0) {
                 showPresetStatus(`Loaded "${name}" with warning: ${warnings[0]}`, "warning", 5000);
             } else {
