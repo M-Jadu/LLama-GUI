@@ -168,6 +168,25 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertIsInstance(listed["created"], float)
             self.assertIsInstance(listed["modified"], float)
 
+            created = listed["created"]
+            update_response = DummyResponse()
+            with mock.patch("backend.routes.presets.time.time", return_value=created + 1000):
+                presets.save_preset(
+                    Request(
+                        "POST",
+                        "/api/presets",
+                        "",
+                        {},
+                        body={"name": "My/Preset", "data": {"temperature": 0.8}},
+                    ),
+                    update_response,
+                    ctx,
+                )
+            updated_list_response = DummyResponse()
+            presets.list_presets(Request("GET", "/api/presets", "", {}), updated_list_response, ctx)
+            self.assertEqual(updated_list_response.payload[0]["created"], created)
+            self.assertEqual(updated_list_response.payload[0]["data"], {"temperature": 0.8})
+
             delete_response = DummyResponse()
             delete_request = Request(
                 "DELETE",
@@ -179,6 +198,10 @@ class ExtractedRouteTests(unittest.TestCase):
             presets.delete_preset(delete_request, delete_response, ctx)
             self.assertEqual(delete_response.payload, {"deleted": True})
             self.assertFalse((ctx.paths.presets / "My_Preset.json").exists())
+            self.assertEqual(
+                json.loads((ctx.paths.presets / ".preset-created-times").read_text(encoding="utf-8")),
+                {},
+            )
 
     def test_list_presets_skips_malformed_file_with_stderr_warning(self):
         with tempfile.TemporaryDirectory() as tmp:

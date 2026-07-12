@@ -56,7 +56,7 @@ Fast Node tests:
 - `sampler_presets_unit.cjs`: sampler preset storage fallback, normalization, applying defaults, and built-in/custom preset shape.
 - `hf_download_ui_unit.cjs`: Hugging Face downloader UI helper behavior, request payloads, duplicate overwrite retry, and completion handling.
 - `api_tab_unit.cjs`: API endpoint host/port fallback, model alias selection, and API-key snippet rendering.
-- `presets_unit.cjs`: imported preset normalization and stale flag filtering.
+- `presets_unit.cjs`: preset storage failure fallback, imported preset normalization, and stale flag filtering.
 - `module_namespace_unit.cjs`: frontend script load order and exported namespaces.
 - `js_syntax_check.cjs`: syntax-only check for frontend JavaScript.
 

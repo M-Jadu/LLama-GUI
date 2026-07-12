@@ -5,9 +5,22 @@ const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const source = fs.readFileSync(path.join(ROOT, "ui", "js", "presets.js"), "utf8");
+const storageWarnings = [];
 const context = {
     window: {},
-    console,
+    console: {
+        ...console,
+        debug: () => {},
+        warn: (...args) => storageWarnings.push(args),
+    },
+    localStorage: {
+        getItem() {
+            throw new Error("storage blocked");
+        },
+        setItem() {
+            throw new Error("storage blocked");
+        },
+    },
     FLAGS: [
         { id: "temperature" },
         { id: "ctx_size" },
@@ -19,7 +32,9 @@ context.window = context;
 context.window.LlamaGui = {};
 
 vm.createContext(context);
-vm.runInContext(source, context, { filename: "presets.js" });
+assert.doesNotThrow(() => vm.runInContext(source, context, { filename: "presets.js" }));
+assert.doesNotThrow(() => vm.runInContext("markPresetUsed('Blocked Storage Preset')", context));
+assert.ok(storageWarnings.length > 0, "storage write failures should be logged without breaking preset actions");
 
 const normalizeImportedPresetData = context.window.LlamaGui.presets.normalizeImportedPresetData;
 

@@ -121,21 +121,41 @@ let currentPresetGroups = [];
 let selectedPresetName = "";
 let selectedPresetNames = new Set();
 
+function getPresetStorageItem(storageKey) {
+    try {
+        return localStorage.getItem(storageKey);
+    } catch (e) {
+        console.debug("Preset storage read failed", e);
+        return null;
+    }
+}
+
+function setPresetStorageItem(storageKey, value) {
+    try {
+        localStorage.setItem(storageKey, value);
+        return true;
+    } catch (e) {
+        console.warn("Preset storage save failed", e);
+        return false;
+    }
+}
+
 function loadPresetJsonMap(storageKey) {
     try {
-        const parsed = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        const parsed = JSON.parse(getPresetStorageItem(storageKey) || "{}");
         return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
     } catch (e) {
+        console.debug("Preset storage data is invalid", e);
         return {};
     }
 }
 
 function savePresetJsonMap(storageKey, map) {
-    localStorage.setItem(storageKey, JSON.stringify(map));
+    return setPresetStorageItem(storageKey, JSON.stringify(map));
 }
 
 function loadPresetSortMode() {
-    const stored = localStorage.getItem(PRESET_SORT_STORAGE_KEY) || "";
+    const stored = getPresetStorageItem(PRESET_SORT_STORAGE_KEY) || "";
     return PRESET_SORT_MODES.has(stored) ? stored : "name";
 }
 
@@ -200,7 +220,7 @@ function getPresetGroupLabel(groupKey) {
 
 function loadPresetGroupState() {
     try {
-        const raw = localStorage.getItem(PRESET_GROUP_STATE_STORAGE_KEY);
+        const raw = getPresetStorageItem(PRESET_GROUP_STATE_STORAGE_KEY);
         const parsed = raw ? JSON.parse(raw) : {};
         return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
     } catch (e) {
@@ -209,7 +229,7 @@ function loadPresetGroupState() {
 }
 
 function savePresetGroupState(state) {
-    localStorage.setItem(PRESET_GROUP_STATE_STORAGE_KEY, JSON.stringify(state));
+    setPresetStorageItem(PRESET_GROUP_STATE_STORAGE_KEY, JSON.stringify(state));
 }
 
 function isPresetGroupCollapsed(groupKey) {
@@ -775,7 +795,7 @@ function initPresetLibraryControls() {
         sortSelect.value = presetSortMode;
         sortSelect.addEventListener("change", () => {
             presetSortMode = PRESET_SORT_MODES.has(sortSelect.value) ? sortSelect.value : "name";
-            localStorage.setItem(PRESET_SORT_STORAGE_KEY, presetSortMode);
+            setPresetStorageItem(PRESET_SORT_STORAGE_KEY, presetSortMode);
             loadPresets();
         });
     }
