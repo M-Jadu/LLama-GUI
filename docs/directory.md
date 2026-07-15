@@ -170,7 +170,7 @@ The frontend loads scripts in a strict dependency order via `ui/index.html`:
 | `ui/js/output-cursor.js` | `window.LlamaGui.outputCursor` | Shared monotonic cursor consumer for main and benchmark process-output polling |
 | `ui/js/sampler-presets.js` | `window.LlamaGui.samplerPresets` | Sampler preset storage, normalization, apply behavior, import/export, and Configure-tab controls; writes sampler values through injected `flagCore` |
 | `ui/js/chat-rendering.js` | `window.LlamaGui.chatRendering` | Markdown and low-level chat DOM rendering helpers |
-| `ui/js/api-tab.js` | `window.LlamaGui.apiTab` | API tab endpoint/snippet data, base URL helpers, and rendering; reads shared state through injected `flagCore` |
+| `ui/js/api-tab.js` | `window.LlamaGui.apiTab` | API tab endpoint/snippet data, base URL and authorization helpers, and rendering; reads shared state through injected `flagCore` |
 | `ui/js/hf-download-ui.js` | `window.LlamaGui.hfDownloadUi` | Quick Launch Hugging Face downloader controls, status rendering, progress polling, cancel handling, and completion flow; receives shared utilities and `flagCore` from `app.js` |
 | `ui/js/remote-tunnel-ui.js` | `window.LlamaGui.remoteTunnelUi` | API tab Cloudflare tunnel controls, status rendering, URL rendering, copy wiring, start/stop actions, and polling; receives shared utilities and endpoint helpers from `app.js` |
 | `ui/js/quick-launch-ui.js` | `window.LlamaGui.quickLaunchUi` | Quick Launch profile, context, GPU, template, sampler, metrics, command preview mirror, action buttons, and event wiring; reads and writes launch state through injected `flagCore` |
@@ -400,9 +400,18 @@ Quick Launch renders simplified controls for:
 - Sampler preset selection (load/save/delete from shared sampler preset store)
 - Quick sampler fields (temperature, top-k, top-p, min-p, repeat-penalty)
 - Metrics toggle
+- Optional session-only API key with masked entry, generation, copy, and shared Configure synchronization
 - Profile selector with summary text
 
 All controls write through `window.LlamaGui.flagCore` setters (`setFlagValue()` / `setMultipleFlagValues()`), keeping Configure and Quick Launch in sync.
+
+### Optional llama-server Authentication
+
+- A blank `api_key` keeps llama-server open exactly as before. A non-empty value emits `--api-key`; comma-separated values remain supported by upstream llama.cpp.
+- Configure and Quick Launch use the same shared `flagCore` value. The built-in Chat, metrics, and slots requests use the first configured key as a bearer token.
+- API keys are sensitive session state: they are masked in controls, redacted from command previews and launch output, omitted from presets/imports/exports, and preserved in memory when applying a preset.
+- Loading the preset library removes legacy `api_key` fields from stored preset JSON. Reloading the browser clears the key, so a still-running protected server requires the key to be re-entered for Chat and stats.
+- This setting protects llama-server, not the Python management UI. Because llama-server receives `--api-key`, same-user OS process inspection may still reveal the real argument.
 
 ### Hugging Face Download Integration
 
@@ -660,6 +669,7 @@ The Configure tab has a search input that filters visible flags in real-time.
 - Chat temperature accepts two-decimal values such as `0.31`.
 - Quick Launch sampler edits sync to Chat, Configure, shared flag state, and launch args.
 - Custom Launch Args update shared state, command preview, launch args, and launch blocking on parser errors.
+- API-key controls sync across Configure and Quick Launch, generated/manual keys authenticate Chat and stats, and rendered commands never expose the secret.
 
 When running local browser smoke checks manually, serve `ui/` as the web root. Serving from the repo root will break root-relative assets such as `/js/app.js`.
 

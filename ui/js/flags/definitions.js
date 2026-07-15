@@ -1431,6 +1431,7 @@ const FLAGS = [
 		short_desc: "Optional key required for clients to access the API.",
 		desc: "API key for authentication (comma-separated for multiple)",
 		tool: "server",
+		sensitive: true,
 	},
 	{
 		id: "threads_http",

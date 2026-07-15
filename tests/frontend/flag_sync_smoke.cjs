@@ -81,7 +81,10 @@ async function main() {
     try {
         const page = await browser.newPage();
         const chatCompletionBodies = [];
+        const chatCompletionHeaders = [];
         const launchBodies = [];
+        const metricsHeaders = [];
+        const slotsHeaders = [];
         const pageErrors = [];
         const releaseRequests = [];
         const activateCustomRequests = [];
@@ -98,6 +101,7 @@ async function main() {
             const pathName = url.pathname;
             if (pathName === "/api/chat/completions") {
                 chatCompletionBodies.push(JSON.parse(route.request().postData() || "{}"));
+                chatCompletionHeaders.push(route.request().headers());
                 let chatStreamBody = [
                     'data: {"choices":[{"delta":{"content":"ok"}}]}',
                     "",
@@ -218,6 +222,7 @@ async function main() {
         });
 
         await page.route("**/api/llama/metrics**", async (route) => {
+            metricsHeaders.push(route.request().headers());
             await route.fulfill({
                 status: 200,
                 contentType: "text/plain",
@@ -231,6 +236,7 @@ async function main() {
         });
 
         await page.route("**/api/llama/slots**", async (route) => {
+            slotsHeaders.push(route.request().headers());
             await route.fulfill({
                 status: 200,
                 contentType: "application/json",
@@ -395,9 +401,24 @@ async function main() {
         await page.waitForFunction(() => document.querySelector("#quick-metrics-toggle")?.checked === false);
         await page.click("#flag-metrics");
         await page.waitForFunction(() => document.querySelector("#quick-metrics-toggle")?.checked === true);
+
+        await page.fill("#config-search", "api key");
+        await page.waitForSelector("#flag-api_key", { state: "visible" });
+        await page.locator("#flag-api_key + .sensitive-input-actions button", { hasText: "Generate" }).click();
+        assert.match(await page.inputValue("#flag-api_key"), /^[A-Za-z0-9_-]{43}$/);
+        await page.fill("#flag-api_key", "first-secret, second-secret");
+        await page.waitForFunction(() => window.LlamaGui.flagCore.getFlagValues().api_key === "first-secret, second-secret");
+        const protectedPreview = await page.textContent("#command-preview-text");
+        assert.match(protectedPreview, /--api-key <redacted>/);
+        assert.ok(!protectedPreview.includes("first-secret"));
+        await selectSection(page, "quick-launch");
+        assert.equal(await page.inputValue("#quick-api-key"), "first-secret, second-secret");
+
         await page.evaluate(() => startStatsPolling());
         await page.waitForFunction(() => document.querySelector("#stats-kv-usage")?.textContent === "13%");
         await page.evaluate(() => stopStatsPolling());
+        assert.equal(metricsHeaders.at(-1).authorization, "Bearer first-secret");
+        assert.equal(slotsHeaders.at(-1).authorization, "Bearer first-secret");
 
         await selectSection(page, "chat");
         assert.equal(await page.locator("#chat-input").isDisabled(), true);
@@ -437,6 +458,7 @@ async function main() {
         );
         assert.equal(chatCompletionBodies.at(-1).web_search, true);
         assert.equal(chatCompletionBodies.at(-1).web_search_max_results, 7);
+        assert.equal(chatCompletionHeaders.at(-1).authorization, "Bearer first-secret");
         await page.click("#btn-chat-new");
 
         chatResponseMode = "reasoning-only";

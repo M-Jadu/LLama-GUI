@@ -14,6 +14,7 @@ from ..context import AppContext
 
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+_SENSITIVE_VALUE_FLAGS = {"--api-key"}
 _ESTIMATE_VALUE_FLAGS = {
     "-t",
     "--threads",
@@ -569,6 +570,46 @@ def _build_process_env(ctx: AppContext) -> dict[str, str]:
     return env
 
 
+def redact_sensitive_args(args: Iterable[Any]) -> list[str]:
+    redacted = []
+    redact_next = False
+    for raw_arg in args or []:
+        arg = str(raw_arg)
+        if redact_next:
+            redacted.append("<redacted>")
+            redact_next = False
+            continue
+        matched_flag = next(
+            (flag for flag in _SENSITIVE_VALUE_FLAGS if arg.startswith(f"{flag}=")),
+            None,
+        )
+        if matched_flag:
+            redacted.append(f"{matched_flag}=<redacted>")
+            continue
+        redacted.append(arg)
+        if arg in _SENSITIVE_VALUE_FLAGS:
+            redact_next = True
+    return redacted
+
+
+def redact_sensitive_text(text: Any, args: Iterable[Any]) -> str:
+    result = str(text)
+    flat_args = [str(arg) for arg in (args or [])]
+    for index, arg in enumerate(flat_args):
+        if arg in _SENSITIVE_VALUE_FLAGS and index + 1 < len(flat_args):
+            secret = flat_args[index + 1]
+            if secret:
+                result = result.replace(secret, "<redacted>")
+            continue
+        for flag in _SENSITIVE_VALUE_FLAGS:
+            prefix = f"{flag}="
+            if arg.startswith(prefix):
+                secret = arg[len(prefix):]
+                if secret:
+                    result = result.replace(secret, "<redacted>")
+    return result
+
+
 def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]]) -> dict[str, Any]:
     with ctx.state.process_lock:
         _reap_finished_process(ctx)
@@ -639,7 +680,7 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
                 parse_launch_api_target(ctx, args_list)
             return {
                 "pid": ctx.state.process.pid,
-                "command": " ".join(args),
+                "command": " ".join(redact_sensitive_args(args)),
                 "output_cursor": output_cursor,
             }
         except Exception as e:
@@ -656,7 +697,7 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
                     )
                 ctx.state.process = None
                 ctx.state.active_process_tool = None
-            return {"error": str(e)}
+            return {"error": redact_sensitive_text(e, args)}
 
 
 def stop_process(ctx: AppContext) -> bool:

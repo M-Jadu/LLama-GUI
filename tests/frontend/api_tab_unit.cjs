@@ -96,6 +96,9 @@ const snippetsText = elements.get("api-snippets-list").children
     .join("\n");
 assert.match(snippetsText, /primary-alias/);
 assert.match(snippetsText, /Authorization: Bearer YOUR_API_KEY/);
+assert.equal(apiTab.getApiAuthorizationHeaders().Authorization, "Bearer secret");
+flagValues.api_key = " first-key, second-key ";
+assert.equal(apiTab.getApiAuthorizationHeaders().Authorization, "Bearer first-key");
 assert.ok(!snippetsText.includes("selected-model.gguf"), "API snippets should prefer first alias over selected model");
 
 flagValues = { host: "localhost", port: 8081, alias: "", api_key: "" };

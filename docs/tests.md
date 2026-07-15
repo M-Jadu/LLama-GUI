@@ -50,19 +50,19 @@ Runs the backend unittest suite.
 Fast Node tests:
 
 - `custom_launch_args_unit.cjs`: custom launch arg tokenization, quote handling, duplicate flag warnings, and preset preservation.
-- `launch_args_unit.cjs`: launch argument generation for inert defaults and sampler-related flag behavior.
+- `launch_args_unit.cjs`: launch argument generation for inert defaults, sampler-related flag behavior, and sensitive-value redaction.
 - `benchmark_args_unit.cjs`: benchmark/perplexity argument adaptation without mutating source presets.
 - `chat_rendering_unit.cjs`: markdown escaping, fenced code safety, and safe source-link rendering.
 - `sampler_presets_unit.cjs`: sampler preset storage fallback, normalization, applying defaults, and built-in/custom preset shape.
 - `hf_download_ui_unit.cjs`: Hugging Face downloader UI helper behavior, request payloads, duplicate overwrite retry, and completion handling.
-- `api_tab_unit.cjs`: API endpoint host/port fallback, model alias selection, and API-key snippet rendering.
+- `api_tab_unit.cjs`: API endpoint host/port fallback, model alias selection, API-key snippet rendering, and bearer-header selection.
 - `presets_unit.cjs`: preset storage failure fallback, non-default override calculation, imported preset normalization, and stale flag filtering.
 - `module_namespace_unit.cjs`: frontend script load order and exported namespaces.
 - `js_syntax_check.cjs`: syntax-only check for frontend JavaScript.
 
 Browser smoke test:
 
-- `flag_sync_smoke.cjs`: serves `ui/`, stubs backend APIs, and verifies shared state across Quick Launch, Configure, Chat, command preview, API snippets, remote tunnel UI, sampler presets, and custom launch args.
+- `flag_sync_smoke.cjs`: serves `ui/`, stubs backend APIs, and verifies shared state across Quick Launch, Configure, Chat, command preview, API authentication, API snippets, remote tunnel UI, sampler presets, and custom launch args.
 
 Use fast Node tests for focused debugging. Use the Playwright smoke test when a change affects real DOM wiring, mirrored controls, tab sync, command preview rendering, or launch blocking behavior.
 

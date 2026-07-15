@@ -282,6 +282,35 @@
         return eqIndex > 0 ? value.slice(0, eqIndex) : value;
     }
 
+    function getSensitiveCliFlags() {
+        return new Set(getFlags()
+            .filter(flag => flag && flag.sensitive && flag.flag)
+            .map(flag => String(flag.flag)));
+    }
+
+    function redactSensitiveTokens(tokens) {
+        const sensitiveFlags = getSensitiveCliFlags();
+        const redacted = [];
+        let redactNext = false;
+        for (const rawToken of tokens || []) {
+            const token = String(rawToken);
+            if (redactNext) {
+                redacted.push("<redacted>");
+                redactNext = false;
+                continue;
+            }
+            const matchedEqualsFlag = Array.from(sensitiveFlags)
+                .find(flag => token.startsWith(flag + "="));
+            if (matchedEqualsFlag) {
+                redacted.push(matchedEqualsFlag + "=<redacted>");
+                continue;
+            }
+            redacted.push(token);
+            if (sensitiveFlags.has(token)) redactNext = true;
+        }
+        return redacted;
+    }
+
     function getLaunchArgs() {
         const args = [];
         const warnings = [];
@@ -373,14 +402,15 @@
 
     function updateCommandPreview() {
         const result = getLaunchArgs();
-        const parts = [getToolBinaryName(currentTool)];
+        const launchTokens = [];
         for (const entry of result.args) {
             if (Array.isArray(entry)) {
-                parts.push(...entry);
+                launchTokens.push(...entry);
             } else {
-                parts.push(String(entry));
+                launchTokens.push(String(entry));
             }
         }
+        const parts = [getToolBinaryName(currentTool), ...redactSensitiveTokens(launchTokens)];
         const command = parts.join(" ");
         if (typeof renderCommandPreview === "function") {
             renderCommandPreview(command, result);
@@ -411,6 +441,7 @@
         isValidGpuLayersValue,
         normalizeGpuLayersValue,
         parseCustomLaunchArgs,
+        redactSensitiveTokens,
         getLaunchArgs,
         updateCommandPreview,
         registerApi,

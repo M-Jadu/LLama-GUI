@@ -191,6 +191,40 @@ class HandlerResponseTests(ServerStateIsolationMixin, unittest.TestCase):
             {"error": "Invalid proxy path", "status": 400},
         )
 
+    def test_v1_proxy_forwards_authorization_header(self):
+        handler = self.make_handler()
+        handler.headers["Authorization"] = "Bearer secret"
+        parsed = server.urllib.parse.urlparse("/v1/models")
+        captured = {}
+
+        class Upstream:
+            status = 200
+
+            def __init__(self):
+                self.headers = Message()
+                self.headers["Content-Type"] = "application/json"
+                self._chunks = [b'{"data":[]}', b""]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self, size=-1):
+                return self._chunks.pop(0)
+
+        def fake_urlopen(req, timeout):
+            captured["authorization"] = req.get_header("Authorization")
+            return Upstream()
+
+        with mock.patch.object(backend_app.urllib.request, "urlopen", side_effect=fake_urlopen):
+            handler.proxy_v1_request("GET", parsed)
+
+        self.assertEqual(handler.sent_response, 200)
+        self.assertEqual(captured["authorization"], "Bearer secret")
+        self.assertEqual(json.loads(handler.wfile.getvalue().decode("utf-8")), {"data": []})
+
     def test_read_body_returns_408_when_body_read_times_out(self):
         handler = self.make_handler()
         handler.headers["Content-Length"] = "10"

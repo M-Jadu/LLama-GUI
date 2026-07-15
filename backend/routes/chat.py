@@ -99,10 +99,14 @@ def completions(request, response, ctx):
         proxy_body.pop("web_search_max_results", None)
 
         api_url = chat_service.get_local_chat_api_url(body)
+        headers = {"Content-Type": "application/json"}
+        authorization = request.headers.get("Authorization", "")
+        if authorization:
+            headers["Authorization"] = authorization
         req = urllib.request.Request(
             api_url,
             data=json.dumps(proxy_body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=300) as resp:

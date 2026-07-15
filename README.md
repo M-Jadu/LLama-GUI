@@ -508,6 +508,7 @@ The custom binaries directory (`llama/custom/`) is preserved during cleanup oper
 - `config.json` - installed release/backend metadata
 - `presets/` - full app presets (tool/model/flags)
 - browser `localStorage` - custom sampler presets, chat conversations, and Chat Web Search settings
+- API keys are held only in the current page session and are never written to presets or exports
 
 ## Troubleshooting
 
@@ -585,6 +586,9 @@ Fix:
 ## Security Notes
 
 - Llama GUI is intended for local use (`127.0.0.1`).
+- llama-server API authentication is optional. Set or generate an **API Key** in Quick Launch or Configure to launch with `--api-key`; leave it blank for the existing open-access behavior.
+- The built-in Chat and stats proxies automatically authenticate when a key is configured. Command previews, launch output, presets, and exports redact or omit the key.
+- API-key protection applies to llama-server endpoints only. It does not authenticate the Llama GUI management interface, and the real key may still be visible to same-user operating-system process inspection because llama-server receives it as a command-line argument.
 - `LLAMA_GUI_HOST=0.0.0.0` allows LAN access by IP address, but should only be used on trusted networks or behind a VPN/authenticated reverse proxy. Hostname access requires `LLAMA_GUI_ALLOWED_HOSTS`.
 - The wrapper does not enforce its own authentication layer.
 - The Cloudflare remote tunnel is opt-in and does not start automatically.

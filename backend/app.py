@@ -460,7 +460,7 @@ def get_metrics_host(host):
     return chat_service.get_local_proxy_host(host)
 
 
-def get_local_llama_metrics(host, port):
+def get_local_llama_metrics(host, port, authorization=""):
     try:
         parsed_port = int(port or LLAMA_PORT)
     except (TypeError, ValueError):
@@ -473,7 +473,10 @@ def get_local_llama_metrics(host, port):
         return None, host_error
 
     url = f"http://{metrics_host}:{parsed_port}/metrics"
-    req = urllib.request.Request(url, headers={"Accept": "text/plain"})
+    headers = {"Accept": "text/plain"}
+    if authorization:
+        headers["Authorization"] = authorization
+    req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=3) as resp:
             raw = resp.read(WEB_SEARCH_FETCH_BYTES)
@@ -485,7 +488,7 @@ def get_local_llama_metrics(host, port):
         return None, f"Failed to fetch llama-server metrics: {exc}"
 
 
-def get_local_llama_slots(host, port):
+def get_local_llama_slots(host, port, authorization=""):
     try:
         parsed_port = int(port or LLAMA_PORT)
     except (TypeError, ValueError):
@@ -498,7 +501,10 @@ def get_local_llama_slots(host, port):
         return None, host_error
 
     url = f"http://{metrics_host}:{parsed_port}/slots"
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    headers = {"Accept": "application/json"}
+    if authorization:
+        headers["Authorization"] = authorization
+    req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=3) as resp:
             raw = resp.read(WEB_SEARCH_FETCH_BYTES)

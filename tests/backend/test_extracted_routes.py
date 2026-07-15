@@ -221,6 +221,36 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertIn("Broken.json", stderr.getvalue())
             self.assertIn("JSONDecodeError", stderr.getvalue())
 
+    def test_presets_never_store_or_return_api_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.paths.presets.mkdir(parents=True)
+            legacy_path = ctx.paths.presets / "Legacy.json"
+            legacy_path.write_text(
+                json.dumps({"tool": "llama-server", "flags": {"api_key": "legacy-secret", "temperature": 0.7}}),
+                encoding="utf-8",
+            )
+
+            response = DummyResponse()
+            presets.list_presets(Request("GET", "/api/presets", "", {}), response, ctx)
+            self.assertEqual(response.payload[0]["data"]["flags"], {"temperature": 0.7})
+            self.assertNotIn("legacy-secret", legacy_path.read_text(encoding="utf-8"))
+
+            save_response = DummyResponse()
+            presets.save_preset(
+                Request(
+                    "POST",
+                    "/api/presets",
+                    "",
+                    {},
+                    body={"name": "Protected", "data": {"api_key": "new-secret", "temperature": 0.8}},
+                ),
+                save_response,
+                ctx,
+            )
+            saved = json.loads((ctx.paths.presets / "Protected.json").read_text(encoding="utf-8"))
+            self.assertEqual(saved, {"temperature": 0.8})
+
     def test_preset_delete_uses_same_sanitizer_as_save(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = make_context(tmp)
@@ -333,20 +363,20 @@ class ExtractedRouteTests(unittest.TestCase):
             ctx = make_context(tmp)
             calls = []
 
-            def get_local_llama_metrics(host, port):
-                calls.append((host, port))
+            def get_local_llama_metrics(host, port, authorization):
+                calls.append((host, port, authorization))
                 return "llama metrics", ""
 
             ctx.services.get_local_llama_metrics = get_local_llama_metrics
             response = DummyResponse()
 
             metrics.get_metrics(
-                Request("GET", "/api/llama/metrics", "host=localhost&port=9090", {}),
+                Request("GET", "/api/llama/metrics", "host=localhost&port=9090", {"Authorization": "Bearer secret"}),
                 response,
                 ctx,
             )
 
-            self.assertEqual(calls, [("localhost", "9090")])
+            self.assertEqual(calls, [("localhost", "9090", "Bearer secret")])
             self.assertEqual(response.text_payload, "llama metrics")
 
     def test_slots_route_uses_context_service(self):
@@ -354,27 +384,27 @@ class ExtractedRouteTests(unittest.TestCase):
             ctx = make_context(tmp)
             calls = []
 
-            def get_local_llama_slots(host, port):
-                calls.append((host, port))
+            def get_local_llama_slots(host, port, authorization):
+                calls.append((host, port, authorization))
                 return '[{"id":0,"n_ctx":4096}]', ""
 
             ctx.services.get_local_llama_slots = get_local_llama_slots
             response = DummyResponse()
 
             metrics.get_slots(
-                Request("GET", "/api/llama/slots", "host=localhost&port=9090", {}),
+                Request("GET", "/api/llama/slots", "host=localhost&port=9090", {"Authorization": "Bearer secret"}),
                 response,
                 ctx,
             )
 
-            self.assertEqual(calls, [("localhost", "9090")])
+            self.assertEqual(calls, [("localhost", "9090", "Bearer secret")])
             self.assertEqual(response.text_payload, '[{"id":0,"n_ctx":4096}]')
 
     def test_slots_route_returns_proxy_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = make_context(tmp)
 
-            def get_local_llama_slots(host, port):
+            def get_local_llama_slots(host, port, authorization):
                 return None, "llama-server slots returned HTTP 404."
 
             ctx.services.get_local_llama_slots = get_local_llama_slots
@@ -715,6 +745,21 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertIn("Missing llama.cpp runtime library", result["error"])
             self.assertIn("libllama-common.0.dylib", result["error"])
             mock_popen.assert_not_called()
+
+    def test_process_manager_redacts_api_keys_from_display_commands(self):
+        self.assertEqual(
+            process_manager.redact_sensitive_args(
+                ["llama-server", "--api-key", "primary-secret", "--api-key=backup-secret", "--metrics"]
+            ),
+            ["llama-server", "--api-key", "<redacted>", "--api-key=<redacted>", "--metrics"],
+        )
+        self.assertEqual(
+            process_manager.redact_sensitive_text(
+                "launch failed for primary-secret and backup-secret",
+                ["llama-server", "--api-key", "primary-secret", "--api-key=backup-secret"],
+            ),
+            "launch failed for <redacted> and <redacted>",
+        )
 
     def test_process_launch_route_returns_missing_runtime_error(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1257,17 +1302,23 @@ class ExtractedRouteTests(unittest.TestCase):
                 ]
             )
 
+            captured = {}
+
+            def fake_urlopen(req, timeout):
+                captured["authorization"] = req.get_header("Authorization")
+                return upstream
+
             with mock.patch.object(
                 chat.chat_service,
                 "get_local_chat_api_url",
                 return_value="http://127.0.0.1:8080/v1/chat/completions",
-            ), mock.patch.object(chat.urllib.request, "urlopen", return_value=upstream):
+            ), mock.patch.object(chat.urllib.request, "urlopen", side_effect=fake_urlopen):
                 chat.completions(
                     Request(
                         "POST",
                         "/api/chat/completions",
                         "",
-                        {},
+                        {"Authorization": "Bearer secret"},
                         body={"messages": [{"role": "user", "content": "Hello"}]},
                     ),
                     response,
@@ -1279,6 +1330,7 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertIn('data: {"choices":[{"delta":{"content":"Hi"}}]}', payload)
             self.assertIn("data: [DONE]", payload)
             self.assertTrue(response.handler.close_connection)
+            self.assertEqual(captured["authorization"], "Bearer secret")
 
     def test_chat_route_injects_web_search_context_into_system_prompt(self):
         with tempfile.TemporaryDirectory() as tmp:

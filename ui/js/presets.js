@@ -1,3 +1,13 @@
+const SENSITIVE_PRESET_FLAG_IDS = new Set(["api_key"]);
+
+function stripSensitivePresetFlags(flags) {
+    const sanitized = {};
+    for (const [key, value] of Object.entries(flags || {})) {
+        if (!SENSITIVE_PRESET_FLAG_IDS.has(key)) sanitized[key] = value;
+    }
+    return sanitized;
+}
+
 function normalizePresetData(data) {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
         return { tool: null, model: "", flags: {} };
@@ -6,10 +16,10 @@ function normalizePresetData(data) {
     if (data.flags && typeof data.flags === "object" && !Array.isArray(data.flags)) {
         const tool = typeof data.tool === "string" ? data.tool : null;
         const model = typeof data.model === "string" ? data.model : "";
-        return { tool, model, flags: data.flags };
+        return { tool, model, flags: stripSensitivePresetFlags(data.flags) };
     }
 
-    return { tool: null, model: "", flags: data };
+    return { tool: null, model: "", flags: stripSensitivePresetFlags(data) };
 }
 
 function getKnownPresetFlagIds() {
@@ -29,7 +39,7 @@ function normalizeImportedPresetData(data) {
     const flags = {};
 
     for (const [key, value] of Object.entries(normalized.flags || {})) {
-        if (knownFlagIds.has(key)) {
+        if (knownFlagIds.has(key) && !SENSITIVE_PRESET_FLAG_IDS.has(key)) {
             flags[key] = value;
         }
     }
@@ -84,7 +94,7 @@ function applyPresetModel(modelName) {
 
 function buildCurrentPresetData() {
     const flagCore = getPresetFlagCore();
-    const values = flagCore.getFlagValues();
+    const values = stripSensitivePresetFlags(flagCore.getFlagValues());
     const selectedModel = flagCore.getSelectedModel();
     const tool = flagCore.getCurrentTool();
     return { tool, model: selectedModel, flags: values };
@@ -997,7 +1007,11 @@ async function loadPreset(name) {
                 if (toolSelect) toolSelect.value = presetData.tool;
             }
             applyPresetModel(presetData.model);
-            flagCore.applyFlagValues(presetData.flags);
+            const currentApiKey = flagCore.getFlagValues().api_key;
+            const nextFlags = currentApiKey
+                ? { ...presetData.flags, api_key: currentApiKey }
+                : presetData.flags;
+            flagCore.applyFlagValues(nextFlags);
             markPresetUsed(name);
             if (warnings.length > 0) {
                 showPresetStatus(`Loaded "${name}" with warning: ${warnings[0]}`, "warning", 5000);
@@ -1221,5 +1235,6 @@ if (window.LlamaGui) {
     window.LlamaGui.presets = Object.assign(window.LlamaGui.presets || {}, {
         loadPreset,
         normalizeImportedPresetData,
+        stripSensitivePresetFlags,
     });
 }

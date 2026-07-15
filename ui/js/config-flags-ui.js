@@ -593,6 +593,10 @@
             return createOverrideTensorInput(f);
         }
 
+        if (f.sensitive) {
+            return createSensitiveTextInput(f);
+        }
+
         const textField = document.createElement("input");
         textField.type = "text";
         textField.id = "flag-" + f.id;
@@ -611,6 +615,101 @@
             getFlagCore().setFlagValue(f.id, raw);
         });
         return textField;
+    }
+
+    function generateSensitiveValue() {
+        if (!window.crypto || typeof window.crypto.getRandomValues !== "function") {
+            throw new Error("Secure random generation is unavailable in this browser.");
+        }
+        const bytes = new Uint8Array(32);
+        window.crypto.getRandomValues(bytes);
+        let binary = "";
+        for (const byte of bytes) binary += String.fromCharCode(byte);
+        return window.btoa(binary)
+            .replace(/\+/g, "-")
+            .replace(/\//g, "_")
+            .replace(/=+$/g, "");
+    }
+
+    function syncSensitiveTextInput(control, value) {
+        if (!control) return;
+        const input = control.querySelector("[data-sensitive-input]");
+        const hasValue = String(value || "").length > 0;
+        if (input && input.value !== String(value || "")) input.value = String(value || "");
+        for (const button of control.querySelectorAll("[data-sensitive-requires-value]")) {
+            button.disabled = !hasValue;
+        }
+    }
+
+    function createSensitiveTextInput(f, options = {}) {
+        const control = document.createElement("div");
+        control.className = "sensitive-input-control";
+
+        const textField = document.createElement("input");
+        textField.type = "password";
+        textField.id = options.inputId || ("flag-" + f.id);
+        textField.dataset.flagId = f.id;
+        textField.dataset.flagType = "text";
+        textField.dataset.sensitiveInput = "true";
+        textField.autocomplete = "new-password";
+        textField.spellcheck = false;
+        textField.placeholder = f.placeholder || "Leave blank for no authentication";
+        textField.value = getFlagValues()[f.id] || "";
+        textField.addEventListener("input", () => {
+            getFlagCore().setFlagValue(f.id, textField.value || undefined);
+            syncSensitiveTextInput(control, textField.value);
+        });
+
+        const actions = document.createElement("div");
+        actions.className = "sensitive-input-actions";
+
+        const showButton = document.createElement("button");
+        showButton.type = "button";
+        showButton.className = "btn btn-sm btn-ghost";
+        showButton.textContent = "Show";
+        showButton.dataset.sensitiveRequiresValue = "true";
+        showButton.addEventListener("click", () => {
+            const isHidden = textField.type === "password";
+            textField.type = isHidden ? "text" : "password";
+            showButton.textContent = isHidden ? "Hide" : "Show";
+            showButton.setAttribute("aria-pressed", String(isHidden));
+        });
+
+        const generateButton = document.createElement("button");
+        generateButton.type = "button";
+        generateButton.className = "btn btn-sm";
+        generateButton.textContent = "Generate";
+        generateButton.addEventListener("click", () => {
+            try {
+                const value = generateSensitiveValue();
+                getFlagCore().setFlagValue(f.id, value);
+                textField.value = value;
+                syncSensitiveTextInput(control, value);
+                if (dependencies.showToast) dependencies.showToast("Generated a new API key", "success");
+            } catch (error) {
+                if (dependencies.showToast) dependencies.showToast(error.message, "error");
+                else console.warn(error.message);
+            }
+        });
+
+        const copyButton = document.createElement("button");
+        copyButton.type = "button";
+        copyButton.className = "btn btn-sm btn-ghost";
+        copyButton.textContent = "Copy key";
+        copyButton.dataset.sensitiveRequiresValue = "true";
+        copyButton.addEventListener("click", () => {
+            if (!textField.value) return;
+            if (dependencies.copyText) dependencies.copyText(textField.value);
+            if (dependencies.showToast) dependencies.showToast("API key copied", "success");
+        });
+
+        actions.appendChild(showButton);
+        actions.appendChild(generateButton);
+        actions.appendChild(copyButton);
+        control.appendChild(textField);
+        control.appendChild(actions);
+        syncSensitiveTextInput(control, textField.value);
+        return control;
     }
 
     function createOverrideTensorInput(f) {
@@ -763,6 +862,9 @@
                 }
             } else {
                 el.value = val !== undefined ? String(val) : "";
+                if (f.sensitive) {
+                    syncSensitiveTextInput(el.closest(".sensitive-input-control"), val);
+                }
             }
         }
     }
@@ -792,5 +894,7 @@
         renderFlags,
         restoreFlagInputs,
         normalizeMultiEnumValue,
+        createSensitiveTextInput,
+        syncSensitiveTextInput,
     };
 })();

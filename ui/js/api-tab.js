@@ -198,6 +198,21 @@
         return "your-model";
     }
 
+    function getConfiguredApiKeys() {
+        const values = flagCore.getFlagValues();
+        return String(values.api_key || "")
+            .split(",")
+            .map(value => value.trim())
+            .filter(Boolean);
+    }
+
+    function getApiAuthorizationHeaders(headers = {}) {
+        const result = { ...headers };
+        const firstKey = getConfiguredApiKeys()[0];
+        if (firstKey) result.Authorization = `Bearer ${firstKey}`;
+        return result;
+    }
+
     function updateEndpoints() {
         const baseUrl = getServerBaseUrl();
         const modelName = getPreferredApiModelName();
@@ -306,6 +321,8 @@
         init,
         getServerBaseUrl,
         getServerEndpointConfig,
+        getConfiguredApiKeys,
+        getApiAuthorizationHeaders,
         updateEndpoints,
     };
 })();

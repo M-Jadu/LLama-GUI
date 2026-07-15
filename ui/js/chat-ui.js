@@ -6,6 +6,7 @@
     let getServerEndpointConfig = null;
     let getLatestStatus = null;
     let snapshotStatsBaseline = null;
+    let getApiAuthorizationHeaders = (headers) => headers || {};
     let switchTab = () => {};
 
     let chatMessages = [];
@@ -45,6 +46,7 @@
         getServerEndpointConfig = options.getServerEndpointConfig;
         getLatestStatus = options.getLatestStatus;
         snapshotStatsBaseline = options.snapshotStatsBaseline;
+        getApiAuthorizationHeaders = options.getApiAuthorizationHeaders || getApiAuthorizationHeaders;
         switchTab = options.switchTab || switchTab;
     }
 
@@ -283,7 +285,7 @@
         try {
             const resp = await fetch("/api/chat/completions", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: getApiAuthorizationHeaders({ "Content-Type": "application/json" }),
                 body: JSON.stringify(body),
                 signal: chatAbortController.signal,
             });

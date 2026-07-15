@@ -349,6 +349,11 @@
         const quickMetricsToggle = document.getElementById("quick-metrics-toggle");
         if (quickMetricsToggle) quickMetricsToggle.checked = values.metrics === true;
 
+        const quickApiKeyControl = document.getElementById("quick-api-key-control")?.firstElementChild;
+        configFlagsUi.syncSensitiveTextInput(quickApiKeyControl, values.api_key);
+        const quickAuthSection = document.getElementById("quick-auth-section");
+        if (quickAuthSection) quickAuthSection.classList.toggle("hidden", tool !== "llama-server");
+
         quickCommand.textContent = document.getElementById("command-preview-text").textContent || "";
         quickCommand.classList.toggle("command-preview-error", document.getElementById("command-preview-text").classList.contains("command-preview-error"));
         updateQuickServerAddressPreview();
@@ -395,6 +400,14 @@
         refreshSamplerPresetSelect();
         syncModelOptions();
         hfDownloadUi.init();
+
+        const quickApiKeyHost = document.getElementById("quick-api-key-control");
+        const apiKeyFlag = FLAGS.find((flag) => flag.id === "api_key");
+        if (quickApiKeyHost && apiKeyFlag && !quickApiKeyHost.firstElementChild) {
+            quickApiKeyHost.appendChild(configFlagsUi.createSensitiveTextInput(apiKeyFlag, {
+                inputId: "quick-api-key",
+            }));
+        }
 
         on("btn-open-configure", "click", () => {
             switchTab("configure");
