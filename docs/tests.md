@@ -55,8 +55,8 @@ Fast Node tests:
 - `chat_rendering_unit.cjs`: markdown escaping, fenced code safety, and safe source-link rendering.
 - `sampler_presets_unit.cjs`: sampler preset storage fallback, normalization, applying defaults, and built-in/custom preset shape.
 - `hf_download_ui_unit.cjs`: Hugging Face downloader UI helper behavior, request payloads, duplicate overwrite retry, and completion handling.
-- `api_tab_unit.cjs`: API endpoint host/port fallback, model alias selection, API-key snippet rendering, and bearer-header selection.
-- `presets_unit.cjs`: preset storage failure fallback, non-default override calculation, imported preset normalization, and stale flag filtering.
+- `api_tab_unit.cjs`: API endpoint host/port fallback, model alias selection, API-key snippet rendering, llama.cpp-compatible CSV parsing, active-auth status, and bearer-header selection.
+- `presets_unit.cjs`: preset storage failure fallback, non-default override calculation, imported preset normalization, stale flag filtering, and sensitive Custom Launch Args rejection.
 - `module_namespace_unit.cjs`: frontend script load order and exported namespaces.
 - `js_syntax_check.cjs`: syntax-only check for frontend JavaScript.
 
@@ -74,8 +74,8 @@ Backend tests use Python `unittest` and mostly exercise route/service logic with
 - `test_routing.py`: router matching for exact and prefix routes.
 - `test_http_adapters.py`: request/response helpers and CORS origin handling.
 - `test_server_baseline.py`: compatibility wrapper behavior, API dispatch, CORS, static asset versioning, and baseline server helpers.
-- `test_services.py`: service-level helpers for install specs, runtime validation, downloads, file picker behavior, chat/search helpers, and HF validation.
-- `test_extracted_routes.py`: extracted route handlers and larger service flows, including presets, process launch, metrics/slots, chat web search, HF download, tunnel, app update, and lifecycle routes.
+- `test_services.py`: service-level helpers for install specs, runtime validation, process/auth snapshot lifecycle, downloads, file picker behavior, chat/search helpers, and HF validation.
+- `test_extracted_routes.py`: extracted route handlers and larger service flows, including preset secret scrubbing, process launch/auth parsing, metrics/slots, chat web search, HF download, tunnel, app update, and lifecycle routes.
 
 Run backend tests after changes under `backend/`, route behavior changes, service helper changes, process management changes, install/update changes, or security-sensitive validation changes.
 

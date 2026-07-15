@@ -664,6 +664,7 @@ class ProcessStateReapTests(unittest.TestCase):
         ctx = AppContext()
         ctx.state.process = FakeLaunchedProcess(returncode=exit_code)
         ctx.state.active_process_tool = "llama-server"
+        ctx.state.active_llama_api_keys = ("launch-secret",)
         return ctx
 
     def test_is_process_running_reaps_naturally_exited_process(self):
@@ -673,6 +674,7 @@ class ProcessStateReapTests(unittest.TestCase):
 
         self.assertIsNone(ctx.state.process)
         self.assertIsNone(ctx.state.active_process_tool)
+        self.assertEqual(ctx.state.active_llama_api_keys, ())
         self.assertEqual(ctx.state.last_exit_code, 3)
 
     def test_stop_process_reaps_naturally_exited_process(self):
@@ -682,6 +684,7 @@ class ProcessStateReapTests(unittest.TestCase):
 
         self.assertIsNone(ctx.state.process)
         self.assertIsNone(ctx.state.active_process_tool)
+        self.assertEqual(ctx.state.active_llama_api_keys, ())
         self.assertEqual(ctx.state.last_exit_code, 1)
 
     def test_stop_process_clears_state_for_running_process(self):
@@ -689,12 +692,14 @@ class ProcessStateReapTests(unittest.TestCase):
         process = FakeLaunchedProcess(returncode=None)
         ctx.state.process = process
         ctx.state.active_process_tool = "llama-server"
+        ctx.state.active_llama_api_keys = ("launch-secret",)
 
         self.assertTrue(process_manager.stop_process(ctx))
 
         self.assertEqual(len(process.signals), 1)
         self.assertIsNone(ctx.state.process)
         self.assertIsNone(ctx.state.active_process_tool)
+        self.assertEqual(ctx.state.active_llama_api_keys, ())
         self.assertEqual(ctx.state.last_exit_code, 0)
 
     def test_stop_process_keeps_state_when_process_survives_kill(self):
@@ -743,6 +748,31 @@ class ProcessStateReapTests(unittest.TestCase):
 
         self.assertIsNotNone(ctx.state.process)
         self.assertEqual(ctx.state.active_process_tool, "llama-cli")
+
+    def test_active_llama_authorization_uses_launch_snapshot_and_safe_fallback(self):
+        ctx = AppContext()
+        ctx.state.process = FakeLaunchedProcess(returncode=None)
+        ctx.state.active_process_tool = "llama-server"
+        ctx.state.active_llama_api_keys = ("launch-key", "backup-key")
+
+        self.assertEqual(
+            process_manager.get_active_llama_authorization(ctx, "Bearer pending-key"),
+            "Bearer launch-key",
+        )
+        self.assertTrue(process_manager.is_active_llama_api_auth_configured(ctx))
+
+        ctx.state.active_llama_api_keys = ()
+        self.assertEqual(
+            process_manager.get_active_llama_authorization(ctx, "Bearer pending-key"),
+            "",
+        )
+
+        ctx.state.process = None
+        ctx.state.active_process_tool = None
+        self.assertEqual(
+            process_manager.get_active_llama_authorization(ctx, "Bearer re-entered-key"),
+            "Bearer re-entered-key",
+        )
 
 
 class LlamaManagerDownloadTests(unittest.TestCase):

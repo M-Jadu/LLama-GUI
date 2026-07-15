@@ -9,6 +9,21 @@ import urllib.parse
 
 _PRESET_CREATED_TIMES_FILE = ".preset-created-times"
 _SENSITIVE_PRESET_KEYS = {"api_key"}
+_SENSITIVE_CUSTOM_ARG_RE = re.compile(r"(?<![A-Za-z0-9_-])--api-key(?=$|[=\s])")
+
+
+def has_sensitive_custom_args(data):
+    if not isinstance(data, dict):
+        return False
+    candidates = [data]
+    flags = data.get("flags")
+    if isinstance(flags, dict):
+        candidates.append(flags)
+    return any(
+        isinstance(candidate.get("custom_args"), str)
+        and bool(_SENSITIVE_CUSTOM_ARG_RE.search(candidate["custom_args"]))
+        for candidate in candidates
+    )
 
 
 def sanitize_preset_data(data):
@@ -23,11 +38,17 @@ def sanitize_preset_data(data):
             if key in clean_flags:
                 del clean_flags[key]
                 changed = True
+        if has_sensitive_custom_args({"flags": clean_flags}):
+            del clean_flags["custom_args"]
+            changed = True
         sanitized["flags"] = clean_flags
     for key in _SENSITIVE_PRESET_KEYS:
         if key in sanitized:
             del sanitized[key]
             changed = True
+    if has_sensitive_custom_args(sanitized):
+        del sanitized["custom_args"]
+        changed = True
     return sanitized, changed
 
 
@@ -218,6 +239,12 @@ def save_preset(request, response, ctx):
     data = body.get("data")
     if not name or data is None:
         response.error("name and data required", 400)
+        return
+    if has_sensitive_custom_args(data):
+        response.error(
+            "Presets cannot include --api-key in Custom Launch Args. Use the API Key field instead.",
+            400,
+        )
         return
 
     presets_dir = ctx.paths.presets

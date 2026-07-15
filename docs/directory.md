@@ -407,10 +407,11 @@ All controls write through `window.LlamaGui.flagCore` setters (`setFlagValue()` 
 
 ### Optional llama-server Authentication
 
-- A blank `api_key` keeps llama-server open exactly as before. A non-empty value emits `--api-key`; comma-separated values remain supported by upstream llama.cpp.
-- Configure and Quick Launch use the same shared `flagCore` value. The built-in Chat, metrics, and slots requests use the first configured key as a bearer token.
+- A blank `api_key` keeps llama-server open exactly as before. A non-empty value emits `--api-key`; comma-separated and quoted values use the same CSV semantics as upstream llama.cpp.
+- Configure and Quick Launch use the same shared `flagCore` value. At successful launch, the backend snapshots the parsed keys in memory. Built-in Chat, metrics, and slots requests use that launch-time snapshot, so editing pending configuration cannot break the running server.
 - API keys are sensitive session state: they are masked in controls, redacted from command previews and launch output, omitted from presets/imports/exports, and preserved in memory when applying a preset.
-- Loading the preset library removes legacy `api_key` fields from stored preset JSON. Reloading the browser clears the key, so a still-running protected server requires the key to be re-entered for Chat and stats.
+- Loading the preset library removes legacy `api_key` fields and any Custom Launch Args containing `--api-key` from stored preset JSON. New preset saves and imports reject sensitive Custom Launch Args instead of persisting them.
+- Reloading the browser clears the editable key field, but the backend snapshot continues authenticating a running server. A re-entered key is used only as a fallback when the backend has no tracked launch-time snapshot. Stopping or reaping the process clears the snapshot.
 - This setting protects llama-server, not the Python management UI. Because llama-server receives `--api-key`, same-user OS process inspection may still reveal the real argument.
 
 ### Hugging Face Download Integration
@@ -636,6 +637,7 @@ The Configure tab includes an advanced `Custom Launch Args` textarea near the co
 - `flagCore.parseCustomLaunchArgs()` tokenizes shell-like input with whitespace splitting, single/double quotes, escaped whitespace, escaped quotes, and escaped backslashes.
 - Ordinary backslashes before non-special characters are preserved so Windows paths such as `C:\temp\llama.log` remain intact.
 - Parsed custom tokens are appended after UI-managed flags. If a custom token duplicates a known UI-managed flag, show a warning but still allow launch.
+- `--api-key` may be used for a one-off launch through Custom Launch Args, but presets containing it cannot be saved, updated, imported, or exported. Legacy preset files have the entire sensitive `custom_args` value removed when loaded.
 - Parser errors (unmatched quotes, unfinished double-quoted escapes) must show near the textarea, mark the command preview as blocked, and prevent `/api/launch`.
 - Presets store the raw textarea value under `flags.custom_args` and should preserve it through save, update, load, import, and export.
 

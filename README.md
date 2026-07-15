@@ -508,7 +508,7 @@ The custom binaries directory (`llama/custom/`) is preserved during cleanup oper
 - `config.json` - installed release/backend metadata
 - `presets/` - full app presets (tool/model/flags)
 - browser `localStorage` - custom sampler presets, chat conversations, and Chat Web Search settings
-- API keys are held only in the current page session and are never written to presets or exports
+- API keys stay in memory only, are never written to presets or exports (including through Custom Launch Args), and are snapshotted at launch so pending edits do not break Chat or metrics
 
 ## Troubleshooting
 

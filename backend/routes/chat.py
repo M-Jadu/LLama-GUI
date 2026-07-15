@@ -9,6 +9,7 @@ import urllib.request
 from backend import config
 from backend.http import SseWriter, sanitize_sse_error
 from backend.services import chat as chat_service
+from backend.services import process_manager
 from backend.services import web_search
 
 
@@ -100,7 +101,10 @@ def completions(request, response, ctx):
 
         api_url = chat_service.get_local_chat_api_url(body)
         headers = {"Content-Type": "application/json"}
-        authorization = request.headers.get("Authorization", "")
+        authorization = process_manager.get_active_llama_authorization(
+            ctx,
+            request.headers.get("Authorization", ""),
+        )
         if authorization:
             headers["Authorization"] = authorization
         req = urllib.request.Request(

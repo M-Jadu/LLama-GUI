@@ -251,6 +251,34 @@ class ExtractedRouteTests(unittest.TestCase):
             saved = json.loads((ctx.paths.presets / "Protected.json").read_text(encoding="utf-8"))
             self.assertEqual(saved, {"temperature": 0.8})
 
+            legacy_path.write_text(
+                json.dumps({"flags": {"custom_args": "--metrics --api-key legacy-secret", "temperature": 0.7}}),
+                encoding="utf-8",
+            )
+            list_response = DummyResponse()
+            presets.list_presets(Request("GET", "/api/presets", "", {}), list_response, ctx)
+            self.assertEqual(list_response.payload[0]["data"]["flags"], {"temperature": 0.7})
+            self.assertNotIn("legacy-secret", legacy_path.read_text(encoding="utf-8"))
+
+            rejected_response = DummyResponse()
+            presets.save_preset(
+                Request(
+                    "POST",
+                    "/api/presets",
+                    "",
+                    {},
+                    body={
+                        "name": "Rejected",
+                        "data": {"flags": {"custom_args": "--api-key=must-not-save"}},
+                    },
+                ),
+                rejected_response,
+                ctx,
+            )
+            self.assertEqual(rejected_response.status, 400)
+            self.assertIn("Custom Launch Args", rejected_response.payload["error"])
+            self.assertFalse((ctx.paths.presets / "Rejected.json").exists())
+
     def test_preset_delete_uses_same_sanitizer_as_save(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = make_context(tmp)
@@ -379,6 +407,30 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertEqual(calls, [("localhost", "9090", "Bearer secret")])
             self.assertEqual(response.text_payload, "llama metrics")
 
+    def test_metrics_route_prefers_running_server_api_key_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.state.process = mock.Mock()
+            ctx.state.process.poll.return_value = None
+            ctx.state.active_process_tool = "llama-server"
+            ctx.state.active_llama_api_keys = ("launch-key",)
+            calls = []
+
+            def get_local_llama_metrics(host, port, authorization):
+                calls.append(authorization)
+                return "metrics", ""
+
+            ctx.services.get_local_llama_metrics = get_local_llama_metrics
+            response = DummyResponse()
+
+            metrics.get_metrics(
+                Request("GET", "/api/llama/metrics", "", {"Authorization": "Bearer pending-key"}),
+                response,
+                ctx,
+            )
+
+            self.assertEqual(calls, ["Bearer launch-key"])
+
     def test_slots_route_uses_context_service(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = make_context(tmp)
@@ -449,6 +501,7 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertEqual(response.payload["models_dir"], str(ctx.paths.models))
             self.assertEqual(response.payload["available_backends"], [{"id": "cpu", "label": "CPU"}])
             self.assertIsNone(response.payload["active_process_tool"])
+            self.assertFalse(response.payload["api_auth_configured"])
             self.assertEqual(response.payload["last_exit_code"], 7)
 
     def test_status_route_marks_install_stale_when_runtime_library_missing(self):
@@ -722,6 +775,19 @@ class ExtractedRouteTests(unittest.TestCase):
 
             self.assertEqual(result, fallback)
 
+    def test_process_manager_api_key_parser_matches_llama_cpp_csv_rules(self):
+        self.assertEqual(
+            process_manager.parse_csv_row('first ,"second,part","third""quoted"'),
+            ["first ", "second,part", 'third"quoted'],
+        )
+        self.assertEqual(process_manager.parse_csv_row("   "), ["   "])
+        self.assertEqual(
+            process_manager.parse_launch_api_keys(
+                ["--api-key", "old", "--metrics", '--api-key="first,part",second']
+            ),
+            ("first,part", "second"),
+        )
+
     def test_process_manager_launch_reports_missing_runtime_before_popen(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = make_context(tmp)
@@ -760,6 +826,54 @@ class ExtractedRouteTests(unittest.TestCase):
             ),
             "launch failed for <redacted> and <redacted>",
         )
+
+    def test_process_manager_snapshots_api_keys_only_for_successful_server_launch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.paths.llama_bin.mkdir(parents=True)
+            executable = ctx.paths.llama_bin / "llama-server"
+            executable.write_text("binary")
+            ctx.services = BackendServices(
+                current_platform="linux",
+                find_tool_executable=lambda tool: executable,
+                get_tool_filename=lambda tool: tool,
+                load_config=lambda: {},
+                set_llama_api_target=lambda host, port: {"host": host, "port": int(port)},
+                get_llama_api_target=lambda: {"host": "127.0.0.1", "port": 8080},
+                validate_runtime_dependencies=lambda tools=None: {
+                    "ok": True,
+                    "checked": True,
+                    "missing_runtime_files": [],
+                },
+            )
+            fake_process = mock.Mock()
+            fake_process.pid = 1234
+            fake_process.stdout = io.StringIO()
+            fake_process.stderr = io.StringIO()
+            fake_process.stdin = io.StringIO()
+            fake_process.poll.return_value = None
+
+            class FakeThread:
+                def __init__(self, **kwargs):
+                    self.kwargs = kwargs
+
+                def start(self):
+                    pass
+
+            with mock.patch.object(process_manager.subprocess, "Popen", return_value=fake_process), \
+                 mock.patch.object(process_manager.threading, "Thread", FakeThread):
+                result = process_manager.launch_process(
+                    ctx,
+                    "llama-server",
+                    ["--api-key", '"launch,part",backup', "--port", "9090"],
+                )
+
+            self.assertEqual(result["pid"], 1234)
+            self.assertEqual(ctx.state.active_llama_api_keys, ("launch,part", "backup"))
+            self.assertEqual(
+                process_manager.get_active_llama_authorization(ctx, "Bearer pending"),
+                "Bearer launch,part",
+            )
 
     def test_process_launch_route_returns_missing_runtime_error(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1303,6 +1417,10 @@ class ExtractedRouteTests(unittest.TestCase):
             )
 
             captured = {}
+            ctx.state.process = mock.Mock()
+            ctx.state.process.poll.return_value = None
+            ctx.state.active_process_tool = "llama-server"
+            ctx.state.active_llama_api_keys = ("launch-secret",)
 
             def fake_urlopen(req, timeout):
                 captured["authorization"] = req.get_header("Authorization")
@@ -1318,7 +1436,7 @@ class ExtractedRouteTests(unittest.TestCase):
                         "POST",
                         "/api/chat/completions",
                         "",
-                        {"Authorization": "Bearer secret"},
+                        {"Authorization": "Bearer pending-secret"},
                         body={"messages": [{"role": "user", "content": "Hello"}]},
                     ),
                     response,
@@ -1330,7 +1448,7 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertIn('data: {"choices":[{"delta":{"content":"Hi"}}]}', payload)
             self.assertIn("data: [DONE]", payload)
             self.assertTrue(response.handler.close_connection)
-            self.assertEqual(captured["authorization"], "Bearer secret")
+            self.assertEqual(captured["authorization"], "Bearer launch-secret")
 
     def test_chat_route_injects_web_search_context_into_system_prompt(self):
         with tempfile.TemporaryDirectory() as tmp:

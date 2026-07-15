@@ -75,6 +75,7 @@ class ServerState:
     output_generation: int = 0
     output_reader_count: int = 0
     active_process_tool: Optional[str] = None
+    active_llama_api_keys: tuple[str, ...] = field(default_factory=tuple)
     last_exit_code: Optional[int] = None
     restart_requested: threading.Event = field(default_factory=threading.Event)
 

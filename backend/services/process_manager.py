@@ -178,6 +178,7 @@ def _reap_finished_process(ctx: AppContext) -> None:
         ctx.state.last_exit_code = process.poll()
         ctx.state.process = None
         ctx.state.active_process_tool = None
+        ctx.state.active_llama_api_keys = ()
 
 
 def is_process_running(ctx: AppContext) -> bool:
@@ -548,6 +549,76 @@ def parse_launch_api_target(ctx: AppContext, args_list: Optional[Iterable[Any]])
         return dict(ctx.services.get_llama_api_target())
 
 
+def parse_csv_row(value: Any) -> list[str]:
+    """Match llama.cpp's CSV parsing for --api-key values."""
+    text = str(value)
+    fields = []
+    current = []
+    in_quotes = False
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if in_quotes:
+            if char == '"':
+                if index + 1 < len(text) and text[index + 1] == '"':
+                    current.append('"')
+                    index += 1
+                else:
+                    in_quotes = False
+            else:
+                current.append(char)
+        elif char == '"' and not current:
+            in_quotes = True
+        elif char == ",":
+            fields.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+        index += 1
+    fields.append("".join(current))
+    return fields
+
+
+def parse_launch_api_keys(args_list: Optional[Iterable[Any]]) -> tuple[str, ...]:
+    """Return the keys from the last --api-key occurrence, as llama.cpp sees them."""
+    flat_args = flatten_launch_args(args_list)
+    parsed_keys: tuple[str, ...] = ()
+    index = 0
+    while index < len(flat_args):
+        item = flat_args[index]
+        if item == "--api-key" and index + 1 < len(flat_args):
+            parsed_keys = tuple(parse_csv_row(flat_args[index + 1]))
+            index += 2
+            continue
+        if item.startswith("--api-key="):
+            parsed_keys = tuple(parse_csv_row(item.split("=", 1)[1]))
+        index += 1
+    return parsed_keys
+
+
+def get_active_llama_authorization(ctx: AppContext, fallback: str = "") -> str:
+    """Use the running server's launch-time key; fall back only without one."""
+    with ctx.state.process_lock:
+        _reap_finished_process(ctx)
+        if ctx.state.process is not None and ctx.state.active_process_tool == "llama-server":
+            keys = ctx.state.active_llama_api_keys
+            if not keys:
+                return ""
+            selected_key = next((key for key in keys if key != ""), keys[0])
+            return f"Bearer {selected_key}"
+    return str(fallback or "")
+
+
+def is_active_llama_api_auth_configured(ctx: AppContext) -> bool:
+    with ctx.state.process_lock:
+        _reap_finished_process(ctx)
+        return bool(
+            ctx.state.process is not None
+            and ctx.state.active_process_tool == "llama-server"
+            and ctx.state.active_llama_api_keys
+        )
+
+
 def _build_process_env(ctx: AppContext) -> dict[str, str]:
     env = os.environ.copy()
     cfg = _load_config_safe(ctx)
@@ -639,7 +710,9 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
                 )
             }
 
-        args = [str(exe_path), *flatten_launch_args(args_list)]
+        flat_launch_args = flatten_launch_args(args_list)
+        args = [str(exe_path), *flat_launch_args]
+        launch_api_keys = parse_launch_api_keys(flat_launch_args) if tool == "llama-server" else ()
         env = _build_process_env(ctx)
 
         process = None
@@ -675,6 +748,7 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
                 daemon=True,
             ).start()
             ctx.state.active_process_tool = tool
+            ctx.state.active_llama_api_keys = launch_api_keys
             ctx.state.last_exit_code = None
             if tool == "llama-server":
                 parse_launch_api_target(ctx, args_list)
@@ -697,6 +771,7 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
                     )
                 ctx.state.process = None
                 ctx.state.active_process_tool = None
+                ctx.state.active_llama_api_keys = ()
             return {"error": redact_sensitive_text(e, args)}
 
 
@@ -727,6 +802,7 @@ def stop_process(ctx: AppContext) -> bool:
             ctx.state.last_exit_code = process.poll()
             ctx.state.process = None
             ctx.state.active_process_tool = None
+            ctx.state.active_llama_api_keys = ()
             return True
         _reap_finished_process(ctx)
         return False
