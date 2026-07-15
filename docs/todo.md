@@ -1,16 +1,5 @@
 # TODO
 
-## Reasoning Content Follow-Up
-
-Completed in Chat improvements Phase 5. `--reasoning-format deepseek` is now
-available because the Chat tab renders separated reasoning output.
-
-Acceptance criteria:
-- [x] Update the Chat tab stream handling to render `delta.reasoning_content`.
-- [x] Add `deepseek` to the `Reasoning Output Format` dropdown after the stream UI
-  can display separated reasoning content clearly.
-- [x] Run `node --check ui/js/chat-ui.js` and `npm run test:frontend`.
-
 ## DeepSeek V4 Follow-Ups
 
 PR `ggml-org/llama.cpp#24162` landed in `b9840` and adds DeepSeek V4 runtime/conversion support plus an upstream conversion-time template at `models/templates/deepseek-ai-DeepSeek-V4.jinja`.

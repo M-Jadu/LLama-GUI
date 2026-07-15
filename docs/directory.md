@@ -716,6 +716,4 @@ Prefer `rg` for local search. On Windows/PowerShell, use patterns like `rg -n "p
 | `docs/todo.md` | Known planned work |
 | `docs/flag_report.md` | Archived one-time flag audit report (May 2026) |
 | `docs/llama_cpp_compat_report.md` | Current llama.cpp compatibility report |
-| `docs/frontend_flag_core_plan.md` | Completed phased plan for extracting flag state |
-| `docs/archive/` | Archived plans (backend architecture, progress) |
 | `docs/images/` | Screenshots used by README.md |
