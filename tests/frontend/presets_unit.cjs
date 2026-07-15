@@ -25,6 +25,7 @@ const context = {
         { id: "temperature", default: 0.8 },
         { id: "ctx_size", default: 4096 },
         { id: "custom_args", default: "" },
+        { id: "api_key", default: "" },
     ],
 };
 
@@ -51,6 +52,7 @@ const normalized = normalizeImportedPresetData({
         temperature: 0.72,
         ctx_size: 8192,
         unknown_flag: "drop me",
+        api_key: "must-not-import",
     },
 });
 
@@ -64,6 +66,29 @@ assert.equal(
             ctx_size: 8192,
         },
     })
+);
+
+assert.equal(
+    JSON.stringify(context.window.LlamaGui.presets.stripSensitivePresetFlags({
+        temperature: 0.5,
+        api_key: "must-not-save",
+    })),
+    JSON.stringify({ temperature: 0.5 })
+);
+
+assert.equal(
+    JSON.stringify(context.window.LlamaGui.presets.stripSensitivePresetFlags({
+        temperature: 0.5,
+        custom_args: "--api-key must-not-save --parallel 2",
+    })),
+    JSON.stringify({ temperature: 0.5 })
+);
+
+assert.throws(
+    () => normalizeImportedPresetData({
+        flags: { custom_args: "--metrics --api-key=must-not-import" },
+    }),
+    /Presets cannot include --api-key/
 );
 
 const legacyPlainFlags = normalizeImportedPresetData({

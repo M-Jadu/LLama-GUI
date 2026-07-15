@@ -1,3 +1,30 @@
+const SENSITIVE_PRESET_FLAG_IDS = new Set(["api_key"]);
+const SENSITIVE_CUSTOM_ARG_PATTERN = /(^|[^A-Za-z0-9_-])--api-key(?=$|[=\s])/;
+const SENSITIVE_CUSTOM_ARG_MESSAGE = "Presets cannot include --api-key in Custom Launch Args. Use the API Key field instead.";
+
+function hasSensitiveCustomArgs(flags) {
+    const raw = flags && flags.custom_args;
+    return typeof raw === "string" && SENSITIVE_CUSTOM_ARG_PATTERN.test(raw);
+}
+
+function assertNoSensitiveCustomArgs(data) {
+    if (!data || typeof data !== "object" || Array.isArray(data)) return;
+    const flags = data.flags && typeof data.flags === "object" && !Array.isArray(data.flags)
+        ? data.flags
+        : data;
+    if (hasSensitiveCustomArgs(flags)) throw new Error(SENSITIVE_CUSTOM_ARG_MESSAGE);
+}
+
+function stripSensitivePresetFlags(flags) {
+    const sanitized = {};
+    for (const [key, value] of Object.entries(flags || {})) {
+        if (SENSITIVE_PRESET_FLAG_IDS.has(key)) continue;
+        if (key === "custom_args" && hasSensitiveCustomArgs(flags)) continue;
+        sanitized[key] = value;
+    }
+    return sanitized;
+}
+
 function normalizePresetData(data) {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
         return { tool: null, model: "", flags: {} };
@@ -6,10 +33,10 @@ function normalizePresetData(data) {
     if (data.flags && typeof data.flags === "object" && !Array.isArray(data.flags)) {
         const tool = typeof data.tool === "string" ? data.tool : null;
         const model = typeof data.model === "string" ? data.model : "";
-        return { tool, model, flags: data.flags };
+        return { tool, model, flags: stripSensitivePresetFlags(data.flags) };
     }
 
-    return { tool: null, model: "", flags: data };
+    return { tool: null, model: "", flags: stripSensitivePresetFlags(data) };
 }
 
 function getKnownPresetFlagIds() {
@@ -20,6 +47,7 @@ function getKnownPresetFlagIds() {
 }
 
 function normalizeImportedPresetData(data) {
+    assertNoSensitiveCustomArgs(data);
     const normalized = normalizePresetData(data);
     const tool = normalized.tool === "llama-server" || normalized.tool === "llama-cli"
         ? normalized.tool
@@ -29,7 +57,7 @@ function normalizeImportedPresetData(data) {
     const flags = {};
 
     for (const [key, value] of Object.entries(normalized.flags || {})) {
-        if (knownFlagIds.has(key)) {
+        if (knownFlagIds.has(key) && !SENSITIVE_PRESET_FLAG_IDS.has(key)) {
             flags[key] = value;
         }
     }
@@ -84,7 +112,9 @@ function applyPresetModel(modelName) {
 
 function buildCurrentPresetData() {
     const flagCore = getPresetFlagCore();
-    const values = flagCore.getFlagValues();
+    const currentValues = flagCore.getFlagValues();
+    assertNoSensitiveCustomArgs(currentValues);
+    const values = stripSensitivePresetFlags(currentValues);
     const selectedModel = flagCore.getSelectedModel();
     const tool = flagCore.getCurrentTool();
     return { tool, model: selectedModel, flags: values };
@@ -940,8 +970,8 @@ async function savePreset() {
         setTimeout(() => nameInput.style.borderColor = "", 1500);
         return;
     }
-    const data = buildCurrentPresetData();
     try {
+        const data = buildCurrentPresetData();
         const result = await fetchJson("/api/presets", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -953,7 +983,10 @@ async function savePreset() {
             showPresetStatus(`Saved preset \"${result.name || name}\"`, "success");
         }
     } catch (e) {
-        showPresetStatus("Failed to save preset", "error", 3200);
+        const message = e && e.message === SENSITIVE_CUSTOM_ARG_MESSAGE
+            ? SENSITIVE_CUSTOM_ARG_MESSAGE
+            : "Failed to save preset";
+        showPresetStatus(message, "error", 5000);
         console.warn("Failed to save preset", e);
     }
 }
@@ -978,7 +1011,10 @@ async function updatePreset(name) {
             showPresetStatus(`Updated preset \"${name}\"`, "success");
         }
     } catch (e) {
-        showPresetStatus("Failed to update preset", "error", 3200);
+        const message = e && e.message === SENSITIVE_CUSTOM_ARG_MESSAGE
+            ? SENSITIVE_CUSTOM_ARG_MESSAGE
+            : "Failed to update preset";
+        showPresetStatus(message, "error", 5000);
         console.warn("Failed to update preset", e);
     }
 }
@@ -997,7 +1033,11 @@ async function loadPreset(name) {
                 if (toolSelect) toolSelect.value = presetData.tool;
             }
             applyPresetModel(presetData.model);
-            flagCore.applyFlagValues(presetData.flags);
+            const currentApiKey = flagCore.getFlagValues().api_key;
+            const nextFlags = currentApiKey
+                ? { ...presetData.flags, api_key: currentApiKey }
+                : presetData.flags;
+            flagCore.applyFlagValues(nextFlags);
             markPresetUsed(name);
             if (warnings.length > 0) {
                 showPresetStatus(`Loaded "${name}" with warning: ${warnings[0]}`, "warning", 5000);
@@ -1212,7 +1252,10 @@ async function handlePresetImport(file) {
         loadPresets();
         showPresetStatus(`Imported preset \"${name}\"`, "success");
     } catch (err) {
-        showPresetStatus("Failed to import preset", "error", 3200);
+        const message = err && err.message === SENSITIVE_CUSTOM_ARG_MESSAGE
+            ? SENSITIVE_CUSTOM_ARG_MESSAGE
+            : "Failed to import preset";
+        showPresetStatus(message, "error", 5000);
         console.warn("Failed to import preset", err);
     }
 }
@@ -1221,5 +1264,7 @@ if (window.LlamaGui) {
     window.LlamaGui.presets = Object.assign(window.LlamaGui.presets || {}, {
         loadPreset,
         normalizeImportedPresetData,
+        stripSensitivePresetFlags,
+        hasSensitiveCustomArgs,
     });
 }

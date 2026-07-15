@@ -9,6 +9,7 @@ import urllib.request
 from backend import config
 from backend.http import SseWriter, sanitize_sse_error
 from backend.services import chat as chat_service
+from backend.services import process_manager
 from backend.services import web_search
 
 
@@ -99,10 +100,17 @@ def completions(request, response, ctx):
         proxy_body.pop("web_search_max_results", None)
 
         api_url = chat_service.get_local_chat_api_url(body)
+        headers = {"Content-Type": "application/json"}
+        authorization = process_manager.get_active_llama_authorization(
+            ctx,
+            request.headers.get("Authorization", ""),
+        )
+        if authorization:
+            headers["Authorization"] = authorization
         req = urllib.request.Request(
             api_url,
             data=json.dumps(proxy_body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=300) as resp:

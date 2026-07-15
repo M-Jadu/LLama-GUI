@@ -96,10 +96,33 @@ const snippetsText = elements.get("api-snippets-list").children
     .join("\n");
 assert.match(snippetsText, /primary-alias/);
 assert.match(snippetsText, /Authorization: Bearer YOUR_API_KEY/);
+assert.equal(apiTab.getApiAuthorizationHeaders().Authorization, "Bearer secret");
+flagValues.api_key = "first ,second";
+assert.equal(apiTab.getApiAuthorizationHeaders().Authorization, "Bearer first ");
+flagValues.api_key = '"first,part",second';
+assert.equal(apiTab.getApiAuthorizationHeaders().Authorization, "Bearer first,part");
+flagValues.api_key = '"first""quoted",second';
+assert.equal(apiTab.getApiAuthorizationHeaders().Authorization, 'Bearer first"quoted');
+flagValues.api_key = "   ";
+assert.equal(apiTab.getApiAuthorizationHeaders().Authorization, "Bearer    ");
+assert.equal(
+    JSON.stringify(apiTab.parseApiKeyCsv('first ,"second,part",third')),
+    JSON.stringify(["first ", "second,part", "third"])
+);
 assert.ok(!snippetsText.includes("selected-model.gguf"), "API snippets should prefer first alias over selected model");
+
+flagValues.api_key = "pending-secret";
+apiTab.configure({ getLatestStatus: () => ({ running: true, active_process_tool: "llama-server", api_auth_configured: false }) });
+apiTab.updateEndpoints();
+assert.match(elements.get("api-status-note").textContent, /No API key configured/);
+apiTab.configure({ getLatestStatus: () => ({ running: true, active_process_tool: "llama-server", api_auth_configured: true }) });
+flagValues.api_key = "";
+apiTab.updateEndpoints();
+assert.match(elements.get("api-status-note").textContent, /API key is configured/);
 
 flagValues = { host: "localhost", port: 8081, alias: "", api_key: "" };
 selectedModel = "fallback-model.gguf";
+apiTab.configure({ getLatestStatus: () => ({ running: false }) });
 apiTab.updateEndpoints();
 
 const fallbackSnippetsText = elements.get("api-snippets-list").children

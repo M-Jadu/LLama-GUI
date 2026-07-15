@@ -1914,6 +1914,24 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
     border-color: var(--yellow-border);
 }
 
+.sensitive-input-control {
+    display: grid;
+    gap: var(--space-2);
+    width: 100%;
+}
+
+.sensitive-input-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.quick-auth-section {
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border);
+}
+
 .preset-chip.preset-chip-favorite.active {
     background: var(--yellow-subtle);
     color: var(--yellow);

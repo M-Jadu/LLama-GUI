@@ -8,6 +8,59 @@ import urllib.parse
 
 
 _PRESET_CREATED_TIMES_FILE = ".preset-created-times"
+_SENSITIVE_PRESET_KEYS = {"api_key"}
+_SENSITIVE_CUSTOM_ARG_RE = re.compile(r"(?<![A-Za-z0-9_-])--api-key(?=$|[=\s])")
+
+
+def has_sensitive_custom_args(data):
+    if not isinstance(data, dict):
+        return False
+    candidates = [data]
+    flags = data.get("flags")
+    if isinstance(flags, dict):
+        candidates.append(flags)
+    return any(
+        isinstance(candidate.get("custom_args"), str)
+        and bool(_SENSITIVE_CUSTOM_ARG_RE.search(candidate["custom_args"]))
+        for candidate in candidates
+    )
+
+
+def sanitize_preset_data(data):
+    if not isinstance(data, dict):
+        return data, False
+    sanitized = dict(data)
+    changed = False
+    flags = sanitized.get("flags")
+    if isinstance(flags, dict):
+        clean_flags = dict(flags)
+        for key in _SENSITIVE_PRESET_KEYS:
+            if key in clean_flags:
+                del clean_flags[key]
+                changed = True
+        if has_sensitive_custom_args({"flags": clean_flags}):
+            del clean_flags["custom_args"]
+            changed = True
+        sanitized["flags"] = clean_flags
+    for key in _SENSITIVE_PRESET_KEYS:
+        if key in sanitized:
+            del sanitized[key]
+            changed = True
+    if has_sensitive_custom_args(sanitized):
+        del sanitized["custom_args"]
+        changed = True
+    return sanitized, changed
+
+
+def _write_preset_json(path, data):
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with open(temporary, "w", encoding="utf-8") as preset_handle:
+            json.dump(data, preset_handle, indent=2)
+        temporary.replace(path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def sanitize_preset_name(name):
@@ -150,6 +203,9 @@ def list_presets(request, response, ctx):
                 if is_preset_bundle(data):
                     continue
                 stat_result = path.stat()
+                data, removed_sensitive_values = sanitize_preset_data(data)
+                if removed_sensitive_values:
+                    _write_preset_json(path, data)
                 existing_names.add(path.name)
                 created = created_times.get(path.name)
                 if not _is_valid_timestamp(created):
@@ -160,7 +216,7 @@ def list_presets(request, response, ctx):
                     "name": path.stem,
                     "data": data,
                     "created": created,
-                    "modified": stat_result.st_mtime,
+                    "modified": path.stat().st_mtime,
                 })
             except (json.JSONDecodeError, OSError) as exc:
                 print(
@@ -184,6 +240,12 @@ def save_preset(request, response, ctx):
     if not name or data is None:
         response.error("name and data required", 400)
         return
+    if has_sensitive_custom_args(data):
+        response.error(
+            "Presets cannot include --api-key in Custom Launch Args. Use the API Key field instead.",
+            400,
+        )
+        return
 
     presets_dir = ctx.paths.presets
     presets_dir.mkdir(parents=True, exist_ok=True)
@@ -203,8 +265,8 @@ def save_preset(request, response, ctx):
         else:
             created_times[preset_file.name] = time.time()
 
-    with open(preset_file, "w") as preset_handle:
-        json.dump(data, preset_handle, indent=2)
+    data, _ = sanitize_preset_data(data)
+    _write_preset_json(preset_file, data)
     _save_preset_created_times(presets_dir, created_times)
     response.json({"saved": True, "name": safe_name})
 

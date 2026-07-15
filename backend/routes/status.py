@@ -2,6 +2,7 @@
 
 from ..http import sanitize_error
 from ..config import LLAMA_HOST, LLAMA_PORT
+from ..services import process_manager
 
 
 def get_status(request, response, ctx):
@@ -43,6 +44,7 @@ def get_status(request, response, ctx):
                 "models_dir": str(ctx.paths.models),
                 "running": running,
                 "active_process_tool": ctx.state.active_process_tool,
+                "api_auth_configured": process_manager.is_active_llama_api_auth_configured(ctx),
                 "last_exit_code": ctx.state.last_exit_code,
                 "api_target": api_target,
                 "platform": services.current_platform,

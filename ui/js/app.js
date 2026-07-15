@@ -32,6 +32,7 @@ apiTab.configure({
 const {
     getServerBaseUrl,
     getServerEndpointConfig,
+    getApiAuthorizationHeaders,
 } = apiTab;
 const initApiTab = apiTab.init;
 const updateApiEndpoints = apiTab.updateEndpoints;
@@ -163,6 +164,8 @@ configFlagsUi.configure({
     showStatus,
     setChatTemplateValue,
     getSelectedChatTemplateDropdownValue,
+    copyText,
+    showToast,
 });
 
 flagCore.configure({
@@ -790,7 +793,9 @@ async function pollStats() {
     try {
         const { host, port } = getServerEndpointConfig();
         const params = new URLSearchParams({ host, port: String(port) });
-        const resp = await fetch(`/api/llama/metrics?${params.toString()}`);
+        const resp = await fetch(`/api/llama/metrics?${params.toString()}`, {
+            headers: getApiAuthorizationHeaders(),
+        });
         if (!resp.ok) return;
         const text = await resp.text();
         const metrics = {};
@@ -847,7 +852,9 @@ async function refreshRuntimeStatusPanels() {
 async function fetchSlotKvUsage(host, port) {
     try {
         const params = new URLSearchParams({ host, port: String(port) });
-        const resp = await fetch(`/api/llama/slots?${params.toString()}`);
+        const resp = await fetch(`/api/llama/slots?${params.toString()}`, {
+            headers: getApiAuthorizationHeaders(),
+        });
         if (!resp.ok) return undefined;
         const slots = await resp.json();
         return getSlotKvUsage(slots);
@@ -1059,6 +1066,7 @@ chatUi.configure({
     getLatestStatus: () => latestStatus,
     snapshotStatsBaseline,
     switchTab,
+    getApiAuthorizationHeaders,
 });
 
 function refreshChatSidebarUI() {

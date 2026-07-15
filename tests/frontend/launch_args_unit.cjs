@@ -50,6 +50,23 @@ function launchResult() {
 }
 
 {
+    vm.runInContext(`
+        window.LlamaGui.flagCore.setFlagValue("api_key", "primary-secret,backup-secret");
+    `, context);
+    const args = flatLaunchArgs();
+    const apiKeyIndex = args.indexOf("--api-key");
+    assert.notEqual(apiKeyIndex, -1, "configured API key should be emitted for llama-server");
+    assert.equal(args[apiKeyIndex + 1], "primary-secret,backup-secret");
+
+    const redacted = vm.runInContext(
+        "window.LlamaGui.flagCore.redactSensitiveTokens(['--api-key', 'primary-secret', '--api-key=backup-secret'])",
+        context
+    );
+    assert.deepEqual(Array.from(redacted), ["--api-key", "<redacted>", "--api-key=<redacted>"]);
+    vm.runInContext("window.LlamaGui.flagCore.setFlagValue('api_key', undefined)", context);
+}
+
+{
     const args = flatLaunchArgs();
     assert.ok(args.includes("--mmap"), "default launch args should enable mmap");
     assert.ok(!args.includes("--no-mmap"), "default launch args should not disable mmap");

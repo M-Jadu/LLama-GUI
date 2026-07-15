@@ -198,6 +198,53 @@
         return "your-model";
     }
 
+    function parseApiKeyCsv(value) {
+        const input = String(value ?? "");
+        const fields = [];
+        let current = "";
+        let inQuotes = false;
+        for (let index = 0; index < input.length; index++) {
+            const char = input[index];
+            if (inQuotes) {
+                if (char === '"') {
+                    if (index + 1 < input.length && input[index + 1] === '"') {
+                        current += '"';
+                        index++;
+                    } else {
+                        inQuotes = false;
+                    }
+                } else {
+                    current += char;
+                }
+            } else if (char === '"' && current.length === 0) {
+                inQuotes = true;
+            } else if (char === ",") {
+                fields.push(current);
+                current = "";
+            } else {
+                current += char;
+            }
+        }
+        fields.push(current);
+        return fields;
+    }
+
+    function getConfiguredApiKeys() {
+        const values = flagCore.getFlagValues();
+        return parseApiKeyCsv(values.api_key ?? "");
+    }
+
+    function getApiAuthorizationHeaders(headers = {}) {
+        const result = { ...headers };
+        const values = flagCore.getFlagValues();
+        const rawValue = String(values.api_key ?? "");
+        if (!rawValue) return result;
+        const keys = getConfiguredApiKeys();
+        const selectedKey = keys.find(key => key !== "") ?? keys[0];
+        if (selectedKey !== undefined) result.Authorization = `Bearer ${selectedKey}`;
+        return result;
+    }
+
     function updateEndpoints() {
         const baseUrl = getServerBaseUrl();
         const modelName = getPreferredApiModelName();
@@ -213,7 +260,13 @@
         const latestStatus = getLatestStatus();
         const isRunning = !!(latestStatus && latestStatus.running);
         const values = flagCore.getFlagValues();
-        const hasApiKey = String(values.api_key || "").trim().length > 0;
+        const pendingHasApiKey = String(values.api_key ?? "").length > 0;
+        const hasActiveAuthStatus = isRunning
+            && latestStatus.active_process_tool === "llama-server"
+            && typeof latestStatus.api_auth_configured === "boolean";
+        const hasApiKey = hasActiveAuthStatus
+            ? latestStatus.api_auth_configured
+            : pendingHasApiKey;
         const modeText = flagCore.getCurrentTool() === "llama-server"
             ? "Tool mode is set to llama-server."
             : "Tool mode is set to llama-cli. Switch to llama-server to expose HTTP endpoints.";
@@ -306,6 +359,9 @@
         init,
         getServerBaseUrl,
         getServerEndpointConfig,
+        parseApiKeyCsv,
+        getConfiguredApiKeys,
+        getApiAuthorizationHeaders,
         updateEndpoints,
     };
 })();
