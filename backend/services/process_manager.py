@@ -359,7 +359,8 @@ def get_llama_health(ctx: AppContext, expected_generation: Any = None) -> dict[s
                     f"llama-server health returned HTTP {exc.code}.",
                 )
         finally:
-            exc.close()
+            if exc.fp is not None:
+                exc.close()
     except (urllib.error.URLError, TimeoutError, socket.timeout, ConnectionError, OSError):
         observed = _health_result(
             "starting", generation, expected, "llama-server is starting."

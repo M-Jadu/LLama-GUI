@@ -1437,8 +1437,9 @@ class ExtractedRouteTests(unittest.TestCase):
         self.assertEqual(starting["state"], "starting")
         self.assertNotIn("connection refused", starting["message"])
 
+        error_body = io.BytesIO(b"failed")
         http_500 = urllib.error.HTTPError(
-            "http://127.0.0.1:8080/health", 500, "failed", {}, None
+            "http://127.0.0.1:8080/health", 500, "failed", {}, error_body
         )
         with mock.patch.object(
             process_manager.urllib.request, "urlopen", side_effect=http_500
@@ -1446,6 +1447,7 @@ class ExtractedRouteTests(unittest.TestCase):
             error = process_manager.get_llama_health(ctx, 4)
         self.assertEqual(error["state"], "error")
         self.assertEqual(error["message"], "llama-server health returned HTTP 500.")
+        self.assertTrue(error_body.closed)
 
     def test_llama_health_handles_stopped_failed_and_superseded_generations(self):
         stopped_ctx = AppContext()
