@@ -129,23 +129,22 @@ Routes use a declarative dispatch table. Routes receive `(request, response, ctx
 The frontend loads scripts in a strict dependency order via `ui/index.html`:
 
 1. `ui/js/flags/*.js` — ordered pure data modules for categories, options, chat templates, definitions, and helpers
-2. `flag-validation.js` — read-only validation of flag definitions
-3. `theme-ui.js` — persisted theme selection and switcher state (`window.LlamaGui.themeUi`)
-4. `flag-core.js` — shared state singleton (`window.LlamaGui.flagCore`)
-5. `config-flags-ui.js` — Configure tab rendering
-6. `manager.js` — GitHub releases, install, update, shared `fetchJson()`
-7. `presets.js` — preset CRUD
-8. `app-data.js` — shared Quick Launch, context, sampler, and chat slider data
-9. `output-cursor.js` — shared process-output cursor consumer (`window.LlamaGui.outputCursor`)
-10. `sampler-presets.js` — sampler preset storage, import/export, apply behavior, and Configure controls (`window.LlamaGui.samplerPresets`)
-11. `chat-rendering.js` — markdown and low-level chat DOM rendering helpers (`window.LlamaGui.chatRendering`)
-12. `api-tab.js` — API endpoint/snippet rendering helpers (`window.LlamaGui.apiTab`)
-13. `hf-download-ui.js` — Quick Launch Hugging Face downloader UI (`window.LlamaGui.hfDownloadUi`)
-14. `remote-tunnel-ui.js` — API tab Cloudflare tunnel UI (`window.LlamaGui.remoteTunnelUi`)
-15. `quick-launch-ui.js` — Quick Launch controls and shared-state UI sync (`window.LlamaGui.quickLaunchUi`)
-16. `chat-ui.js` — Chat tab state, streaming, history, web search, and sampler controls (`window.LlamaGui.chatUi`)
-17. `benchmark-ui.js` — Benchmarking tab controls, argument adapter, output polling, and session-only summaries (`window.LlamaGui.benchmarkUi`)
-18. `app.js` — main orchestration (wires everything together)
+2. `theme-ui.js` — persisted theme selection and switcher state (`window.LlamaGui.themeUi`)
+3. `flag-core.js` — shared state singleton (`window.LlamaGui.flagCore`)
+4. `config-flags-ui.js` — Configure tab rendering
+5. `manager.js` — GitHub releases, install, update, shared `fetchJson()`
+6. `presets.js` — preset CRUD
+7. `app-data.js` — shared Quick Launch, context, sampler, and chat slider data
+8. `output-cursor.js` — shared process-output cursor consumer (`window.LlamaGui.outputCursor`)
+9. `sampler-presets.js` — sampler preset storage, import/export, apply behavior, and Configure controls (`window.LlamaGui.samplerPresets`)
+10. `chat-rendering.js` — markdown and low-level chat DOM rendering helpers (`window.LlamaGui.chatRendering`)
+11. `api-tab.js` — API endpoint/snippet rendering helpers (`window.LlamaGui.apiTab`)
+12. `hf-download-ui.js` — Quick Launch Hugging Face downloader UI (`window.LlamaGui.hfDownloadUi`)
+13. `remote-tunnel-ui.js` — API tab Cloudflare tunnel UI (`window.LlamaGui.remoteTunnelUi`)
+14. `quick-launch-ui.js` — Quick Launch controls and shared-state UI sync (`window.LlamaGui.quickLaunchUi`)
+15. `chat-ui.js` — Chat tab state, streaming, history, web search, and sampler controls (`window.LlamaGui.chatUi`)
+16. `benchmark-ui.js` — Benchmarking tab controls, argument adapter, output polling, and session-only summaries (`window.LlamaGui.benchmarkUi`)
+17. `app.js` — main orchestration (wires everything together)
 
 **Do not change this order.** Each file depends on the ones above it. If you add a new module, place it after its dependencies and before its consumers.
 
@@ -160,7 +159,6 @@ The frontend loads scripts in a strict dependency order via `ui/index.html`:
 | `ui/js/flags/options.js` | (data) | Shared enum option lists (`CACHE_TYPE_OPTIONS`, etc.) |
 | `ui/js/flags/chat-templates.js` | (data) | `BUILTIN_CHAT_TEMPLATES`, `CHAT_TEMPLATE_PRESETS`, preset helpers |
 | `ui/js/flags/helpers.js` | (data) | `getFlagsForTool()`, `getFlagsByCategory()`, speculative helpers |
-| `ui/js/flag-validation.js` | (data) | Non-blocking startup validation for flag definitions |
 | `ui/js/theme-ui.js` | `window.LlamaGui.themeUi` | Theme preference persistence, root theme attribute application, color-scheme hints, and switcher button state |
 | `ui/js/flag-core.js` | `window.LlamaGui.flagCore` | Shared frontend flag state and launch-argument core. Owns `currentTool`, selected model, `flagValues`, shared setters, custom launch args parsing, preset apply/collect helpers, `getLaunchArgs()`, and command preview generation |
 | `ui/js/config-flags-ui.js` | `window.LlamaGui.configFlagsUi` | Configure tab flag rendering, search/filtering, expand/collapse state, type-specific flag input builders, input restoration, and high-risk `multi_enum` warnings |

@@ -1,7 +1,7 @@
 // NOTE: "conversation", "lora", and "grammar" are used as both category ids and flag ids.
 // This is intentional and harmless: categories and flags occupy separate data domains
-// (FLAG_CATEGORIES vs FLAGS). flag-validation.js warns about these collisions at startup.
-// Do NOT rename without checking the audit notes in docs/todo.md (Phase 2, Item 6).
+// (FLAG_CATEGORIES vs FLAGS). The structural definition test explicitly allows these collisions.
+// Do not add another collision without reviewing tests/frontend/flag_definitions_unit.cjs.
 const FLAG_CATEGORIES = [
 	{ id: "model", name: "Model", icon: "📦" },
 	{ id: "context", name: "Context & Memory", icon: "🧠" },

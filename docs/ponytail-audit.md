@@ -1,7 +1,7 @@
 # Ponytail Audit — Llama-GUI
 
-**Status: Complete.** Documentation cleanup items 1 and 2 were applied. The
-remaining recommendations are intentionally deferred for future work.
+**Status: Complete.** Items 1 through 4 were applied. The remaining
+recommendations are intentionally deferred for future work.
 
 Validated whole-repo review for opportunities to reduce unneeded complexity and
 dead weight without removing features or weakening correctness.
@@ -83,7 +83,7 @@ endpoint sources remain unchanged: Configure uses
 
 ---
 
-### 4. `delete:` runtime flag validation after adding equivalent unit coverage
+### 4. `complete:` moved structural flag validation into the test suite
 
 **Where:**
 
@@ -100,14 +100,12 @@ with installed `llama-server` and `llama-cli` help output. It does not check
 duplicate ids, invalid categories/types/tools, malformed enum options, or
 invalid defaults.
 
-**Recommended change:**
-
-1. Make the structural validator loadable by a Node unit test without running
-   browser-only reporting automatically.
-2. Add tests covering the current definitions and representative invalid data.
-3. Add the new test to `npm test`.
-4. Remove the runtime script tag and update `module_namespace_unit.cjs`,
-   `docs/directory.md`, and relevant comments.
+**Completed change:** Moved the structural validator into
+`tests/frontend/flag_definitions_unit.cjs`, added representative invalid cases,
+and included it in `npm test`. Removed the runtime script and its load-order
+references. The move also exposed and removed an accidental duplicate
+`slot_prompt_similarity` definition; the three intentional category/flag id
+collisions are now an explicit test allowlist.
 
 **Verification:** Run the complete `npm test` suite.
 
@@ -289,15 +287,14 @@ to own or test it, and replace the README section with a stable link.
 
 ## Deferred recommendations
 
-Items 1 and 2 are complete. Possible future work:
+Items 1 through 4 are complete. Possible future work:
 
-1. Add structural flag-validation tests, then remove its runtime load.
-2. Simplify `server.py` test compatibility and `backend/app.py` forwarders in
+1. Simplify `server.py` test compatibility and `backend/app.py` forwarders in
    small batches.
-3. Fix and test the tunnel lock hazard before simplifying backend locks.
-4. Perform frontend dependency cleanup only while working in the affected
+2. Fix and test the tunnel lock hazard before simplifying backend locks.
+3. Perform frontend dependency cleanup only while working in the affected
    modules.
-5. Cull CSS or move the Linux toolkit only after gathering the required
+4. Cull CSS or move the Linux toolkit only after gathering the required
    evidence or making the relevant product decision.
 
 Stop when the maintenance benefit no longer justifies the regression surface.
