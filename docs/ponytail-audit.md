@@ -63,7 +63,7 @@ discoverable outside git history.
 
 ---
 
-### 3. `shrink:` duplicated server-address preview and copy helpers
+### 3. `complete:` deduplicated server-address preview and copy helpers
 
 **Where:** `ui/js/app.js`
 
@@ -73,11 +73,11 @@ discoverable outside git history.
 Both UI locations render and copy the same server URL through nearly identical
 DOM operations. This is a genuine duplication and a future drift risk.
 
-**Recommended change:** Use one renderer that accepts the container, URL-link,
-and Web UI-link ids, plus one copy helper that accepts a link id. Preserve the
-existing endpoint source deliberately: Configure currently uses
+**Completed change:** Added one renderer that accepts the container, URL-link,
+and Web UI-link ids, plus one copy helper that accepts a link id. The existing
+endpoint sources remain unchanged: Configure uses
 `getServerEndpointConfig().baseUrl`, while Quick Launch uses
-`getServerBaseUrl()`.
+`getServerBaseUrl()`. The frontend smoke test now verifies both previews.
 
 **Verification:** Run `node --check ui/js/app.js` and `npm run test:frontend`.
 
@@ -291,14 +291,13 @@ to own or test it, and replace the README section with a stable link.
 
 Items 1 and 2 are complete. Possible future work:
 
-1. Deduplicate server-address rendering/copy behavior.
-2. Add structural flag-validation tests, then remove its runtime load.
-3. Simplify `server.py` test compatibility and `backend/app.py` forwarders in
+1. Add structural flag-validation tests, then remove its runtime load.
+2. Simplify `server.py` test compatibility and `backend/app.py` forwarders in
    small batches.
-4. Fix and test the tunnel lock hazard before simplifying backend locks.
-5. Perform frontend dependency cleanup only while working in the affected
+3. Fix and test the tunnel lock hazard before simplifying backend locks.
+4. Perform frontend dependency cleanup only while working in the affected
    modules.
-6. Cull CSS or move the Linux toolkit only after gathering the required
+5. Cull CSS or move the Linux toolkit only after gathering the required
    evidence or making the relevant product decision.
 
 Stop when the maintenance benefit no longer justifies the regression surface.
