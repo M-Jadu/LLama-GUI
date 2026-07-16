@@ -72,7 +72,7 @@ quickLaunchUi.configure({
     switchTab,
     launchLlama,
     stopLlama,
-    copyQuickServerUrl,
+    copyQuickServerUrl: () => copyServerUrl("quick-server-url"),
     updateQuickServerAddressPreview,
     setChatTemplateValue,
     getSelectedChatTemplateDropdownValue,
@@ -382,7 +382,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const btnSendInput = document.getElementById("btn-send-input");
     if (btnSendInput) btnSendInput.addEventListener("click", sendInput);
     const btnCopyServerUrl = document.getElementById("btn-copy-server-url");
-    if (btnCopyServerUrl) btnCopyServerUrl.addEventListener("click", copyServerUrl);
+    if (btnCopyServerUrl) btnCopyServerUrl.addEventListener("click", () => copyServerUrl("server-url"));
     wireCommandCopyButton("btn-copy-command", "command-preview-text");
     wireCommandCopyButton("btn-copy-quick-command", "quick-command-preview");
     wireCommandCopyButton("btn-copy-benchmark-command", "benchmark-command-preview");
@@ -469,21 +469,8 @@ function initConfigControls() {
     return configFlagsUi.initConfigControls();
 }
 
-function updateServerAddressPreview() {
-    const el = document.getElementById("server-address");
-    if (flagCore.getCurrentTool() !== "llama-server") {
-        el.classList.add("hidden");
-        return;
-    }
-    const { baseUrl } = getServerEndpointConfig();
-    document.getElementById("server-url").href = baseUrl;
-    document.getElementById("server-url").textContent = baseUrl;
-    document.getElementById("server-webui").href = baseUrl + "/";
-    el.classList.remove("hidden");
-}
-
-function updateQuickServerAddressPreview() {
-    const el = document.getElementById("quick-server-address");
+function renderServerAddressPreview(containerId, urlId, webUiId, getBaseUrl) {
+    const el = document.getElementById(containerId);
     if (!el) return;
 
     if (flagCore.getCurrentTool() !== "llama-server") {
@@ -491,11 +478,33 @@ function updateQuickServerAddressPreview() {
         return;
     }
 
-    const baseUrl = getServerBaseUrl();
-    document.getElementById("quick-server-url").href = baseUrl;
-    document.getElementById("quick-server-url").textContent = baseUrl;
-    document.getElementById("quick-server-webui").href = baseUrl + "/";
+    const baseUrl = getBaseUrl();
+    const urlLink = document.getElementById(urlId);
+    const webUiLink = document.getElementById(webUiId);
+    if (!urlLink || !webUiLink) return;
+
+    urlLink.href = baseUrl;
+    urlLink.textContent = baseUrl;
+    webUiLink.href = baseUrl + "/";
     el.classList.remove("hidden");
+}
+
+function updateServerAddressPreview() {
+    renderServerAddressPreview(
+        "server-address",
+        "server-url",
+        "server-webui",
+        () => getServerEndpointConfig().baseUrl
+    );
+}
+
+function updateQuickServerAddressPreview() {
+    renderServerAddressPreview(
+        "quick-server-address",
+        "quick-server-url",
+        "quick-server-webui",
+        getServerBaseUrl
+    );
 }
 
 function initInstallButtons() {
@@ -962,13 +971,8 @@ document.addEventListener("keydown", (e) => {
     }
 });
 
-function copyServerUrl() {
-    const url = document.getElementById("server-url").href;
-    copyText(url);
-}
-
-function copyQuickServerUrl() {
-    const url = document.getElementById("quick-server-url").href;
+function copyServerUrl(linkId) {
+    const url = document.getElementById(linkId).href;
     copyText(url);
 }
 

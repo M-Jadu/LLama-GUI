@@ -337,6 +337,25 @@ async function main() {
         assert.equal(sourceSecurity[1].tag, "A");
         assert.equal(sourceSecurity[1].href, "https://example.com/path");
 
+        await page.waitForFunction(() => (
+            document.querySelector("#server-url")?.textContent === "http://127.0.0.1:8080" &&
+            document.querySelector("#quick-server-url")?.textContent === "http://127.0.0.1:8080"
+        ));
+        const serverAddresses = await page.evaluate(() => ({
+            configure: {
+                url: document.querySelector("#server-url").getAttribute("href"),
+                webUi: document.querySelector("#server-webui").getAttribute("href"),
+            },
+            quickLaunch: {
+                url: document.querySelector("#quick-server-url").getAttribute("href"),
+                webUi: document.querySelector("#quick-server-webui").getAttribute("href"),
+            },
+        }));
+        assert.deepEqual(serverAddresses, {
+            configure: { url: "http://127.0.0.1:8080", webUi: "http://127.0.0.1:8080/" },
+            quickLaunch: { url: "http://127.0.0.1:8080", webUi: "http://127.0.0.1:8080/" },
+        });
+
         const quickProfileOptions = await page.$$eval("#quick-profile-select option", (options) =>
             options.map((option) => option.value)
         );
