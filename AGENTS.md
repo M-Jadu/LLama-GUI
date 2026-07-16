@@ -136,7 +136,7 @@ If a shared control becomes unreliable, prefer removing the duplicate UI over ke
    `id`, `flag`, `type`, `default`, `desc`, `tool`, and `category`.
 3. For `enum` type, verify all option values match upstream.
 4. For `bool` type with a negation (e.g., `--no-mmap`), set `false_flag`.
-5. Run `node --check ui/js/flags/definitions.js`.
+5. Run `node --check ui/js/flags/definitions.js` and `npm run test:flag-definitions`.
 6. Verify the flag appears in the Configure tab and command preview.
 7. If the flag should appear in Quick Launch, add it to the Quick Launch
    controls in `app.js` reading from the same `flagCore` state.
@@ -197,7 +197,7 @@ with the primary file and only touch secondary files if the change requires it.
 
 | Concern | Primary File | Secondary Files |
 |---------|-------------|-----------------|
-| Flag definitions | `ui/js/flags/definitions.js` | `ui/js/flags/options.js` (enum lists), `ui/js/flag-validation.js` |
+| Flag definitions | `ui/js/flags/definitions.js` | `ui/js/flags/options.js` (enum lists), `tests/frontend/flag_definitions_unit.cjs` |
 | Flag categories / filtering helpers | `ui/js/flags/categories.js`, `ui/js/flags/helpers.js` | `ui/js/config-flags-ui.js` (rendering consumers), `ui/js/flag-core.js` (default values) |
 | Shared flag state | `ui/js/flag-core.js` | `ui/js/app.js` (callbacks) |
 | Launch args / command preview | `ui/js/flag-core.js` | `ui/js/app.js` (render) |

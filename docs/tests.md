@@ -13,7 +13,7 @@ The goal is not exhaustive coverage. Tests should make common regressions easier
 npm test
 ```
 
-Runs the full frontend suite: JavaScript syntax checks, fast Node unit tests, flag compatibility checks, module loading checks, and the Playwright smoke test.
+Runs the full frontend suite: JavaScript syntax checks, fast Node unit tests, structural flag-definition validation, flag compatibility checks, module loading checks, and the Playwright smoke test.
 
 ```powershell
 npm run test:syntax
@@ -26,6 +26,12 @@ npm run test:frontend:modules
 ```
 
 Loads scripts in the same order as `ui/index.html` inside a Node VM and verifies expected `window.LlamaGui.*` namespaces exist.
+
+```powershell
+npm run test:flag-definitions
+```
+
+Validates structural invariants in `FLAGS` and `FLAG_CATEGORIES`, including ids, categories, types, defaults, and enum options.
 
 ```powershell
 npm run test:flags
@@ -58,6 +64,7 @@ Fast Node tests:
 - `api_tab_unit.cjs`: API endpoint host/port fallback, model alias selection, API-key snippet rendering, llama.cpp-compatible CSV parsing, active-auth status, and bearer-header selection.
 - `presets_unit.cjs`: preset storage failure fallback, non-default override calculation, imported preset normalization, stale flag filtering, and sensitive Custom Launch Args rejection.
 - `module_namespace_unit.cjs`: frontend script load order and exported namespaces.
+- `flag_definitions_unit.cjs`: structural validation of flag/category definitions and representative invalid cases.
 - `js_syntax_check.cjs`: syntax-only check for frontend JavaScript.
 
 Browser smoke test:
