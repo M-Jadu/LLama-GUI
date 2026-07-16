@@ -4,6 +4,7 @@
     let flagCore = null;
     let copyText = null;
     let getLatestStatus = () => null;
+    let getLifecycleSnapshot = () => null;
 
     const API_ENDPOINTS = [
         {
@@ -160,6 +161,7 @@
         flagCore = deps.flagCore || flagCore;
         copyText = deps.copyText || copyText;
         getLatestStatus = deps.getLatestStatus || getLatestStatus;
+        getLifecycleSnapshot = deps.getLifecycleSnapshot || getLifecycleSnapshot;
     }
 
     function init() {
@@ -175,10 +177,23 @@
         return getServerEndpointConfig().baseUrl;
     }
 
+    function getActiveServerRuntime() {
+        const lifecycle = getLifecycleSnapshot();
+        if (lifecycle && lifecycle.activeRuntime && lifecycle.activeRuntime.tool === "llama-server") {
+            return lifecycle.activeRuntime;
+        }
+        const status = getLatestStatus();
+        return status && status.running && status.active_runtime
+            && status.active_runtime.tool === "llama-server"
+            ? status.active_runtime
+            : null;
+    }
+
     function getServerEndpointConfig() {
+        const runtime = getActiveServerRuntime();
         const values = flagCore.getFlagValues();
-        const host = String(values.host || "127.0.0.1").trim() || "127.0.0.1";
-        const parsedPort = Number(values.port);
+        const host = String((runtime && runtime.host) || values.host || "127.0.0.1").trim() || "127.0.0.1";
+        const parsedPort = Number((runtime && runtime.port) || values.port);
         const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 8080;
         return {
             host,
@@ -188,6 +203,13 @@
     }
 
     function getPreferredApiModelName() {
+        const runtime = getActiveServerRuntime();
+        if (runtime) {
+            const activeAlias = String(runtime.alias || "").split(",")[0].trim();
+            if (activeAlias) return activeAlias;
+            const activeModel = String(runtime.model || "").trim();
+            if (activeModel) return activeModel;
+        }
         const values = flagCore.getFlagValues();
         const alias = String(values.alias || "").split(",")[0].trim();
         if (alias) return alias;
@@ -259,6 +281,13 @@
 
         const latestStatus = getLatestStatus();
         const isRunning = !!(latestStatus && latestStatus.running);
+        const lifecycle = getLifecycleSnapshot();
+        const isLoading = Boolean(
+            lifecycle
+            && lifecycle.activeRuntime
+            && lifecycle.activeRuntime.tool === "llama-server"
+            && (lifecycle.phase === "starting" || lifecycle.phase === "loading")
+        );
         const values = flagCore.getFlagValues();
         const pendingHasApiKey = String(values.api_key ?? "").length > 0;
         const hasActiveAuthStatus = isRunning
@@ -270,8 +299,10 @@
         const modeText = flagCore.getCurrentTool() === "llama-server"
             ? "Tool mode is set to llama-server."
             : "Tool mode is set to llama-cli. Switch to llama-server to expose HTTP endpoints.";
-        const runningText = isRunning
-            ? "Server process appears to be running."
+        const runningText = isLoading
+            ? "Server process is running but the model is still loading; endpoints are temporarily unavailable."
+            : isRunning
+            ? "Server process appears to be ready."
             : "Server process is not running right now.";
         const authText = hasApiKey
             ? "API key is configured. Use `Authorization: Bearer <key>` in clients."

@@ -2,6 +2,8 @@ let cachedReleases = null;
 let releasesBackend = null;
 let releasesBackendInFlight = null;
 let releaseFetchRequestId = 0;
+let statusRequestId = 0;
+let acceptedStatusObserver = null;
 let installPollTimer = null;
 let installPollStartTime = null;
 let installPollFailCount = 0;
@@ -288,18 +290,41 @@ async function fetchReleases(backend) {
 }
 
 async function checkStatus() {
+    const requestId = ++statusRequestId;
     try {
         const status = await fetchJson("/api/status");
-        if (!status) return null;
+        if (!status || requestId !== statusRequestId) return null;
         latestStatus = status;
         updateStatusUI(status);
+        await notifyAcceptedStatusObserver(status);
+        if (requestId !== statusRequestId) {
+            const currentStatus = latestStatus;
+            if (currentStatus && currentStatus !== status) {
+                await notifyAcceptedStatusObserver(currentStatus);
+            }
+            return currentStatus;
+        }
         return status;
     } catch (e) {
+        if (requestId !== statusRequestId) return null;
         markSelectFailedToLoad("backend-select");
         markSelectFailedToLoad("release-select");
         showStatus("error", "Could not check installation status: " + e.message);
         return null;
     }
+}
+
+async function notifyAcceptedStatusObserver(status) {
+    if (typeof acceptedStatusObserver !== "function") return;
+    try {
+        await acceptedStatusObserver(status);
+    } catch (observerError) {
+        console.warn("Failed to reconcile authoritative process status", observerError);
+    }
+}
+
+function setAcceptedStatusObserver(observer) {
+    acceptedStatusObserver = typeof observer === "function" ? observer : null;
 }
 
 function markSelectFailedToLoad(id) {
@@ -1035,6 +1060,7 @@ if (window.LlamaGui) {
         fetchJson,
         fetchReleases,
         checkStatus,
+        setAcceptedStatusObserver,
         refreshModels,
         checkAppUpdateStatus,
         updateAppFromGitHub,

@@ -7,6 +7,10 @@ function hasSensitiveCustomArgs(flags) {
     return typeof raw === "string" && SENSITIVE_CUSTOM_ARG_PATTERN.test(raw);
 }
 
+function clonePresetFlagValue(value) {
+    return Array.isArray(value) ? [...value] : value;
+}
+
 function assertNoSensitiveCustomArgs(data) {
     if (!data || typeof data !== "object" || Array.isArray(data)) return;
     const flags = data.flags && typeof data.flags === "object" && !Array.isArray(data.flags)
@@ -20,9 +24,51 @@ function stripSensitivePresetFlags(flags) {
     for (const [key, value] of Object.entries(flags || {})) {
         if (SENSITIVE_PRESET_FLAG_IDS.has(key)) continue;
         if (key === "custom_args" && hasSensitiveCustomArgs(flags)) continue;
-        sanitized[key] = value;
+        sanitized[key] = clonePresetFlagValue(value);
     }
     return sanitized;
+}
+
+function isFullPresetData(data) {
+    return Boolean(
+        data
+        && typeof data === "object"
+        && !Array.isArray(data)
+        && data.flags
+        && typeof data.flags === "object"
+        && !Array.isArray(data.flags)
+    );
+}
+
+function findPresetByName(entries, name) {
+    if (!Array.isArray(entries)) return null;
+    const target = String(name || "");
+    const entry = entries.find((candidate) => candidate && String(candidate.name || "") === target);
+    if (!entry) return null;
+    return {
+        name: String(entry.name || ""),
+        data: normalizePresetData(entry.data),
+        full: isFullPresetData(entry.data),
+        created: entry.created,
+        modified: entry.modified,
+    };
+}
+
+function getPresetFetchJson() {
+    const managerFetch = window.LlamaGui
+        && window.LlamaGui.manager
+        && window.LlamaGui.manager.fetchJson;
+    if (typeof managerFetch === "function") return managerFetch;
+    if (typeof fetchJson === "function") return fetchJson;
+    throw new Error("Preset API is not available.");
+}
+
+async function fetchPresetEntries() {
+    const entries = await getPresetFetchJson()("/api/presets");
+    if (!Array.isArray(entries)) {
+        throw new Error("Preset API returned an invalid response.");
+    }
+    return entries;
 }
 
 function normalizePresetData(data) {
@@ -118,6 +164,38 @@ function buildCurrentPresetData() {
     const selectedModel = flagCore.getSelectedModel();
     const tool = flagCore.getCurrentTool();
     return { tool, model: selectedModel, flags: values };
+}
+
+function preparePresetLaunchState(data, options = {}) {
+    const flagCore = getPresetFlagCore();
+    const normalized = normalizePresetData(data);
+    const preserveApiKey = options.preserveApiKey !== false;
+    if (typeof flagCore.buildEffectiveFlagValues !== "function") {
+        throw new Error("Flag defaults are not available.");
+    }
+    const flags = flagCore.buildEffectiveFlagValues(normalized.flags);
+    if (preserveApiKey) {
+        const currentApiKey = flagCore.getFlagValues().api_key;
+        if (currentApiKey) flags.api_key = currentApiKey;
+    }
+    return {
+        tool: normalized.tool,
+        model: normalized.model,
+        flags,
+    };
+}
+
+function applyPresetData(data, options = {}) {
+    const flagCore = getPresetFlagCore();
+    const prepared = preparePresetLaunchState(data, options);
+    if (prepared.tool === "llama-cli" || prepared.tool === "llama-server") {
+        flagCore.setCurrentTool(prepared.tool);
+        const toolSelect = document.getElementById("tool-select");
+        if (toolSelect) toolSelect.value = prepared.tool;
+    }
+    applyPresetModel(prepared.model);
+    flagCore.applyFlagValues(prepared.flags);
+    return prepared;
 }
 
 function getPresetWarnings(presetData) {
@@ -837,7 +915,7 @@ async function loadPresets() {
     const container = document.getElementById("presets-list");
     container.textContent = "";
     try {
-        const presets = await fetchJson("/api/presets");
+        const presets = await fetchPresetEntries();
         prunePresetLocalState(new Set(presets.map((preset) => preset.name)));
         currentPresetGroups = buildPresetGroups(presets);
         const visibleEntries = getVisiblePresetEntries();
@@ -1021,23 +1099,12 @@ async function updatePreset(name) {
 
 async function loadPreset(name) {
     try {
-        const presets = await fetchJson("/api/presets");
-        const preset = presets.find(p => p.name === name);
+        const presets = await fetchPresetEntries();
+        const preset = findPresetByName(presets, name);
         if (preset) {
-            const flagCore = getPresetFlagCore();
-            const presetData = normalizePresetData(preset.data);
+            const presetData = preset.data;
             const warnings = getPresetWarnings(presetData);
-            if (presetData.tool === "llama-cli" || presetData.tool === "llama-server") {
-                flagCore.setCurrentTool(presetData.tool);
-                const toolSelect = document.getElementById("tool-select");
-                if (toolSelect) toolSelect.value = presetData.tool;
-            }
-            applyPresetModel(presetData.model);
-            const currentApiKey = flagCore.getFlagValues().api_key;
-            const nextFlags = currentApiKey
-                ? { ...presetData.flags, api_key: currentApiKey }
-                : presetData.flags;
-            flagCore.applyFlagValues(nextFlags);
+            applyPresetData(presetData);
             markPresetUsed(name);
             if (warnings.length > 0) {
                 showPresetStatus(`Loaded "${name}" with warning: ${warnings[0]}`, "warning", 5000);
@@ -1263,7 +1330,13 @@ async function handlePresetImport(file) {
 if (window.LlamaGui) {
     window.LlamaGui.presets = Object.assign(window.LlamaGui.presets || {}, {
         loadPreset,
+        fetchPresetEntries,
+        findPresetByName,
+        normalizePresetData,
         normalizeImportedPresetData,
+        isFullPresetData,
+        preparePresetLaunchState,
+        applyPresetData,
         stripSensitivePresetFlags,
         hasSensitiveCustomArgs,
     });

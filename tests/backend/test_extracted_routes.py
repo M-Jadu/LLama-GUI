@@ -1,8 +1,10 @@
 import contextlib
+import hashlib
 import io
 import json
 import tempfile
 import unittest
+import urllib.error
 import zipfile
 from unittest import mock
 from email.message import Message
@@ -76,6 +78,20 @@ class FakeBinaryUpstream:
 
     def __exit__(self, exc_type, exc, tb):
         return False
+
+
+class FakeHealthUpstream:
+    def __init__(self, status):
+        self.status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def getcode(self):
+        return self.status
 
 
 def make_context(root):
@@ -431,6 +447,44 @@ class ExtractedRouteTests(unittest.TestCase):
 
             self.assertEqual(calls, ["Bearer launch-key"])
 
+    def test_metrics_and_slots_prefer_active_runtime_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.state.process = mock.Mock()
+            ctx.state.process.poll.return_value = None
+            ctx.state.active_process_tool = "llama-server"
+            ctx.state.active_runtime = {
+                "generation": 3,
+                "tool": "llama-server",
+                "host": "127.0.0.2",
+                "port": 8123,
+            }
+            calls = []
+            ctx.services.get_local_llama_metrics = lambda host, port, authorization: (
+                calls.append(("metrics", host, port)) or "metrics",
+                "",
+            )
+            ctx.services.get_local_llama_slots = lambda host, port, authorization: (
+                calls.append(("slots", host, port)) or "[]",
+                "",
+            )
+
+            metrics.get_metrics(
+                Request("GET", "/api/llama/metrics", "host=pending&port=9999", {}),
+                DummyResponse(),
+                ctx,
+            )
+            metrics.get_slots(
+                Request("GET", "/api/llama/slots", "host=pending&port=9999", {}),
+                DummyResponse(),
+                ctx,
+            )
+
+            self.assertEqual(
+                calls,
+                [("metrics", "127.0.0.2", 8123), ("slots", "127.0.0.2", 8123)],
+            )
+
     def test_slots_route_uses_context_service(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = make_context(tmp)
@@ -501,8 +555,51 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertEqual(response.payload["models_dir"], str(ctx.paths.models))
             self.assertEqual(response.payload["available_backends"], [{"id": "cpu", "label": "CPU"}])
             self.assertIsNone(response.payload["active_process_tool"])
+            self.assertIsNone(response.payload["active_runtime"])
+            self.assertEqual(response.payload["runtime_generation"], 0)
             self.assertFalse(response.payload["api_auth_configured"])
             self.assertEqual(response.payload["last_exit_code"], 7)
+
+    def test_status_route_exposes_safe_active_runtime_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            runtime = {
+                "generation": 4,
+                "tool": "llama-server",
+                "model": "models/qwen.gguf",
+                "alias": "qwen-local",
+                "host": "127.0.0.1",
+                "port": 9090,
+                "source": "model-switcher",
+                "slot": "a",
+                "preset": "Qwen Balanced",
+                "preset_fingerprint": "abc123",
+            }
+            ctx.state.process = mock.Mock()
+            ctx.state.process.poll.return_value = None
+            ctx.state.active_process_tool = "llama-server"
+            ctx.state.active_runtime = runtime
+            ctx.state.runtime_generation = 4
+            ctx.services = BackendServices(
+                backend_specs={},
+                current_arch="x64",
+                current_platform="linux",
+                get_platform_label=lambda: "Linux",
+                get_runtime_files=lambda: [],
+                get_tool_filename=lambda tool: tool,
+                get_llama_api_target=lambda: {"host": "127.0.0.1", "port": 9090},
+                is_process_running=lambda: True,
+                llama_tools=[],
+                load_config=lambda: {},
+            )
+            response = DummyResponse()
+
+            status.get_status(Request("GET", "/api/status", "", {}), response, ctx)
+
+            self.assertTrue(response.payload["running"])
+            self.assertEqual(response.payload["active_runtime"], runtime)
+            self.assertEqual(response.payload["runtime_generation"], 4)
+            self.assertIsNot(response.payload["active_runtime"], ctx.state.active_runtime)
 
     def test_status_route_marks_install_stale_when_runtime_library_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -622,6 +719,8 @@ class ExtractedRouteTests(unittest.TestCase):
                     "next_cursor": 2,
                     "dropped": False,
                     "running": False,
+                    "runtime_generation": 0,
+                    "active_process_tool": None,
                     "output": ["one", "two"],
                 },
             )
@@ -775,6 +874,40 @@ class ExtractedRouteTests(unittest.TestCase):
 
             self.assertEqual(result, fallback)
 
+    def test_process_manager_normalizes_strict_model_switch_launch_context(self):
+        launch_context = {
+            "source": "model-switcher",
+            "slot": "a",
+            "preset": "  Qwen Balanced  ",
+            "preset_fingerprint": "a" * 64,
+        }
+
+        self.assertEqual(
+            process_manager.normalize_launch_context(launch_context),
+            {
+                "source": "model-switcher",
+                "slot": "a",
+                "preset": "Qwen Balanced",
+                "preset_fingerprint": "a" * 64,
+            },
+        )
+        self.assertEqual(process_manager.normalize_launch_context(None), {})
+
+        invalid_contexts = [
+            "model-switcher",
+            {},
+            {**launch_context, "unknown": "value"},
+            {**launch_context, "source": "manual"},
+            {**launch_context, "slot": "c"},
+            {**launch_context, "preset": "bad\nname"},
+            {**launch_context, "preset": "bad\u202ename"},
+            {**launch_context, "preset_fingerprint": "secret value"},
+        ]
+        for invalid in invalid_contexts:
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    process_manager.normalize_launch_context(invalid)
+
     def test_process_manager_api_key_parser_matches_llama_cpp_csv_rules(self):
         self.assertEqual(
             process_manager.parse_csv_row('first ,"second,part","third""quoted"'),
@@ -852,6 +985,7 @@ class ExtractedRouteTests(unittest.TestCase):
             fake_process.stderr = io.StringIO()
             fake_process.stdin = io.StringIO()
             fake_process.poll.return_value = None
+            ctx.state.runtime_generation = 7
 
             class FakeThread:
                 def __init__(self, **kwargs):
@@ -865,7 +999,15 @@ class ExtractedRouteTests(unittest.TestCase):
                 result = process_manager.launch_process(
                     ctx,
                     "llama-server",
-                    ["--api-key", '"launch,part",backup', "--port", "9090"],
+                    [
+                        "--api-key",
+                        '"launch,part",backup',
+                        "--port",
+                        "9090",
+                        "-m",
+                        "models/qwen.gguf",
+                        "-a=qwen-local,backup",
+                    ],
                 )
 
             self.assertEqual(result["pid"], 1234)
@@ -873,6 +1015,622 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertEqual(
                 process_manager.get_active_llama_authorization(ctx, "Bearer pending"),
                 "Bearer launch,part",
+            )
+            self.assertEqual(
+                ctx.state.active_runtime,
+                {
+                    "generation": 8,
+                    "tool": "llama-server",
+                    "model": "models/qwen.gguf",
+                    "alias": "qwen-local",
+                    "host": "127.0.0.1",
+                    "port": 9090,
+                    "source": "manual",
+                    "slot": None,
+                    "preset": None,
+                    "preset_fingerprint": None,
+                },
+            )
+            self.assertEqual(result["active_runtime"], ctx.state.active_runtime)
+            self.assertIsNot(result["active_runtime"], ctx.state.active_runtime)
+            self.assertNotIn("launch,part", json.dumps(ctx.state.active_runtime))
+
+    def test_process_manager_rejects_invalid_launch_context_before_popen(self):
+        ctx = AppContext()
+        invalid_context = {
+            "source": "model-switcher",
+            "slot": "a",
+            "preset": "Model A",
+            "preset_fingerprint": "contains spaces",
+        }
+
+        with mock.patch.object(process_manager.subprocess, "Popen") as mock_popen:
+            result = process_manager.launch_process(ctx, "llama-server", [], invalid_context)
+
+        self.assertIn("launch_context", result["error"])
+        self.assertIsNone(ctx.state.active_runtime)
+        mock_popen.assert_not_called()
+
+    def test_process_manager_records_normalized_switch_context_after_launch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.paths.llama_bin.mkdir(parents=True)
+            executable = ctx.paths.llama_bin / "llama-server"
+            executable.write_text("binary")
+            ctx.services = BackendServices(
+                current_platform="linux",
+                find_tool_executable=lambda tool: executable,
+                get_tool_filename=lambda tool: tool,
+                load_config=lambda: {},
+                set_llama_api_target=lambda host, port: {"host": host, "port": int(port)},
+                get_llama_api_target=lambda: {"host": "127.0.0.1", "port": 8080},
+            )
+            fake_process = mock.Mock()
+            fake_process.pid = 2468
+            fake_process.stdout = io.StringIO()
+            fake_process.stderr = io.StringIO()
+            fake_process.poll.return_value = None
+
+            class FakeThread:
+                def __init__(self, **kwargs):
+                    self.kwargs = kwargs
+
+                def start(self):
+                    pass
+
+            launch_context = {
+                "source": "model-switcher",
+                "slot": "b",
+                "preset": "  Gemma Creative  ",
+                "preset_fingerprint": "b" * 64,
+            }
+            with mock.patch.object(process_manager.subprocess, "Popen", return_value=fake_process), \
+                 mock.patch.object(process_manager.threading, "Thread", FakeThread):
+                result = process_manager.launch_process(
+                    ctx,
+                    "llama-server",
+                    ["-m=models/gemma.gguf", "--host=localhost", "--port=8181"],
+                    launch_context,
+                )
+
+            self.assertEqual(result["active_runtime"], ctx.state.active_runtime)
+            self.assertEqual(
+                {
+                    key: ctx.state.active_runtime[key]
+                    for key in ("generation", "source", "slot", "preset", "preset_fingerprint")
+                },
+                {
+                    "generation": 1,
+                    "source": "model-switcher",
+                    "slot": "b",
+                    "preset": "Gemma Creative",
+                    "preset_fingerprint": "b" * 64,
+                },
+            )
+            self.assertEqual(ctx.state.active_runtime["model"], "models/gemma.gguf")
+            self.assertEqual(ctx.state.active_runtime["host"], "localhost")
+            self.assertEqual(ctx.state.active_runtime["port"], 8181)
+
+    def test_active_runtime_sanitizes_model_url_identity(self):
+        ctx = AppContext()
+        runtime = process_manager._build_active_runtime(
+            ctx,
+            "llama-server",
+            [
+                "--model-url",
+                "https://download-user:download-pass@models.example/model.gguf?token=signed-secret#private",
+            ],
+            {"source": "manual"},
+            {"host": "127.0.0.1", "port": 8080},
+        )
+        self.assertEqual(runtime["model"], "Remote model URL")
+        serialized = json.dumps(runtime)
+        for secret in ("download-user", "download-pass", "signed-secret", "private"):
+            self.assertNotIn(secret, serialized)
+
+    def test_process_preflight_is_non_mutating_and_returns_canonical_fingerprint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            executable = ctx.paths.llama_bin / "llama-server"
+            executable.parent.mkdir(parents=True)
+            executable.write_text("binary")
+            model = ctx.paths.models / "qwen.gguf"
+            model.parent.mkdir(parents=True)
+            model.write_text("model")
+            set_target = mock.Mock(side_effect=AssertionError("preflight mutated API target"))
+            ctx.services = BackendServices(
+                find_tool_executable=lambda tool: executable,
+                get_tool_filename=lambda tool: tool,
+                llama_tools=["llama-cli", "llama-server"],
+                set_llama_api_target=set_target,
+            )
+            running_process = mock.Mock()
+            running_process.poll.return_value = None
+            ctx.state.process = running_process
+            ctx.state.active_runtime = {"generation": 9, "tool": "llama-server"}
+            fingerprint_data = {
+                "flags": {"temperature": 0.7, "custom_args": "--metrics"},
+                "model": "models/qwen.gguf",
+                "tool": "llama-server",
+            }
+            canonical = json.dumps(
+                fingerprint_data,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+            expected_fingerprint = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+            with mock.patch.object(process_manager.subprocess, "Popen") as mock_popen:
+                result = process_manager.preflight_launch(
+                    ctx,
+                    "llama-server",
+                    [
+                        "--port",
+                        "8080",
+                        "--api-key",
+                        "launch-only-secret",
+                        "-m",
+                        "models/qwen.gguf",
+                    ],
+                    fingerprint_data,
+                )
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["model_source"], "local")
+            self.assertEqual(result["model"], "models/qwen.gguf")
+            self.assertEqual(result["preset_fingerprint"], expected_fingerprint)
+            self.assertEqual(
+                process_manager.compute_preset_fingerprint(
+                    {"tool": "llama-server", "model": "models/qwen.gguf", "flags": fingerprint_data["flags"]}
+                ),
+                expected_fingerprint,
+            )
+            self.assertRegex(result["preset_fingerprint"], r"^[0-9a-f]{64}$")
+            self.assertNotIn("launch-only-secret", json.dumps(result))
+            self.assertIs(ctx.state.process, running_process)
+            self.assertEqual(ctx.state.active_runtime, {"generation": 9, "tool": "llama-server"})
+            set_target.assert_not_called()
+            mock_popen.assert_not_called()
+
+    def test_process_preflight_rejects_sensitive_fingerprint_data(self):
+        ctx = AppContext()
+        ctx.services.llama_tools = ["llama-server"]
+        sensitive_values = [
+            {"api_key": "secret"},
+            {"flags": {"API_KEY": "secret"}},
+            {"flags": {"custom_args": "--metrics --api-key secret"}},
+            {"flags": {"custom_args": "--api-key=secret"}},
+        ]
+
+        for fingerprint_data in sensitive_values:
+            with self.subTest(fingerprint_data=fingerprint_data):
+                result = process_manager.preflight_launch(
+                    ctx,
+                    "llama-server",
+                    ["-hf", "org/model"],
+                    fingerprint_data,
+                )
+                self.assertIn("must not contain", result["error"])
+                self.assertNotIn("secret", result["error"])
+
+    def test_process_preflight_validates_tool_args_environment_and_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            executable = ctx.paths.llama_bin / "llama-server"
+            ctx.services = BackendServices(
+                find_tool_executable=lambda tool: executable,
+                get_tool_filename=lambda tool: tool,
+                llama_tools=["llama-cli", "llama-server"],
+            )
+            fingerprint_data = {"tool": "llama-server", "flags": {}}
+
+            self.assertIn(
+                "Unknown tool",
+                process_manager.preflight_launch(
+                    ctx, "../../cmd", ["-hf", "org/model"], fingerprint_data
+                )["error"],
+            )
+            self.assertIn(
+                "requires llama-server",
+                process_manager.preflight_launch(
+                    ctx, "llama-cli", ["-hf", "org/model"], fingerprint_data
+                )["error"],
+            )
+            self.assertIn(
+                "args must be an array",
+                process_manager.preflight_launch(
+                    ctx, "llama-server", "-hf org/model", fingerprint_data
+                )["error"],
+            )
+            self.assertIn(
+                "tool must be a string",
+                process_manager.preflight_launch(
+                    ctx, {"secret": "value"}, ["-hf", "org/model"], fingerprint_data
+                )["error"],
+            )
+            self.assertIn(
+                "invalid value",
+                process_manager.preflight_launch(
+                    ctx, "llama-server", ["-hf", {"repo": "org/model"}], fingerprint_data
+                )["error"],
+            )
+            self.assertIn(
+                "not found",
+                process_manager.preflight_launch(
+                    ctx, "llama-server", ["-hf", "org/model"], fingerprint_data
+                )["error"],
+            )
+
+            executable.parent.mkdir(parents=True)
+            executable.write_text("binary")
+            ctx.services.validate_runtime_dependencies = lambda tools=None: {
+                "missing_runtime_files": ["runtime.dll"]
+            }
+            self.assertIn(
+                "runtime library",
+                process_manager.preflight_launch(
+                    ctx, "llama-server", ["-hf", "org/model"], fingerprint_data
+                )["error"],
+            )
+
+            ctx.services.validate_runtime_dependencies = lambda tools=None: {
+                "missing_runtime_files": []
+            }
+            self.assertIn(
+                "model source",
+                process_manager.preflight_launch(
+                    ctx, "llama-server", ["--metrics"], fingerprint_data
+                )["error"],
+            )
+            self.assertIn(
+                "does not exist",
+                process_manager.preflight_launch(
+                    ctx, "llama-server", ["-m", "models/missing.gguf"], fingerprint_data
+                )["error"],
+            )
+            remote_result = process_manager.preflight_launch(
+                ctx,
+                "llama-server",
+                ["--hf-repo=org/model"],
+                fingerprint_data,
+            )
+            self.assertTrue(remote_result["ok"])
+            self.assertEqual(remote_result["model_source"], "hugging-face")
+            self.assertEqual(remote_result["model"], "org/model")
+
+    def test_process_preflight_route_delegates_and_reports_errors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            body = {
+                "tool": "llama-server",
+                "args": ["-m", "models/qwen.gguf"],
+                "fingerprint_data": {"tool": "llama-server"},
+            }
+            response = DummyResponse()
+            with mock.patch.object(
+                process_manager,
+                "preflight_launch",
+                return_value={"ok": True, "preset_fingerprint": "a" * 64},
+            ) as mock_preflight:
+                process.preflight_launch(
+                    Request("POST", "/api/launch/preflight", "", {}, body=body),
+                    response,
+                    ctx,
+                )
+
+            self.assertEqual(response.status, 200)
+            mock_preflight.assert_called_once_with(
+                ctx, "llama-server", body["args"], body["fingerprint_data"]
+            )
+
+            error_response = DummyResponse()
+            with mock.patch.object(
+                process_manager,
+                "preflight_launch",
+                return_value={"error": "Local model file does not exist."},
+            ):
+                process.preflight_launch(
+                    Request("POST", "/api/launch/preflight", "", {}, body=body),
+                    error_response,
+                    ctx,
+                )
+            self.assertEqual(error_response.status, 400)
+            self.assertEqual(error_response.payload["error"], "Local model file does not exist.")
+
+    def test_preset_fingerprint_route_is_backend_canonical_and_secret_safe(self):
+        ctx = AppContext()
+        fingerprint_data = {
+            "tool": "llama-server",
+            "model": "models/numeric.gguf",
+            "flags": {"tiny": 1e-7, "large": 1e20},
+        }
+        canonical = json.dumps(
+            fingerprint_data,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        expected = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        response = DummyResponse()
+
+        process.fingerprint_preset(
+            Request(
+                "POST",
+                "/api/presets/fingerprint",
+                "",
+                {},
+                body={"fingerprint_data": fingerprint_data},
+            ),
+            response,
+            ctx,
+        )
+
+        self.assertEqual(response.payload, {"ok": True, "preset_fingerprint": expected})
+        secret_response = DummyResponse()
+        process.fingerprint_preset(
+            Request(
+                "POST",
+                "/api/presets/fingerprint",
+                "",
+                {},
+                body={"fingerprint_data": {"flags": {"api_key": "secret"}}},
+            ),
+            secret_response,
+            ctx,
+        )
+        self.assertEqual(secret_response.status, 400)
+        self.assertNotIn("secret", json.dumps(secret_response.payload))
+
+    def _make_health_context(self, generation=4):
+        ctx = AppContext()
+        process_handle = mock.Mock()
+        process_handle.poll.return_value = None
+        ctx.state.process = process_handle
+        ctx.state.active_process_tool = "llama-server"
+        ctx.state.active_llama_api_keys = ("must-not-forward",)
+        ctx.state.runtime_generation = generation
+        ctx.state.active_runtime = {
+            "generation": generation,
+            "tool": "llama-server",
+            "host": "127.0.0.1",
+            "port": 8080,
+        }
+        return ctx, process_handle
+
+    def test_llama_health_reports_ready_loading_starting_and_error_states(self):
+        ctx, _ = self._make_health_context()
+
+        with mock.patch.object(
+            process_manager.urllib.request,
+            "urlopen",
+            return_value=FakeHealthUpstream(200),
+        ) as mock_urlopen:
+            ready = process_manager.get_llama_health(ctx, "4")
+
+        self.assertEqual(ready["state"], "ready")
+        self.assertTrue(ready["ready"])
+        request = mock_urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "http://127.0.0.1:8080/health")
+        self.assertEqual(request.get_header("Accept"), "application/json")
+        self.assertIsNone(request.get_header("Authorization"))
+        self.assertEqual(mock_urlopen.call_args.kwargs["timeout"], 2)
+
+        http_503 = urllib.error.HTTPError(
+            "http://127.0.0.1:8080/health", 503, "loading", {}, None
+        )
+        with mock.patch.object(
+            process_manager.urllib.request, "urlopen", side_effect=http_503
+        ):
+            loading = process_manager.get_llama_health(ctx, 4)
+        self.assertEqual(loading["state"], "loading")
+        self.assertFalse(loading["ready"])
+
+        with mock.patch.object(
+            process_manager.urllib.request,
+            "urlopen",
+            side_effect=urllib.error.URLError("connection refused"),
+        ):
+            starting = process_manager.get_llama_health(ctx, 4)
+        self.assertEqual(starting["state"], "starting")
+        self.assertNotIn("connection refused", starting["message"])
+
+        error_body = io.BytesIO(b"failed")
+        http_500 = urllib.error.HTTPError(
+            "http://127.0.0.1:8080/health", 500, "failed", {}, error_body
+        )
+        with mock.patch.object(
+            process_manager.urllib.request, "urlopen", side_effect=http_500
+        ):
+            error = process_manager.get_llama_health(ctx, 4)
+        self.assertEqual(error["state"], "error")
+        self.assertEqual(error["message"], "llama-server health returned HTTP 500.")
+        self.assertTrue(error_body.closed)
+
+    def test_llama_health_handles_stopped_failed_and_superseded_generations(self):
+        stopped_ctx = AppContext()
+        stopped = process_manager.get_llama_health(stopped_ctx, None)
+        self.assertEqual(stopped["state"], "stopped")
+
+        ctx, process_handle = self._make_health_context()
+        with mock.patch.object(process_manager.urllib.request, "urlopen") as mock_urlopen:
+            superseded_before_probe = process_manager.get_llama_health(ctx, 3)
+        self.assertEqual(superseded_before_probe["state"], "superseded")
+        mock_urlopen.assert_not_called()
+
+        def replace_runtime(request, timeout):
+            self.assertTrue(ctx.state.process_lock.acquire(blocking=False))
+            try:
+                next_process = mock.Mock()
+                next_process.poll.return_value = None
+                ctx.state.process = next_process
+                ctx.state.runtime_generation = 5
+                ctx.state.active_runtime = {
+                    "generation": 5,
+                    "tool": "llama-server",
+                    "host": "127.0.0.1",
+                    "port": 8081,
+                }
+            finally:
+                ctx.state.process_lock.release()
+            return FakeHealthUpstream(200)
+
+        with mock.patch.object(
+            process_manager.urllib.request, "urlopen", side_effect=replace_runtime
+        ):
+            superseded_after_probe = process_manager.get_llama_health(ctx, 4)
+        self.assertEqual(superseded_after_probe["state"], "superseded")
+        self.assertEqual(superseded_after_probe["generation"], 5)
+
+        failed_ctx, failed_process = self._make_health_context(7)
+
+        def exit_during_probe(request, timeout):
+            failed_process.poll.return_value = 9
+            return FakeHealthUpstream(200)
+
+        with mock.patch.object(
+            process_manager.urllib.request, "urlopen", side_effect=exit_during_probe
+        ):
+            failed = process_manager.get_llama_health(failed_ctx, 7)
+        self.assertEqual(failed["state"], "failed")
+        self.assertFalse(failed["ready"])
+        self.assertNotIn("9", failed["message"])
+
+        invalid = process_manager.get_llama_health(AppContext(), "not-a-generation")
+        self.assertEqual(invalid["state"], "error")
+        self.assertIn("positive integer", invalid["message"])
+
+    def test_llama_health_unexpected_errors_are_sanitized(self):
+        ctx, _ = self._make_health_context()
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), mock.patch.object(
+            process_manager.urllib.request,
+            "urlopen",
+            side_effect=RuntimeError("private upstream detail"),
+        ):
+            result = process_manager.get_llama_health(ctx, 4)
+
+        self.assertEqual(result["state"], "error")
+        self.assertNotIn("private upstream detail", result["message"])
+        self.assertIn("private upstream detail", stderr.getvalue())
+
+    def test_llama_health_and_generation_stop_routes_return_observation_json(self):
+        ctx = AppContext()
+        health_response = DummyResponse()
+        with mock.patch.object(
+            process_manager,
+            "get_llama_health",
+            return_value={"state": "starting", "ready": False, "generation": 4},
+        ) as mock_health:
+            process.get_health(
+                Request(
+                    "GET",
+                    "/api/llama/health",
+                    "expected_generation=4",
+                    {},
+                ),
+                health_response,
+                ctx,
+            )
+        self.assertEqual(health_response.status, 200)
+        mock_health.assert_called_once_with(ctx, "4")
+
+        sanitized_response = DummyResponse()
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), mock.patch.object(
+            process_manager,
+            "get_llama_health",
+            side_effect=RuntimeError("private route failure"),
+        ):
+            process.get_health(
+                Request("GET", "/api/llama/health", "", {}),
+                sanitized_response,
+                ctx,
+            )
+        self.assertEqual(sanitized_response.status, 200)
+        self.assertEqual(sanitized_response.payload["state"], "error")
+        self.assertNotIn("private route failure", json.dumps(sanitized_response.payload))
+        self.assertIn("private route failure", stderr.getvalue())
+
+        stop_response = DummyResponse()
+        with mock.patch.object(
+            process_manager,
+            "stop_process_for_generation",
+            return_value={"stopped": False, "state": "superseded", "generation": 5},
+        ) as mock_stop:
+            process.stop(
+                Request(
+                    "POST",
+                    "/api/stop",
+                    "",
+                    {},
+                    body={"expected_generation": 4},
+                ),
+                stop_response,
+                ctx,
+            )
+        self.assertEqual(stop_response.status, 200)
+        mock_stop.assert_called_once_with(ctx, 4)
+
+    def test_process_manager_cleans_runtime_after_partial_launch_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.paths.llama_bin.mkdir(parents=True)
+            executable = ctx.paths.llama_bin / "llama-server"
+            executable.write_text("binary")
+            ctx.services.find_tool_executable = lambda tool: executable
+            ctx.services.get_tool_filename = lambda tool: tool
+            fake_process = mock.Mock()
+            fake_process.stdout = io.StringIO()
+            fake_process.stderr = io.StringIO()
+            fake_process.poll.return_value = None
+
+            with mock.patch.object(process_manager.subprocess, "Popen", return_value=fake_process), \
+                 mock.patch.object(process_manager.threading, "Thread", side_effect=RuntimeError("thread failed")):
+                result = process_manager.launch_process(ctx, "llama-server", ["-m", "model.gguf"])
+
+            self.assertIn("thread failed", result["error"])
+            fake_process.kill.assert_called_once()
+            fake_process.wait.assert_called_once_with(timeout=5)
+            self.assertIsNone(ctx.state.process)
+            self.assertIsNone(ctx.state.active_runtime)
+            self.assertEqual(ctx.state.runtime_generation, 0)
+            self.assertEqual(ctx.state.output_reader_count, 0)
+
+    def test_process_launch_route_forwards_optional_launch_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = make_context(tmp)
+            ctx.services.llama_tools = ["llama-server"]
+            launch_context = {
+                "source": "model-switcher",
+                "slot": "b",
+                "preset": "Gemma Creative",
+                "preset_fingerprint": "c" * 64,
+            }
+            response = DummyResponse()
+
+            with mock.patch.object(
+                process_manager,
+                "launch_process",
+                return_value={"pid": 123, "command": "llama-server", "output_cursor": 0},
+            ) as mock_launch_process:
+                process.launch(
+                    Request(
+                        "POST",
+                        "/api/launch",
+                        "",
+                        {},
+                        body={"tool": "llama-server", "args": ["-m", "model.gguf"], "launch_context": launch_context},
+                    ),
+                    response,
+                    ctx,
+                )
+
+            self.assertEqual(response.status, 200)
+            mock_launch_process.assert_called_once_with(
+                ctx, "llama-server", ["-m", "model.gguf"], launch_context
             )
 
     def test_process_launch_route_returns_missing_runtime_error(self):
@@ -1421,6 +2179,12 @@ class ExtractedRouteTests(unittest.TestCase):
             ctx.state.process.poll.return_value = None
             ctx.state.active_process_tool = "llama-server"
             ctx.state.active_llama_api_keys = ("launch-secret",)
+            ctx.state.active_runtime = {
+                "generation": 4,
+                "tool": "llama-server",
+                "host": "127.0.0.2",
+                "port": 8124,
+            }
 
             def fake_urlopen(req, timeout):
                 captured["authorization"] = req.get_header("Authorization")
@@ -1430,7 +2194,7 @@ class ExtractedRouteTests(unittest.TestCase):
                 chat.chat_service,
                 "get_local_chat_api_url",
                 return_value="http://127.0.0.1:8080/v1/chat/completions",
-            ), mock.patch.object(chat.urllib.request, "urlopen", side_effect=fake_urlopen):
+            ) as get_chat_url, mock.patch.object(chat.urllib.request, "urlopen", side_effect=fake_urlopen):
                 chat.completions(
                     Request(
                         "POST",
@@ -1449,6 +2213,7 @@ class ExtractedRouteTests(unittest.TestCase):
             self.assertIn("data: [DONE]", payload)
             self.assertTrue(response.handler.close_connection)
             self.assertEqual(captured["authorization"], "Bearer launch-secret")
+            get_chat_url.assert_called_once_with(ctx.state.active_runtime)
 
     def test_chat_route_injects_web_search_context_into_system_prompt(self):
         with tempfile.TemporaryDirectory() as tmp:

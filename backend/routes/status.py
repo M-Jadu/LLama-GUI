@@ -23,7 +23,7 @@ def get_status(request, response, ctx):
         )
         installed = has_config and core_tools_present and runtime_health.get("ok", True)
         config_stale = has_config and not installed
-        running = services.is_process_running()
+        process_status = process_manager.get_process_status_snapshot(ctx)
         backend_specs = services.backend_specs
         try:
             api_target = dict(services.get_llama_api_target())
@@ -42,10 +42,12 @@ def get_status(request, response, ctx):
                 "runtime_health": runtime_health,
                 "missing_runtime_files": runtime_health.get("missing_runtime_files", []),
                 "models_dir": str(ctx.paths.models),
-                "running": running,
-                "active_process_tool": ctx.state.active_process_tool,
-                "api_auth_configured": process_manager.is_active_llama_api_auth_configured(ctx),
-                "last_exit_code": ctx.state.last_exit_code,
+                "running": process_status["running"],
+                "active_process_tool": process_status["active_process_tool"],
+                "active_runtime": process_status["active_runtime"],
+                "runtime_generation": process_status["runtime_generation"],
+                "api_auth_configured": process_status["api_auth_configured"],
+                "last_exit_code": process_status["last_exit_code"],
                 "api_target": api_target,
                 "platform": services.current_platform,
                 "platform_label": services.get_platform_label(),

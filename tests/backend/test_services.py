@@ -665,6 +665,8 @@ class ProcessStateReapTests(unittest.TestCase):
         ctx.state.process = FakeLaunchedProcess(returncode=exit_code)
         ctx.state.active_process_tool = "llama-server"
         ctx.state.active_llama_api_keys = ("launch-secret",)
+        ctx.state.active_runtime = {"generation": 1, "tool": "llama-server"}
+        ctx.state.runtime_generation = 1
         return ctx
 
     def test_is_process_running_reaps_naturally_exited_process(self):
@@ -675,6 +677,7 @@ class ProcessStateReapTests(unittest.TestCase):
         self.assertIsNone(ctx.state.process)
         self.assertIsNone(ctx.state.active_process_tool)
         self.assertEqual(ctx.state.active_llama_api_keys, ())
+        self.assertIsNone(ctx.state.active_runtime)
         self.assertEqual(ctx.state.last_exit_code, 3)
 
     def test_stop_process_reaps_naturally_exited_process(self):
@@ -685,6 +688,7 @@ class ProcessStateReapTests(unittest.TestCase):
         self.assertIsNone(ctx.state.process)
         self.assertIsNone(ctx.state.active_process_tool)
         self.assertEqual(ctx.state.active_llama_api_keys, ())
+        self.assertIsNone(ctx.state.active_runtime)
         self.assertEqual(ctx.state.last_exit_code, 1)
 
     def test_stop_process_clears_state_for_running_process(self):
@@ -693,6 +697,7 @@ class ProcessStateReapTests(unittest.TestCase):
         ctx.state.process = process
         ctx.state.active_process_tool = "llama-server"
         ctx.state.active_llama_api_keys = ("launch-secret",)
+        ctx.state.active_runtime = {"generation": 1, "tool": "llama-server"}
 
         self.assertTrue(process_manager.stop_process(ctx))
 
@@ -700,6 +705,7 @@ class ProcessStateReapTests(unittest.TestCase):
         self.assertIsNone(ctx.state.process)
         self.assertIsNone(ctx.state.active_process_tool)
         self.assertEqual(ctx.state.active_llama_api_keys, ())
+        self.assertIsNone(ctx.state.active_runtime)
         self.assertEqual(ctx.state.last_exit_code, 0)
 
     def test_stop_process_keeps_state_when_process_survives_kill(self):
@@ -720,6 +726,7 @@ class ProcessStateReapTests(unittest.TestCase):
         process.kill = lambda: None
         ctx.state.process = process
         ctx.state.active_process_tool = "llama-server"
+        ctx.state.active_runtime = {"generation": 1, "tool": "llama-server"}
         stderr = io.StringIO()
 
         with contextlib.redirect_stderr(stderr):
@@ -728,7 +735,57 @@ class ProcessStateReapTests(unittest.TestCase):
         self.assertFalse(stopped)
         self.assertIs(ctx.state.process, process)
         self.assertEqual(ctx.state.active_process_tool, "llama-server")
+        self.assertEqual(ctx.state.active_runtime, {"generation": 1, "tool": "llama-server"})
         self.assertIn("survived kill", stderr.getvalue())
+
+    def test_generation_bound_stop_refuses_stale_request_before_signaling(self):
+        ctx = AppContext()
+        process = FakeLaunchedProcess(returncode=None)
+        ctx.state.process = process
+        ctx.state.active_process_tool = "llama-server"
+        ctx.state.runtime_generation = 2
+        ctx.state.active_runtime = {"generation": 2, "tool": "llama-server"}
+
+        result = process_manager.stop_process_for_generation(ctx, 1)
+
+        self.assertFalse(result["stopped"])
+        self.assertEqual(result["state"], "superseded")
+        self.assertEqual(result["generation"], 2)
+        self.assertEqual(process.signals, [])
+        self.assertIs(ctx.state.process, process)
+
+    def test_generation_bound_stop_signals_matching_runtime_atomically(self):
+        ctx = AppContext()
+        process = FakeLaunchedProcess(returncode=None)
+        ctx.state.process = process
+        ctx.state.active_process_tool = "llama-server"
+        ctx.state.runtime_generation = 3
+        ctx.state.active_runtime = {"generation": 3, "tool": "llama-server"}
+
+        result = process_manager.stop_process_for_generation(ctx, "3")
+
+        self.assertTrue(result["stopped"])
+        self.assertEqual(result["state"], "stopped")
+        self.assertEqual(result["generation"], 3)
+        self.assertEqual(len(process.signals), 1)
+        self.assertIsNone(ctx.state.process)
+        self.assertIsNone(ctx.state.active_runtime)
+
+    def test_generation_bound_stop_rejects_invalid_generation_without_signaling(self):
+        ctx = AppContext()
+        process = FakeLaunchedProcess(returncode=None)
+        ctx.state.process = process
+        ctx.state.active_process_tool = "llama-server"
+        ctx.state.runtime_generation = 1
+        ctx.state.active_runtime = {"generation": 1, "tool": "llama-server"}
+
+        for invalid in (None, True, 0, -1, "1.0", "not-a-generation"):
+            with self.subTest(invalid=invalid):
+                result = process_manager.stop_process_for_generation(ctx, invalid)
+                self.assertFalse(result["stopped"])
+                self.assertEqual(result["state"], "error")
+                self.assertEqual(process.signals, [])
+                self.assertIs(ctx.state.process, process)
 
     def test_send_input_reaps_naturally_exited_process(self):
         ctx = self.make_exited_context(0)

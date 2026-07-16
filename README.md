@@ -11,7 +11,7 @@ Llama GUI provides a browser UI to:
 - launch `llama-server` or `llama-cli` from beginner **Quick Launch** or full **Configure**
 - chat with streaming Markdown, Focus mode, collapsed reasoning, and optional zero-key web search
 - benchmark with `llama-bench` / `llama-perplexity`, monitor live stats, and use OpenAI-compatible API snippets
-- manage launch presets, sampler presets, Windows preset shortcuts, and in-app GitHub updates
+- manage launch presets, keep two server presets on configuration standby for quick switching, create Windows preset shortcuts, and run in-app GitHub updates
 
 Special thanks to ggml-org for [llama.cpp](https://github.com/ggml-org/llama.cpp).
 
@@ -168,6 +168,8 @@ If the updater says local changes are blocking the update, Windows users can clo
 
 Beginner launcher: model, mode (`API Server` or `Chat`), context, GPU offload, Auto Fit, templates, samplers. Shares state with **Configure**. Shows server address and command preview before launch.
 
+The **Model Switcher** card can assign exactly two saved full `llama-server` presets. “Standby” means the configuration is saved and ready to preflight; it does not keep a second model in RAM or VRAM. Switching validates the executable and model source, stops the single active process, then waits for the replacement server to report ready. This is a hard cutover rather than llama-swap-style routing, so external API calls may briefly fail while the new model loads.
+
 ### Configure
 
 Full flag browser (search, expand/collapse, beginner tips), command preview, **Custom Launch Args** (shell-like quoting; duplicates of UI flags warn; unparseable input blocks launch), server URL preview, and live stats bar for `llama-server`.
@@ -219,7 +221,7 @@ Quick Launch, Configure, and Chat samplers share one state. Loading a full app p
 
 - `config.json` — installed release/backend metadata
 - `presets/` — full app presets
-- browser `localStorage` — custom sampler presets, chat conversations, Chat Web Search settings
+- browser `localStorage` — custom sampler presets, two Model Switcher preset-name assignments, chat conversations, Chat Web Search settings
 - API keys stay in memory only (never in presets/exports, including via Custom Launch Args) and are snapshotted at launch
 
 Architecture and file ownership: [`docs/directory.md`](docs/directory.md).

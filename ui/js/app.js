@@ -11,11 +11,13 @@ flagCore.setCurrentToolValue("llama-server");
 flagCore.replaceFlagValues(getDefaultValues());
 let outputTimer = null;
 let statsTimer = null;
+let statsInitialTimer = null;
+let statsEpoch = 0;
+let statsActiveEpoch = null;
+let statsAbortController = null;
 let memoryEstimateRequestId = 0;
-let pollOutputActive = false;
-let pollStatsActive = false;
+let pollOutputActiveEpoch = null;
 let pollOutputFailCount = 0;
-let serverReadyNotified = false;
 const TOAST_MAX_VISIBLE = 5;
 const DEFAULT_TOAST_DURATION_MS = 4000;
 
@@ -28,6 +30,7 @@ apiTab.configure({
     flagCore,
     copyText,
     getLatestStatus: () => latestStatus,
+    getLifecycleSnapshot: () => processLifecycle.getSnapshot(),
 });
 const {
     getServerBaseUrl,
@@ -40,6 +43,9 @@ const chatUi = window.LlamaGui.chatUi;
 const samplerPresets = window.LlamaGui.samplerPresets;
 const quickLaunchUi = window.LlamaGui.quickLaunchUi;
 const benchmarkUi = window.LlamaGui.benchmarkUi;
+const processLifecycle = window.LlamaGui.processLifecycle;
+const modelSwitchUi = window.LlamaGui.modelSwitchUi;
+const presetsApi = window.LlamaGui.presets;
 samplerPresets.configure({
     flagCore,
     getFlags: () => FLAGS,
@@ -84,7 +90,7 @@ quickLaunchUi.configure({
     normalizeSamplerPresetValues: samplerPresets.normalizeSamplerPresetValues,
     collectSamplerValues: samplerPresets.collectSamplerValues,
     confirmAction,
-    hasLaunchModelArg,
+    hasLaunchModelArg: flagCore.hasLaunchModelArg,
 });
 benchmarkUi.configure({
     flagCore,
@@ -94,7 +100,33 @@ benchmarkUi.configure({
     getDefaultFlagValues: getDefaultValues,
     getLatestStatus: () => latestStatus,
     refreshRuntimeStatusPanels,
+    processLifecycle,
 });
+processLifecycle.configure({
+    fetchJson,
+    refreshStatus: () => fetchJson("/api/status"),
+    buildLaunchRequest: buildManualLaunchRequest,
+    abortChat: () => chatUi.abortActiveStream(),
+    invalidateOutput: stopOutputPolling,
+    invalidateStats: stopStatsPolling,
+    startOutput: handleLifecycleProcessStarted,
+    startStats: startStatsPolling,
+    postReady: handleLifecycleReady,
+    onFailed: handleLifecycleFailure,
+});
+window.LlamaGui.manager.setAcceptedStatusObserver(reconcileAuthoritativeStatus);
+modelSwitchUi.configure({
+    fetchPresetEntries: fetchModelSwitcherPresetEntries,
+    findPresetByName: presetsApi.findPresetByName,
+    getAssignments: modelSwitchUi.getAssignments,
+    getAssignmentIssues: modelSwitchUi.getAssignmentIssues,
+    getStorageStatus: modelSwitchUi.getStorageStatus,
+    getLatestBackendStatus: () => latestStatus,
+    getLifecycleSnapshot: () => processLifecycle.getSnapshot(),
+    getPresetFingerprint: entry => entry && entry.preset_fingerprint || "",
+    switchSlot: switchModelSlot,
+});
+processLifecycle.subscribe(handleLifecycleSnapshot);
 
 function syncUiAfterToolChange(nextTool) {
     const toolSel = document.getElementById("tool-select");
@@ -112,6 +144,117 @@ function syncUiAfterSharedStateChange() {
     restoreCustomLaunchArgsInput();
     flagCore.updateCommandPreview();
     refreshChatSidebarUI();
+}
+
+async function fetchModelSwitcherPresetEntries() {
+    const entries = await presetsApi.fetchPresetEntries();
+    const assignments = modelSwitchUi.getAssignments();
+    const assignedNames = new Set([
+        assignments.slots.a.preset,
+        assignments.slots.b.preset,
+    ].filter(Boolean));
+    return Promise.all(entries.map(async entry => {
+        const normalized = presetsApi.normalizePresetData(entry && entry.data);
+        let presetFingerprint = "";
+        if (assignedNames.has(String(entry && entry.name || ""))) {
+            try {
+                const result = await fetchJson("/api/presets/fingerprint", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ fingerprint_data: normalized }),
+                });
+                presetFingerprint = String(result && result.preset_fingerprint || "");
+            } catch (error) {
+                console.debug("Could not fingerprint Model Switcher preset", error);
+            }
+        }
+        return Object.assign({}, entry, { preset_fingerprint: presetFingerprint });
+    }));
+}
+
+async function resolveModelSwitchTarget(slotId) {
+    const assignments = modelSwitchUi.getAssignments();
+    const presetName = assignments.slots[slotId] && assignments.slots[slotId].preset;
+    if (!presetName) throw new Error(`Model ${slotId.toUpperCase()} is not assigned.`);
+
+    const entries = await presetsApi.fetchPresetEntries();
+    const entry = presetsApi.findPresetByName(entries, presetName);
+    if (!entry) throw new Error(`Preset "${presetName}" no longer exists.`);
+    if (!entry.full) throw new Error(`Preset "${presetName}" is not a full launcher preset.`);
+    if (entry.data.tool !== "llama-server") throw new Error(`Preset "${presetName}" does not use llama-server.`);
+
+    const presetData = presetsApi.normalizePresetData(entry.data);
+    const prepared = presetsApi.preparePresetLaunchState(presetData, { preserveApiKey: true });
+    const launch = flagCore.buildLaunchArgs(prepared);
+    if (launch.error) throw new Error(launch.error);
+    if (!flagCore.hasLaunchModelArg(launch.args)) throw new Error(`Preset "${presetName}" has no model source.`);
+
+    const preflight = await fetchJson("/api/launch/preflight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            tool: "llama-server",
+            args: launch.args,
+            fingerprint_data: presetData,
+        }),
+    });
+    if (!preflight || !preflight.ok || !preflight.preset_fingerprint) {
+        throw new Error("The target preset could not be validated.");
+    }
+
+    return {
+        tool: "llama-server",
+        args: launch.args,
+        launch_context: {
+            source: "model-switcher",
+            slot: slotId,
+            preset: presetName,
+            preset_fingerprint: preflight.preset_fingerprint,
+        },
+        presetData,
+        presetName,
+        slotId,
+    };
+}
+
+function getRuntimeDisplayLabel(runtime) {
+    if (!runtime) return "";
+    return String(runtime.alias || runtime.preset || runtime.model || "local model");
+}
+
+async function switchModelSlot(slotId) {
+    const previousRuntime = processLifecycle.getSnapshot().activeRuntime
+        || (latestStatus && latestStatus.active_runtime)
+        || null;
+    const outcome = await processLifecycle.switchRuntime({
+        slot: slotId,
+        resolveTarget: resolveModelSwitchTarget,
+        invalidateOutput: stopOutputPolling,
+        startOutput: (...args) => {
+            clearOutput();
+            handleLifecycleProcessStarted(...args);
+        },
+        applyTarget: target => {
+            presetsApi.applyPresetData(target.presetData, { preserveApiKey: true });
+            syncUiAfterSharedStateChange();
+        },
+    });
+    if (outcome.ok && previousRuntime && outcome.runtime) {
+        chatUi.addModelTransitionDivider(
+            getRuntimeDisplayLabel(previousRuntime),
+            getRuntimeDisplayLabel(outcome.runtime)
+        );
+    } else if (!outcome.ok && outcome.status && outcome.status.running && !outputTimer) {
+        resumeRuntimePolling(outcome.status);
+    }
+    return outcome;
+}
+
+function resumeRuntimePolling(status) {
+    const runtime = status && status.active_runtime;
+    if (!runtime) return;
+    startOutputPolling();
+    if (runtime.tool === "llama-server") startStatsPolling();
 }
 
 function setCustomLaunchArgsMessages(result = {}) {
@@ -335,10 +478,12 @@ function syncQuickLaunchModelOptions() {
 
 function refreshQuickLaunchUI() {
     quickLaunchUi.refresh();
+    modelSwitchUi.refresh().catch(error => console.debug("Failed to refresh Model Switcher", error));
 }
 
 function initQuickLaunch() {
     quickLaunchUi.init();
+    modelSwitchUi.init();
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -397,7 +542,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const initStatus = await checkStatus();
     if (initStatus && initStatus.running) {
-        restoreRunningState(initStatus);
+        await restoreRunningState(initStatus);
     }
     await loadStartupPresetFromUrl();
 });
@@ -443,14 +588,19 @@ function switchTab(tabId) {
     if (sidebar) sidebar.classList.remove("open");
     if (tabId === "presets") loadPresets();
     if (tabId === "benchmarking") benchmarkUi.onShow();
-    if (tabId === "quick-launch") refreshQuickLaunchUI();
+    if (tabId === "quick-launch") {
+        refreshQuickLaunchUI();
+        refreshRuntimeStatusPanels();
+        modelSwitchUi.refresh({ reloadPresets: true })
+            .catch(error => console.debug("Failed to reload Model Switcher presets", error));
+    }
     if (tabId === "chat") {
         refreshChatSidebarUI();
         refreshRuntimeStatusPanels();
     }
     if (tabId === "configure") flagCore.updateCommandPreview();
     if (tabId === "api") {
-        Promise.resolve(checkStatus()).finally(() => {
+        Promise.resolve(refreshRuntimeStatusPanels()).finally(() => {
             updateApiEndpoints();
             remoteTunnelUi.refreshStatus();
         });
@@ -544,148 +694,147 @@ function getToolBinaryName(tool) {
     return tool + getExecutableSuffix();
 }
 
-function restoreRunningState(status) {
-    if (!status || !status.running) return;
+function handleLifecycleSnapshot(state) {
+    const launchBtn = document.getElementById("btn-launch");
+    const stopBtn = document.getElementById("btn-stop");
+    if (!launchBtn || !stopBtn) return;
 
-    const tool = status.active_process_tool || "llama-server";
-    if (tool === "llama-bench" || tool === "llama-perplexity") {
-        switchTab("benchmarking");
-        if (benchmarkUi.restoreRunningState(status)) {
-            updateQuickLaunchActionButtons();
-            refreshRuntimeStatusPanels();
-        }
-        return;
+    const transitional = state.phase === "starting" || state.phase === "loading" || state.phase === "stopping";
+    const hasProcess = Boolean(state.activeRuntime) || transitional;
+    launchBtn.classList.toggle("hidden", hasProcess);
+    launchBtn.disabled = Boolean(state.busy);
+    stopBtn.classList.toggle("hidden", !hasProcess);
+    stopBtn.disabled = state.phase === "stopping";
+
+    const outputSection = document.getElementById("output-section");
+    if (outputSection && hasProcess) outputSection.classList.remove("hidden");
+    const inputRow = document.getElementById("input-row");
+    if (inputRow) {
+        inputRow.classList.toggle("hidden", !(state.activeRuntime && state.activeRuntime.tool === "llama-cli"));
     }
+    const serverAddress = document.getElementById("server-address");
+    if (serverAddress && !state.activeRuntime) serverAddress.classList.add("hidden");
 
-    flagCore.setCurrentTool(tool);
-    const toolSelect = document.getElementById("tool-select");
-    if (toolSelect) toolSelect.value = tool;
-
-    if (status.api_target) {
-        const patch = {};
-        if (status.api_target.host) patch.host = status.api_target.host;
-        if (status.api_target.port) patch.port = status.api_target.port;
-        if (Object.keys(patch).length > 0) flagCore.setMultipleFlagValues(patch);
-    }
-
-    document.getElementById("btn-launch").classList.add("hidden");
-    document.getElementById("btn-stop").classList.remove("hidden");
-    document.getElementById("output-section").classList.remove("hidden");
     updateQuickLaunchActionButtons();
-
-    if (tool === "llama-cli") {
-        document.getElementById("input-row").classList.remove("hidden");
-    } else {
-        document.getElementById("input-row").classList.add("hidden");
+    updateChatStatusBadge();
+    updateApiEndpoints();
+    if (document.getElementById("model-switch-card")) {
+        modelSwitchUi.refresh().catch(error => console.debug("Failed to refresh Model Switcher", error));
     }
+}
 
-    appendOutput("--- Reconnected to running " + tool + " process ---");
-    startOutputPolling();
-
+function handleLifecycleProcessStarted(initialCursor, runtime, _state, launchResult) {
+    const tool = runtime && runtime.tool ? runtime.tool : "llama.cpp";
+    if (launchResult) {
+        appendOutput(`Started ${tool}${launchResult.pid ? ` (PID: ${launchResult.pid})` : ""}`);
+        if (launchResult.command) appendOutput(launchResult.command);
+        appendOutput("---");
+    }
+    startOutputPolling(initialCursor);
     if (tool === "llama-server") {
         updateServerAddressPreview();
         updateQuickServerAddressPreview();
-        startStatsPolling();
     }
-
-    updateApiEndpoints();
-    updateChatStatusBadge();
 }
 
-async function launchLlama() {
+async function handleLifecycleReady(runtime) {
+    if (runtime && runtime.tool === "llama-server") {
+        const { baseUrl } = getServerEndpointConfig();
+        appendOutput(`Server ready at ${baseUrl}`);
+        appendOutput(`Web UI: ${baseUrl}/`);
+        showToast("Server is ready!", "success");
+    }
+    await refreshRuntimeStatusPanels();
+}
+
+async function handleLifecycleFailure(message) {
+    appendOutput("ERROR: " + message);
+    await refreshRuntimeStatusPanels();
+}
+
+async function handleReconciliationFailure(message) {
+    appendOutput("ERROR: " + message);
+    showToast(message, "error", { duration: 0 });
+    updateChatStatusBadge();
+    updateApiEndpoints();
+    benchmarkUi.refreshStatus();
+    await modelSwitchUi.refresh();
+}
+
+async function restoreRunningState(status) {
+    if (!status || !status.running) return;
+
+    const tool = status.active_process_tool || "llama-server";
+    const lifecycleState = processLifecycle.getSnapshot();
+    const statusGeneration = Number(status.active_runtime && status.active_runtime.generation);
+    const lifecycleGeneration = Number(lifecycleState.activeRuntime && lifecycleState.activeRuntime.generation);
+    const lifecycleAlreadyRestored = Number.isSafeInteger(statusGeneration)
+        && statusGeneration >= 1
+        && statusGeneration === lifecycleGeneration
+        && lifecycleState.ready === true;
+    if (tool === "llama-bench" || tool === "llama-perplexity") {
+        switchTab("benchmarking");
+        if (lifecycleAlreadyRestored || benchmarkUi.restoreRunningState(status)) {
+            if (!lifecycleAlreadyRestored) {
+                await processLifecycle.restore(status, {
+                    startOutput: () => {},
+                    postReady: () => {},
+                });
+            }
+            updateQuickLaunchActionButtons();
+            await refreshRuntimeStatusPanels();
+        }
+        return;
+    }
+    appendOutput("--- Reconnected to running " + tool + " process ---");
+    if (!lifecycleAlreadyRestored) await processLifecycle.restore(status);
+}
+
+function buildManualLaunchRequest() {
     const result = flagCore.getLaunchArgs();
     if (result.error) {
-        showToast(result.error, "error", { duration: 0 });
-        return;
+        throw new Error(result.error);
     }
     const args = result.args;
     const tool = flagCore.getCurrentTool();
-    if (!hasLaunchModelArg(args)) {
-        showToast("Select a model or provide an HF repo before launching.", "warning");
-        refreshQuickLaunchUI();
-        return;
+    if (!flagCore.hasLaunchModelArg(args)) {
+        throw new Error("Select a model or provide a remote model source before launching.");
     }
-
-    document.getElementById("btn-launch").classList.add("hidden");
-    document.getElementById("btn-stop").classList.remove("hidden");
-    document.getElementById("output-section").classList.remove("hidden");
-    updateQuickLaunchActionButtons();
-
-    if (tool === "llama-cli") {
-        document.getElementById("input-row").classList.remove("hidden");
-    } else {
-        document.getElementById("input-row").classList.add("hidden");
-    }
-
-    clearOutput();
-
-    try {
-        const launchResult = await fetchJson("/api/launch", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tool, args }),
-        });
-        if (launchResult.error) {
-            appendOutput("ERROR: " + launchResult.error);
-            document.getElementById("btn-launch").classList.remove("hidden");
-            document.getElementById("btn-stop").classList.add("hidden");
-            updateQuickLaunchActionButtons();
-        } else {
-            appendOutput("Started " + tool + " (PID: " + launchResult.pid + ")");
-            appendOutput(launchResult.command);
-            appendOutput("---");
-            startOutputPolling(launchResult.output_cursor);
-            updateServerAddressPreview();
-
-            if (tool === "llama-server") {
-                const { baseUrl } = getServerEndpointConfig();
-                appendOutput(`Server running at ${baseUrl}`);
-                appendOutput(`Web UI: ${baseUrl}/`);
-                startStatsPolling();
-            }
-            await refreshRuntimeStatusPanels();
-        }
-    } catch (e) {
-        appendOutput("ERROR: " + e.message);
-        document.getElementById("btn-launch").classList.remove("hidden");
-        document.getElementById("btn-stop").classList.add("hidden");
-        updateQuickLaunchActionButtons();
-        updateChatStatusBadge();
-    }
+    return { tool, args };
 }
 
-function hasLaunchModelArg(args) {
-    return (args || []).some((entry) => {
-        const entryValues = Array.isArray(entry) ? entry : [entry];
-        return entryValues.some((value) => {
-            const token = String(value || "");
-            return token === "-m" || token === "-hf" || token === "--model" || token === "--hf-repo"
-                || token.startsWith("-m=") || token.startsWith("-hf=")
-                || token.startsWith("--model=") || token.startsWith("--hf-repo=");
-        });
-    });
+async function launchLlama() {
+    let request;
+    try {
+        request = buildManualLaunchRequest();
+    } catch (error) {
+        showToast(error.message, "error", { duration: 0 });
+        refreshQuickLaunchUI();
+        return { ok: false, error: error.message };
+    }
+    clearOutput();
+    const outcome = await processLifecycle.launch(request);
+    if (!outcome.ok && !outcome.cancelled && outcome.error) {
+        showToast(outcome.error, "error", { duration: 0 });
+    }
+    return outcome;
 }
 
 async function stopLlama() {
-    try {
-        await fetchJson("/api/stop", { method: "POST" });
-    } catch (e) {
-        console.debug("Stop request failed", e);
+    const outcome = await processLifecycle.stop();
+    if (outcome.ok) {
+        appendOutput("--- Process stopped ---");
+        await refreshRuntimeStatusPanels();
+    } else if (!outcome.cancelled && outcome.error) {
+        appendOutput("ERROR: " + outcome.error);
+        showToast(outcome.error, "error", { duration: 0 });
+        if (outcome.status && outcome.status.running) resumeRuntimePolling(outcome.status);
     }
-    stopOutputPolling();
-    stopStatsPolling();
-    appendOutput("--- Process stopped ---");
-    document.getElementById("btn-launch").classList.remove("hidden");
-    document.getElementById("btn-stop").classList.add("hidden");
-    document.getElementById("input-row").classList.add("hidden");
-    document.getElementById("server-address").classList.add("hidden");
-    updateQuickLaunchActionButtons();
-    await refreshRuntimeStatusPanels();
+    return outcome;
 }
 
 function startOutputPolling(initialCursor = null) {
     processOutputCursor.reset(initialCursor);
-    serverReadyNotified = false;
     pollOutputFailCount = 0;
     if (outputTimer) clearInterval(outputTimer);
     outputTimer = setInterval(pollOutput, 300);
@@ -696,20 +845,37 @@ function stopOutputPolling() {
         clearInterval(outputTimer);
         outputTimer = null;
     }
+    processOutputCursor.reset();
 }
 
 function startStatsPolling() {
     stopStatsPolling();
+    const epoch = statsEpoch;
+    chatStatsBaseline = { promptTokens: 0, genTokens: 0 };
+    chatStatsRaw = { promptTokens: 0, genTokens: 0 };
     document.getElementById("stats-bar").classList.remove("hidden");
-    setTimeout(() => pollStats(), 2000);
-    statsTimer = setInterval(pollStats, 3000);
+    statsInitialTimer = setTimeout(() => {
+        statsInitialTimer = null;
+        pollStats(epoch);
+    }, 2000);
+    statsTimer = setInterval(() => pollStats(epoch), 3000);
 }
 
 function stopStatsPolling() {
+    statsEpoch += 1;
+    if (statsInitialTimer) {
+        clearTimeout(statsInitialTimer);
+        statsInitialTimer = null;
+    }
     if (statsTimer) {
         clearInterval(statsTimer);
         statsTimer = null;
     }
+    if (statsAbortController) {
+        statsAbortController.abort();
+        statsAbortController = null;
+    }
+    statsActiveEpoch = null;
     document.getElementById("stats-bar").classList.add("hidden");
     document.getElementById("stats-prompt-tokens").textContent = "--";
     document.getElementById("stats-prompt-speed").textContent = "--";
@@ -796,17 +962,21 @@ function snapshotStatsBaseline() {
     chatStatsBaseline.genTokens = chatStatsRaw.genTokens;
 }
 
-async function pollStats() {
-    if (pollStatsActive) return;
-    pollStatsActive = true;
+async function pollStats(epoch = statsEpoch) {
+    if (epoch !== statsEpoch || statsActiveEpoch === epoch) return;
+    statsActiveEpoch = epoch;
+    const controller = new AbortController();
+    statsAbortController = controller;
     try {
         const { host, port } = getServerEndpointConfig();
         const params = new URLSearchParams({ host, port: String(port) });
         const resp = await fetch(`/api/llama/metrics?${params.toString()}`, {
             headers: getApiAuthorizationHeaders(),
+            signal: controller.signal,
         });
-        if (!resp.ok) return;
+        if (epoch !== statsEpoch || !resp.ok) return;
         const text = await resp.text();
+        if (epoch !== statsEpoch) return;
         const metrics = {};
         for (const line of text.split("\n")) {
             if (line.startsWith("#") || !line.trim()) continue;
@@ -819,8 +989,9 @@ async function pollStats() {
         const genSpeed = metrics["llamacpp:predicted_tokens_seconds"];
         let kvUsage = metrics["llamacpp:kv_cache_usage_ratio"];
         if (kvUsage === undefined) {
-            kvUsage = await fetchSlotKvUsage(host, port);
+            kvUsage = await fetchSlotKvUsage(host, port, controller.signal);
         }
+        if (epoch !== statsEpoch) return;
         if (promptTokens !== undefined) chatStatsRaw.promptTokens = promptTokens;
         if (genTokens !== undefined) chatStatsRaw.genTokens = genTokens;
         const deltaPrompt = promptTokens !== undefined ? Math.max(0, promptTokens - chatStatsBaseline.promptTokens) : null;
@@ -844,9 +1015,12 @@ async function pollStats() {
             document.getElementById("stats-kv-usage").textContent = (kvUsage * 100).toFixed(0) + "%";
         }
     } catch (e) {
-        console.debug("Failed to fetch llama-server metrics", e);
+        if (e.name !== "AbortError" && epoch === statsEpoch) {
+            console.debug("Failed to fetch llama-server metrics", e);
+        }
     } finally {
-        pollStatsActive = false;
+        if (statsActiveEpoch === epoch) statsActiveEpoch = null;
+        if (statsAbortController === controller) statsAbortController = null;
     }
 }
 
@@ -855,14 +1029,34 @@ async function refreshRuntimeStatusPanels() {
     updateChatStatusBadge();
     updateApiEndpoints();
     benchmarkUi.refreshStatus();
+    modelSwitchUi.refresh().catch(error => console.debug("Failed to refresh Model Switcher", error));
     return status;
 }
 
-async function fetchSlotKvUsage(host, port) {
+async function reconcileAuthoritativeStatus(status) {
+    const tool = status && status.active_process_tool;
+    const before = processLifecycle.getSnapshot();
+    const incomingGeneration = Number(status && status.active_runtime && status.active_runtime.generation);
+    const currentGeneration = Number(before.activeRuntime && before.activeRuntime.generation);
+    const shouldAdoptBenchmark = (tool === "llama-bench" || tool === "llama-perplexity")
+        && status.running === true
+        && Number.isSafeInteger(incomingGeneration)
+        && incomingGeneration >= 1
+        && (incomingGeneration !== currentGeneration || before.activeRuntime?.tool !== tool || before.ready !== true);
+    const reconcileOptions = tool === "llama-bench" || tool === "llama-perplexity"
+        ? { startOutput: () => {}, postReady: () => {}, onFailed: handleReconciliationFailure }
+        : { postReady: () => {}, onFailed: handleReconciliationFailure };
+    const outcome = await processLifecycle.reconcile(status, reconcileOptions);
+    if (outcome.ok && shouldAdoptBenchmark) benchmarkUi.restoreRunningState(status);
+    return outcome;
+}
+
+async function fetchSlotKvUsage(host, port, signal) {
     try {
         const params = new URLSearchParams({ host, port: String(port) });
         const resp = await fetch(`/api/llama/slots?${params.toString()}`, {
             headers: getApiAuthorizationHeaders(),
+            signal,
         });
         if (!resp.ok) return undefined;
         const slots = await resp.json();
@@ -889,20 +1083,25 @@ function getSlotKvUsage(slots) {
 }
 
 async function pollOutput() {
-    if (pollOutputActive) return;
-    pollOutputActive = true;
-    let request = null;
+    const request = processOutputCursor.getRequest();
+    if (pollOutputActiveEpoch === request.epoch) return;
+    pollOutputActiveEpoch = request.epoch;
     try {
-        request = processOutputCursor.getRequest();
         const data = await fetchJson(request.url);
+        const observedGeneration = Number(data && data.runtime_generation);
+        const expectedGeneration = Number(processLifecycle.getSnapshot().activeRuntime?.generation);
+        if (
+            data && data.running
+            && Number.isSafeInteger(observedGeneration)
+            && observedGeneration >= 1
+            && (!Number.isSafeInteger(expectedGeneration) || observedGeneration !== expectedGeneration)
+        ) {
+            processOutputCursor.reset();
+            await refreshRuntimeStatusPanels();
+            return;
+        }
         const consumed = processOutputCursor.consume(data, request.epoch);
         if (!consumed.current) return;
-        for (const line of consumed.lines) {
-            if (!serverReadyNotified && /HTTP server listening/i.test(line)) {
-                serverReadyNotified = true;
-                showToast("Server is ready!", "success");
-            }
-        }
         if (!data.running) {
             stopOutputPolling();
             stopStatsPolling();
@@ -912,11 +1111,14 @@ async function pollOutput() {
             document.getElementById("input-row").classList.add("hidden");
             document.getElementById("server-address").classList.add("hidden");
             updateQuickLaunchActionButtons();
-            setTimeout(() => refreshRuntimeStatusPanels(), 500);
+            setTimeout(async () => {
+                const status = await refreshRuntimeStatusPanels();
+                if (status && !status.running) await processLifecycle.restore(status);
+            }, 500);
         }
         pollOutputFailCount = 0;
     } catch (e) {
-        if (request && !processOutputCursor.isCurrent(request.epoch)) return;
+        if (!processOutputCursor.isCurrent(request.epoch)) return;
         pollOutputFailCount++;
         if (pollOutputFailCount <= 5) {
             appendOutput("Output polling error (retry " + pollOutputFailCount + "/5): " + e.message);
@@ -932,7 +1134,7 @@ async function pollOutput() {
             refreshRuntimeStatusPanels();
         }
     } finally {
-        pollOutputActive = false;
+        if (pollOutputActiveEpoch === request.epoch) pollOutputActiveEpoch = null;
     }
 }
 
@@ -1068,6 +1270,7 @@ chatUi.configure({
     confirmAction,
     getServerEndpointConfig,
     getLatestStatus: () => latestStatus,
+    getLifecycleSnapshot: () => processLifecycle.getSnapshot(),
     snapshotStatsBaseline,
     switchTab,
     getApiAuthorizationHeaders,

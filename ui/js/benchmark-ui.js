@@ -91,9 +91,10 @@
     let getDefaultFlagValues = () => ({});
     let getLatestStatus = () => null;
     let refreshRuntimeStatusPanels = null;
+    let processLifecycle = null;
     let statusTimer = null;
     let outputTimer = null;
-    let pollOutputActive = false;
+    let pollOutputActiveEpoch = null;
     const processOutputCursor = root.outputCursor.create(appendOutput);
     let outputLines = [];
     let cachedPresets = [];
@@ -723,30 +724,52 @@
             clearInterval(outputTimer);
             outputTimer = null;
         }
+        processOutputCursor.reset();
+    }
+
+    async function syncLifecycleAfterExit() {
+        if (!refreshRuntimeStatusPanels) return;
+        const status = await refreshRuntimeStatusPanels();
+        if (processLifecycle && status && !status.running) {
+            await processLifecycle.restore(status);
+        }
     }
 
     async function pollOutput() {
-        if (!fetchJson || pollOutputActive) return;
-        pollOutputActive = true;
-        let request = null;
+        if (!fetchJson) return;
+        const request = processOutputCursor.getRequest();
+        if (pollOutputActiveEpoch === request.epoch) return;
+        pollOutputActiveEpoch = request.epoch;
         try {
-            request = processOutputCursor.getRequest();
             const data = await fetchJson(request.url);
+            const observedGeneration = Number(data && data.runtime_generation);
+            const expectedGeneration = Number(processLifecycle?.getSnapshot().activeRuntime?.generation);
+            if (
+                data && data.running
+                && Number.isSafeInteger(observedGeneration)
+                && observedGeneration >= 1
+                && (!Number.isSafeInteger(expectedGeneration) || observedGeneration !== expectedGeneration)
+            ) {
+                stopOutputPolling();
+                setRunningState(false);
+                if (refreshRuntimeStatusPanels) await refreshRuntimeStatusPanels();
+                return;
+            }
             const consumed = processOutputCursor.consume(data, request.epoch);
             if (!consumed.current) return;
             if (!data.running) {
                 stopOutputPolling();
                 appendOutput("--- Benchmark process exited ---");
                 setRunningState(false);
-                if (refreshRuntimeStatusPanels) refreshRuntimeStatusPanels();
+                syncLifecycleAfterExit();
             }
         } catch (e) {
-            if (request && !processOutputCursor.isCurrent(request.epoch)) return;
+            if (!processOutputCursor.isCurrent(request.epoch)) return;
             appendOutput("Output polling error: " + e.message);
             stopOutputPolling();
             setRunningState(false);
         } finally {
-            pollOutputActive = false;
+            if (pollOutputActiveEpoch === request.epoch) pollOutputActiveEpoch = null;
         }
     }
 
@@ -772,32 +795,46 @@
         appendOutput("Started " + result.tool);
         appendOutput(result.command);
         appendOutput("---");
-        try {
-            const launchResult = await fetchJson("/api/launch", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ tool: result.tool, args: result.args }),
-            });
-            appendOutput("PID: " + launchResult.pid);
-            startOutputPolling(launchResult.output_cursor);
-            if (refreshRuntimeStatusPanels) refreshRuntimeStatusPanels();
-        } catch (e) {
-            appendOutput("ERROR: " + e.message);
+        const outcome = await processLifecycle.launch(
+            { tool: result.tool, args: result.args },
+            {
+                operation: "benchmark-launch",
+                invalidateOutput: stopOutputPolling,
+                invalidateStats: () => {},
+                startOutput: (cursor, _runtime, _state, launchResult) => {
+                    appendOutput("PID: " + launchResult.pid);
+                    startOutputPolling(cursor);
+                },
+                postReady: () => refreshRuntimeStatusPanels && refreshRuntimeStatusPanels(),
+                onFailed: (message) => {
+                    appendOutput("ERROR: " + message);
+                    setRunningState(false);
+                    if (refreshRuntimeStatusPanels) refreshRuntimeStatusPanels();
+                },
+            }
+        );
+        if (!outcome.ok && !outcome.cancelled) {
             setRunningState(false);
-            if (refreshRuntimeStatusPanels) refreshRuntimeStatusPanels();
         }
     }
 
     async function stopBenchmark() {
-        try {
-            await fetchJson("/api/stop", { method: "POST" });
-        } catch (e) {
-            appendOutput("Stop request failed: " + e.message);
+        const outcome = await processLifecycle.stop({
+            operation: "benchmark-stop",
+            abortChat: () => {},
+            invalidateOutput: stopOutputPolling,
+            invalidateStats: () => {},
+            onFailed: (message) => {
+                appendOutput("Stop request failed: " + message);
+                setRunningState(true);
+                startOutputPolling();
+            },
+        });
+        if (outcome.ok) {
+            appendOutput("--- Benchmark stopped ---");
+            setRunningState(false);
+            if (refreshRuntimeStatusPanels) refreshRuntimeStatusPanels();
         }
-        stopOutputPolling();
-        appendOutput("--- Benchmark stopped ---");
-        setRunningState(false);
-        if (refreshRuntimeStatusPanels) refreshRuntimeStatusPanels();
     }
 
     function init() {
@@ -878,6 +915,7 @@
         refreshRuntimeStatusPanels = typeof options.refreshRuntimeStatusPanels === "function"
             ? options.refreshRuntimeStatusPanels
             : refreshRuntimeStatusPanels;
+        processLifecycle = options.processLifecycle || processLifecycle;
     }
 
     if (typeof window.addEventListener === "function") {
@@ -899,5 +937,6 @@
         normalizePresetData,
         flattenArgs,
         formatCommand,
+        _testPollOutput: pollOutput,
     };
 })();

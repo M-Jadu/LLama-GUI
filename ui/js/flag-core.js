@@ -42,6 +42,15 @@
         return flagValues;
     }
 
+    function buildEffectiveFlagValues(values) {
+        const effective = { ...getDefaultFlagValues(), ...(values || {}) };
+        const cloned = {};
+        for (const [key, value] of Object.entries(effective)) {
+            cloned[key] = cloneFlagValue(value);
+        }
+        return cloned;
+    }
+
     function patchFlagValues(patch) {
         for (const [flagId, value] of Object.entries(patch || {})) {
             if (value === undefined) {
@@ -114,7 +123,7 @@
     }
 
     function applyFlagValues(data) {
-        replaceFlagValues({ ...getDefaultFlagValues(), ...(data || {}) });
+        replaceFlagValues(buildEffectiveFlagValues(data));
         if (typeof afterApply === "function") {
             afterApply(flagValues);
         }
@@ -311,15 +320,37 @@
         return redacted;
     }
 
-    function getLaunchArgs() {
+    function hasLaunchModelArg(args) {
+        const modelFlags = new Set(["-m", "--model", "-hf", "--hf-repo", "-mu", "--model-url"]);
+        return (args || []).some(entry => {
+            const values = Array.isArray(entry) ? entry : [entry];
+            return values.some(value => {
+                const token = String(value || "");
+                const separator = token.indexOf("=");
+                const flag = separator === -1 ? token : token.slice(0, separator);
+                return modelFlags.has(flag);
+            });
+        });
+    }
+
+    function buildLaunchArgs(state) {
         const args = [];
         const warnings = [];
-        const toolBase = currentTool.replace("llama-", "");
+        const launchState = state && typeof state === "object" && !Array.isArray(state) ? state : {};
+        const tool = launchState.tool;
+        const values = launchState.flags && typeof launchState.flags === "object" && !Array.isArray(launchState.flags)
+            ? launchState.flags
+            : {};
+        const model = String(launchState.model || "");
+        if (tool !== "llama-server" && tool !== "llama-cli") {
+            return { args, error: "Unsupported llama.cpp tool.", warnings };
+        }
+        const toolBase = tool.replace("llama-", "");
 
         for (const f of getFlags()) {
             if (f.tool !== "both" && f.tool !== toolBase) continue;
-            if (typeof shouldOmitSpeculativeFlag === "function" && shouldOmitSpeculativeFlag(f, flagValues)) continue;
-            const val = flagValues[f.id];
+            if (typeof shouldOmitSpeculativeFlag === "function" && shouldOmitSpeculativeFlag(f, values)) continue;
+            const val = values[f.id];
             if (val === undefined || val === null || val === "") continue;
 
             if (f.type === "bool") {
@@ -364,7 +395,7 @@
                     args.push([f.flag, "0"]);
                     continue;
                 }
-                if ((f.id === "mirostat_lr" || f.id === "mirostat_ent") && !isMirostatEnabled(flagValues)) {
+                if ((f.id === "mirostat_lr" || f.id === "mirostat_ent") && !isMirostatEnabled(values)) {
                     continue;
                 }
                 if (shouldOmitFlagValue(f, val)) continue;
@@ -372,7 +403,7 @@
             }
         }
 
-        const customRaw = flagValues.custom_args;
+        const customRaw = values.custom_args;
         if (customRaw !== undefined && customRaw !== null && String(customRaw).trim()) {
             const parsedCustom = parseCustomLaunchArgs(customRaw);
             if (parsedCustom.error) {
@@ -389,7 +420,7 @@
             args.push(...parsedCustom.tokens);
         }
 
-        const modelName = selectedModel;
+        const modelName = model;
         if (modelName) {
             if (modelName.includes("..") || modelName.includes("/") || modelName.includes("\\")) {
                 return { args, error: "Invalid model filename.", warnings };
@@ -398,6 +429,14 @@
         }
 
         return { args, error: null, warnings };
+    }
+
+    function getLaunchArgs() {
+        return buildLaunchArgs({
+            tool: currentTool,
+            model: selectedModel,
+            flags: flagValues,
+        });
     }
 
     function updateCommandPreview() {
@@ -431,6 +470,7 @@
         setSelectedModelValue,
         getFlagValues: collectFlagValues,
         replaceFlagValues,
+        buildEffectiveFlagValues,
         patchFlagValues,
         configure,
         setMultipleFlagValues,
@@ -442,6 +482,8 @@
         normalizeGpuLayersValue,
         parseCustomLaunchArgs,
         redactSensitiveTokens,
+        hasLaunchModelArg,
+        buildLaunchArgs,
         getLaunchArgs,
         updateCommandPreview,
         registerApi,

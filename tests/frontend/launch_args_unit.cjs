@@ -50,6 +50,33 @@ function launchResult() {
 }
 
 {
+    const recognizedModelArgs = [
+        [["-m", "models/local.gguf"]],
+        [["--model", "models/local.gguf"]],
+        [["-hf", "owner/repo"]],
+        [["--hf-repo=owner/repo"]],
+        [["-mu", "https://example.test/model.gguf"]],
+        [["--model-url", "https://example.test/model.gguf"]],
+        ["--model-url=https://example.test/model.gguf?signature=a=b"],
+    ];
+    for (const args of recognizedModelArgs) {
+        context.modelArgs = args;
+        assert.equal(
+            vm.runInContext("window.LlamaGui.flagCore.hasLaunchModelArg(modelArgs)", context),
+            true,
+            `expected a recognized model source in ${JSON.stringify(args)}`
+        );
+    }
+    context.modelArgs = ["https://example.test/model.gguf", "--model-url-draft"];
+    assert.equal(
+        vm.runInContext("window.LlamaGui.flagCore.hasLaunchModelArg(modelArgs)", context),
+        false,
+        "model URLs and similarly prefixed flags must not count without a recognized model-source flag"
+    );
+    delete context.modelArgs;
+}
+
+{
     vm.runInContext(`
         window.LlamaGui.flagCore.setFlagValue("api_key", "primary-secret,backup-secret");
     `, context);
@@ -229,6 +256,73 @@ function launchResult() {
     assert.ok(args.includes("--spec-draft-n-max") && args.includes("15"));
     assert.ok(args.includes("-fa") && args.includes("on"));
     assert.ok(args.includes("--jinja"));
+}
+
+{
+    vm.runInContext(`
+        window.LlamaGui.flagCore.replaceFlagValues(getDefaultValues());
+        window.LlamaGui.flagCore.setSelectedModelValue("live-a.gguf");
+        window.LlamaGui.flagCore.setFlagValue("temperature", 0.11);
+    `, context);
+    const pendingBefore = vm.runInContext(`JSON.stringify({
+        tool: window.LlamaGui.flagCore.getCurrentTool(),
+        model: window.LlamaGui.flagCore.getSelectedModel(),
+        flags: window.LlamaGui.flagCore.getFlagValues(),
+    })`, context);
+    const target = vm.runInContext(`(() => {
+        const core = window.LlamaGui.flagCore;
+        const flags = core.buildEffectiveFlagValues({
+            temperature: 0.42,
+            custom_args: "--parallel 2",
+        });
+        return core.buildLaunchArgs({
+            tool: "llama-server",
+            model: "target-b.gguf",
+            flags,
+        });
+    })()`, context);
+    const targetArgs = Array.from(target.args).flat().map(String);
+    assert.ok(targetArgs.includes("models/target-b.gguf"));
+    assert.ok(targetArgs.includes("0.42"));
+    assert.ok(targetArgs.includes("--parallel") && targetArgs.includes("2"));
+    assert.ok(targetArgs.includes("-to") && targetArgs.includes("3600"), "effective target flags should include defaults");
+    assert.equal(target.error, null);
+    const pendingAfter = vm.runInContext(`JSON.stringify({
+        tool: window.LlamaGui.flagCore.getCurrentTool(),
+        model: window.LlamaGui.flagCore.getSelectedModel(),
+        flags: window.LlamaGui.flagCore.getFlagValues(),
+    })`, context);
+    assert.equal(pendingAfter, pendingBefore, "explicit target argument generation must not mutate pending state");
+
+    const liveArgs = flatLaunchArgs();
+    assert.ok(liveArgs.includes("models/live-a.gguf"));
+    assert.ok(liveArgs.includes("0.11"));
+    assert.ok(!liveArgs.includes("models/target-b.gguf"));
+}
+
+{
+    const pendingBefore = vm.runInContext(
+        "JSON.stringify(window.LlamaGui.flagCore.getFlagValues())",
+        context
+    );
+    const invalid = vm.runInContext(`window.LlamaGui.flagCore.buildLaunchArgs({
+        tool: "llama-server",
+        model: "target-b.gguf",
+        flags: { custom_args: "--flag 'unterminated" },
+    })`, context);
+    assert.match(invalid.error, /unmatched single quote/);
+    assert.equal(
+        vm.runInContext("JSON.stringify(window.LlamaGui.flagCore.getFlagValues())", context),
+        pendingBefore,
+        "invalid target args must not mutate pending state"
+    );
+
+    const unsupported = vm.runInContext(`window.LlamaGui.flagCore.buildLaunchArgs({
+        tool: "llama-bench",
+        model: "target-b.gguf",
+        flags: {},
+    })`, context);
+    assert.match(unsupported.error, /Unsupported/);
 }
 
 console.log("launch args unit tests passed");

@@ -81,7 +81,7 @@
 |-------|-----------|
 | `chat.py` | `/api/chat/completions` — SSE proxy with web search |
 | `benchmarks.py` | `/api/benchmark/wikitext2` — ensure WikiText-2 raw test file exists |
-| `process.py` | `/api/launch`, `/api/stop`, `/api/output`, `/api/send-input`, `/api/cleanup-llama` |
+| `process.py` | `/api/launch`, `/api/launch/preflight`, `/api/presets/fingerprint`, `/api/llama/health`, generation-bound `/api/stop`, `/api/output`, `/api/send-input`, `/api/cleanup-llama` |
 | `install.py` | `/api/releases`, `/api/install`, `/api/update`, `/api/download-progress` |
 | `metrics.py` | `/api/llama/metrics`, `/api/llama/slots` — Prometheus proxy |
 | `models.py` | `/api/models` — list GGUF files |
@@ -134,17 +134,19 @@ The frontend loads scripts in a strict dependency order via `ui/index.html`:
 4. `config-flags-ui.js` — Configure tab rendering
 5. `manager.js` — GitHub releases, install, update, shared `fetchJson()`
 6. `presets.js` — preset CRUD
-7. `app-data.js` — shared Quick Launch, context, sampler, and chat slider data
-8. `output-cursor.js` — shared process-output cursor consumer (`window.LlamaGui.outputCursor`)
-9. `sampler-presets.js` — sampler preset storage, import/export, apply behavior, and Configure controls (`window.LlamaGui.samplerPresets`)
-10. `chat-rendering.js` — markdown and low-level chat DOM rendering helpers (`window.LlamaGui.chatRendering`)
-11. `api-tab.js` — API endpoint/snippet rendering helpers (`window.LlamaGui.apiTab`)
-12. `hf-download-ui.js` — Quick Launch Hugging Face downloader UI (`window.LlamaGui.hfDownloadUi`)
-13. `remote-tunnel-ui.js` — API tab Cloudflare tunnel UI (`window.LlamaGui.remoteTunnelUi`)
-14. `quick-launch-ui.js` — Quick Launch controls and shared-state UI sync (`window.LlamaGui.quickLaunchUi`)
-15. `chat-ui.js` — Chat tab state, streaming, history, web search, and sampler controls (`window.LlamaGui.chatUi`)
-16. `benchmark-ui.js` — Benchmarking tab controls, argument adapter, output polling, and session-only summaries (`window.LlamaGui.benchmarkUi`)
-17. `app.js` — main orchestration (wires everything together)
+7. `model-switch-ui.js` — versioned two-slot preset-reference storage and Model Switcher namespace (`window.LlamaGui.modelSwitchUi`)
+8. `app-data.js` — shared Quick Launch, context, sampler, and chat slider data
+9. `output-cursor.js` — shared process-output cursor consumer (`window.LlamaGui.outputCursor`)
+10. `process-lifecycle.js` — guarded launch, stop, switch, restore, and health-readiness orchestration (`window.LlamaGui.processLifecycle`)
+11. `sampler-presets.js` — sampler preset storage, import/export, apply behavior, and Configure controls (`window.LlamaGui.samplerPresets`)
+12. `chat-rendering.js` — markdown and low-level chat DOM rendering helpers (`window.LlamaGui.chatRendering`)
+13. `api-tab.js` — API endpoint/snippet rendering helpers (`window.LlamaGui.apiTab`)
+14. `hf-download-ui.js` — Quick Launch Hugging Face downloader UI (`window.LlamaGui.hfDownloadUi`)
+15. `remote-tunnel-ui.js` — API tab Cloudflare tunnel UI (`window.LlamaGui.remoteTunnelUi`)
+16. `quick-launch-ui.js` — Quick Launch controls and shared-state UI sync (`window.LlamaGui.quickLaunchUi`)
+17. `chat-ui.js` — Chat tab state, streaming, history, web search, and sampler controls (`window.LlamaGui.chatUi`)
+18. `benchmark-ui.js` — Benchmarking tab controls, argument adapter, output polling, and session-only summaries (`window.LlamaGui.benchmarkUi`)
+19. `app.js` — main orchestration (wires everything together)
 
 **Do not change this order.** Each file depends on the ones above it. If you add a new module, place it after its dependencies and before its consumers.
 
@@ -162,10 +164,12 @@ The frontend loads scripts in a strict dependency order via `ui/index.html`:
 | `ui/js/theme-ui.js` | `window.LlamaGui.themeUi` | Theme preference persistence, root theme attribute application, color-scheme hints, and switcher button state |
 | `ui/js/flag-core.js` | `window.LlamaGui.flagCore` | Shared frontend flag state and launch-argument core. Owns `currentTool`, selected model, `flagValues`, shared setters, custom launch args parsing, preset apply/collect helpers, `getLaunchArgs()`, and command preview generation |
 | `ui/js/config-flags-ui.js` | `window.LlamaGui.configFlagsUi` | Configure tab flag rendering, search/filtering, expand/collapse state, type-specific flag input builders, input restoration, and high-risk `multi_enum` warnings |
-| `ui/js/manager.js` | `window.LlamaGui.manager` | GitHub release fetching, backend selection, installation progress UI, app update (git status/pull/restart), and the shared `fetchJson()` utility |
+| `ui/js/manager.js` | `window.LlamaGui.manager` | GitHub release fetching, backend selection, installation progress UI, app update (git status/pull/restart), the shared `fetchJson()` utility, and accepted-status observer wiring for runtime reconciliation |
 | `ui/js/presets.js` | `window.LlamaGui.presets` | Preset normalization, validation, saving, loading, updating, deleting, exporting, importing, and group-by-model rendering with search and collapsible groups |
+| `ui/js/model-switch-ui.js` | `window.LlamaGui.modelSwitchUi` | Versioned two-slot saved-preset references, strict storage normalization, duplicate detection, session-only fallback, accessible Quick Launch card state/rendering, and the drag-to-confirm sidebar shortcut wired through injected preset/runtime dependencies |
 | `ui/js/app-data.js` | (data) | `QUICK_PROFILES`, `BUILTIN_SAMPLER_PRESETS`, `CHAT_SAMPLER_SLIDER_MAP` |
 | `ui/js/output-cursor.js` | `window.LlamaGui.outputCursor` | Shared monotonic cursor consumer for main and benchmark process-output polling |
+| `ui/js/process-lifecycle.js` | `window.LlamaGui.processLifecycle` | Race-resistant launch, stop, switch, restore, authoritative-status reconciliation, and generation-keyed readiness controller with injectable UI hooks |
 | `ui/js/sampler-presets.js` | `window.LlamaGui.samplerPresets` | Sampler preset storage, normalization, apply behavior, import/export, and Configure-tab controls; writes sampler values through injected `flagCore` |
 | `ui/js/chat-rendering.js` | `window.LlamaGui.chatRendering` | Markdown and low-level chat DOM rendering helpers |
 | `ui/js/api-tab.js` | `window.LlamaGui.apiTab` | API tab endpoint/snippet data, base URL and authorization helpers, and rendering; reads shared state through injected `flagCore` |
@@ -201,7 +205,7 @@ The frontend loads scripts in a strict dependency order via `ui/index.html`:
 - Command preview and launch args are generated from shared state (`flagCore.getLaunchArgs()`), never per-tab copies.
 - Custom launch args are parsed and appended only by `flagCore.getLaunchArgs()`, after UI-managed flags and before the selected model arg.
 - Benchmarking reads Configure state or saved preset JSON without mutating them, builds tool-compatible benchmark args, can prepare the official WikiText-2 raw test file through `/api/benchmark/wikitext2`, and uses `/api/launch`, `/api/stop`, `/api/output`, and `/api/status` through the existing single process slot.
-- Server output is polled incrementally through the monotonic cursor contract on `/api/output` and streamed to the terminal panel.
+- Server output is polled incrementally through the monotonic cursor contract on `/api/output`; each response includes the authoritative runtime generation so stale tabs can invalidate old output and reconcile to a replacement process.
 - Chat completions are streamed via SSE from `/api/chat/completions` (backend proxies to `llama-server`).
 - Stats are polled from `llama-server`'s Prometheus `/metrics` endpoint, with KV/context usage falling back through the local `/slots` proxy when `llamacpp:kv_cache_usage_ratio` is unavailable.
 - Remote tunnel status is polled from `/api/remote-tunnel/status`.
@@ -402,6 +406,21 @@ Quick Launch renders simplified controls for:
 - Profile selector with summary text
 
 All controls write through `window.LlamaGui.flagCore` setters (`setFlagValue()` / `setMultipleFlagValues()`), keeping Configure and Quick Launch in sync.
+
+### Model Switcher
+
+The Model Switcher card stores references to two saved full `llama-server`
+presets. It owns assignment, missing/invalid/drift/failure presentation while
+`process-lifecycle.js` owns preflight, stop, launch, readiness, and recovery.
+Standby means configuration is ready to preflight, not that a second model is
+resident in RAM or VRAM.
+
+The compact slider above the sidebar theme selector is a shortcut for an
+already-active Model Switcher runtime. Its position comes from authoritative
+active-runtime identity, pointer activation requires dragging the thumb across
+the far-side threshold, and keyboard activation requires selecting with an
+arrow/Home/End key followed by Enter or Space. It is disabled until a switcher
+slot is active; initial launch and slot assignment remain in Quick Launch.
 
 ### Optional llama-server Authentication
 
@@ -712,6 +731,7 @@ Prefer `rg` for local search. On Windows/PowerShell, use patterns like `rg -n "p
 | `AGENTS.md` | Agent workflow rules, pitfalls, task recipes, file ownership |
 | `docs/directory.md` | This file — project structure and feature reference |
 | `docs/todo.md` | Known planned work |
+| `docs/model_switcher_plan.md` | Two-slot Quick Launch model switcher implementation plan and progress log |
 | `docs/flag_report.md` | Archived one-time flag audit report (May 2026) |
 | `docs/llama_cpp_compat_report.md` | Current llama.cpp compatibility report |
 | `docs/images/` | Screenshots used by README.md |
