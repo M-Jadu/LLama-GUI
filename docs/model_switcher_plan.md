@@ -574,3 +574,52 @@ Append entries; do not rewrite prior history.
 | 2026-07-16 | Phase 7 planning | Validated `docs/model_switcher_audit.md` against the current slot view precedence, lifecycle cancellation results, switch output hooks, frontend launch guard, and backend model-source flags. | Confirmed all three medium findings, the model-URL gap, and the terminal-preservation improvement; confirmed the unauthenticated health probe remains intentional. | Await approval, then implement the focused frontend remediation and regression tests before committing. |
 | 2026-07-16 | Phase 7 | Began the approved audit remediation for slot failure state, active-but-cleared display, model URL recognition, and terminal preservation. | Implementation and focused regressions in progress. | Complete the frontend fixes, run focused tests, then run the full suite and review the diff. |
 | 2026-07-16 | Phase 7 | Completed the audit remediation, including neutral cancellation with retained prior failures, authoritative healthy-runtime cleanup, active-but-cleared runtime display, model URL recognition, delayed terminal clearing, and single failure notification across direct and exception stop paths. | `npm.cmd test` passed: syntax for 41 frontend files, all focused units, 23-module loading, 151 flag definitions and installed compatibility checks, and Playwright smoke; `git diff --check` passed; final independent re-review found no P0-P2 issues. | Phase 7 complete. Phase 6 remains open only for the previously documented two-model, external API, and tunnel manual QA. |
+
+## Phase 8: Sidebar drag switcher
+
+Status: Complete
+
+Add a compact Model Switcher control above the sidebar theme selector without
+creating another launch or lifecycle implementation.
+
+Interaction contract:
+
+- The control reflects the authoritative active Model Switcher slot. It starts
+  visually at A but remains disabled until either A or B is the active runtime.
+- Pointer switching begins only from the thumb. Clicking the track or labels
+  does nothing, and an incomplete drag snaps back without switching.
+- A drag commits only after crossing the far-side threshold. Failed or
+  cancelled switches snap back to the authoritative active slot.
+- Keyboard use is deliberately two-step: an arrow, Home, or End key previews a
+  slot; Enter or Space confirms it; Escape or blur cancels the preview.
+- The existing `modelSwitchUi.handleSwitch()` and shared process lifecycle own
+  all switching, readiness, cancellation, and failure behavior.
+- Quick Launch remains the only place to assign slots and perform an initial
+  launch, keeping duplicated controls synchronized by construction.
+
+Tasks:
+
+- [x] Add compact accessible sidebar markup above the theme selector.
+- [x] Add responsive Tokyo/Cappuccino-compatible styling with no icon on the
+      slider thumb.
+- [x] Derive enabled, busy, active, and target states from existing slot views
+      and lifecycle snapshots.
+- [x] Implement drag threshold, snap-back, and two-step keyboard confirmation.
+- [x] Add focused state/threshold/markup regressions and run the frontend suite.
+- [x] Verify rendered layout and interactions through the Playwright browser
+      smoke harness.
+
+Exit criteria:
+
+- Track clicks and short drags never switch models.
+- A completed drag invokes exactly one existing switch operation.
+- Busy, unavailable, failed, cancelled, and successful transitions render from
+  authoritative lifecycle state and never leave the thumb stranded.
+- The control remains keyboard accessible and does not crowd or displace the
+  existing theme selector at desktop or mobile sidebar widths.
+
+Progress:
+
+| Date | Phase | Change | Validation | Result / Next step |
+|---|---|---|---|---|
+| 2026-07-16 | Phase 8 | Added the compact icon-free sidebar slider, authoritative active-slot rendering, drag-only threshold and snap-back, two-step keyboard confirmation, and shared lifecycle delegation. | `npm.cmd test` passed: syntax for 41 frontend files, all focused units, 23-module loading, 151 flag and installed-compatibility checks, and Playwright layout/track-click/short-drag/full-drag/keyboard smoke coverage; `git diff --check` passed. | Phase 8 complete. The pre-existing Phase 6 two-model, external API, and tunnel manual QA remain pending. |

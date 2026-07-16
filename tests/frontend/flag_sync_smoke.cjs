@@ -712,6 +712,109 @@ async function main() {
         assert.equal(activateCustomRequests.length, 1);
         assert.equal(pageErrors.length, 0, pageErrors.join("\n"));
 
+        await selectSection(page, "quick-launch");
+        const initialSidebarSlider = await page.evaluate(() => {
+            const panel = document.querySelector("#sidebar-model-switcher");
+            const theme = document.querySelector(".theme-switcher");
+            const slider = document.querySelector("#sidebar-model-switcher-slider");
+            const panelBox = panel.getBoundingClientRect();
+            const themeBox = theme.getBoundingClientRect();
+            return {
+                disabled: slider.getAttribute("aria-disabled"),
+                value: slider.getAttribute("aria-valuenow"),
+                panelBottom: panelBox.bottom,
+                themeTop: themeBox.top,
+                footerBottom: document.querySelector(".sidebar-footer").getBoundingClientRect().bottom,
+                viewportHeight: window.innerHeight,
+            };
+        });
+        assert.equal(initialSidebarSlider.disabled, "true");
+        assert.equal(initialSidebarSlider.value, "0");
+        assert.ok(initialSidebarSlider.panelBottom <= initialSidebarSlider.themeTop, "model and theme switchers must not overlap");
+        assert.ok(initialSidebarSlider.footerBottom <= initialSidebarSlider.viewportHeight, "sidebar footer must remain in the viewport");
+
+        await page.evaluate(async () => {
+            const entries = [
+                {
+                    name: "Sidebar Model A",
+                    full: true,
+                    fingerprint: "a".repeat(64),
+                    data: { tool: "llama-server", model: "alpha.gguf", flags: {} },
+                },
+                {
+                    name: "Sidebar Model B",
+                    full: true,
+                    fingerprint: "b".repeat(64),
+                    data: { tool: "llama-server", model: "beta.gguf", flags: {} },
+                },
+            ];
+            const activeRuntime = {
+                generation: 42,
+                tool: "llama-server",
+                source: "model-switcher",
+                slot: "a",
+                preset: "Sidebar Model A",
+                model: "alpha.gguf",
+                preset_fingerprint: "a".repeat(64),
+            };
+            window.__sidebarSwitchCalls = 0;
+            window.LlamaGui.modelSwitchUi.configure({
+                fetchPresetEntries: async () => entries,
+                findPresetByName: (list, name) => list.find(entry => entry.name === name) || null,
+                getPresetFingerprint: entry => entry.fingerprint || "",
+                getLatestBackendStatus: () => ({ running: true, active_runtime: activeRuntime }),
+                getLifecycleSnapshot: () => ({
+                    phase: "ready",
+                    ready: true,
+                    busy: false,
+                    activeRuntime,
+                }),
+                switchSlot: async () => {
+                    window.__sidebarSwitchCalls += 1;
+                    return { ok: false, cancelled: true };
+                },
+            });
+            window.LlamaGui.modelSwitchUi.setAssignment("a", "Sidebar Model A");
+            window.LlamaGui.modelSwitchUi.setAssignment("b", "Sidebar Model B");
+            await window.LlamaGui.modelSwitchUi.refresh({ reloadPresets: true });
+        });
+        await page.waitForFunction(() => document.querySelector("#sidebar-model-switcher-slider")?.getAttribute("aria-disabled") === "false");
+
+        await page.click("#sidebar-model-switcher-track", { position: { x: 70, y: 5 } });
+        assert.equal(await page.evaluate(() => window.__sidebarSwitchCalls), 0, "track clicks must be inert");
+
+        const sliderBox = await page.locator("#sidebar-model-switcher-slider").boundingBox();
+        const thumbBox = await page.locator("#sidebar-model-switcher-thumb").boundingBox();
+        assert.ok(sliderBox && thumbBox, "sidebar slider geometry must be measurable");
+        const thumbCenterX = thumbBox.x + thumbBox.width / 2;
+        const thumbCenterY = thumbBox.y + thumbBox.height / 2;
+        await page.mouse.move(thumbCenterX, thumbCenterY);
+        await page.mouse.down();
+        await page.mouse.move(sliderBox.x + sliderBox.width * 0.58, thumbCenterY, { steps: 4 });
+        await page.mouse.up();
+        assert.equal(await page.evaluate(() => window.__sidebarSwitchCalls), 0, "a short drag must snap back without switching");
+
+        await page.waitForTimeout(200);
+        const snappedThumbBox = await page.locator("#sidebar-model-switcher-thumb").boundingBox();
+        assert.ok(snappedThumbBox, "the slider thumb must remain visible after snap-back");
+        const snappedThumbCenterX = snappedThumbBox.x + snappedThumbBox.width / 2;
+        const snappedThumbCenterY = snappedThumbBox.y + snappedThumbBox.height / 2;
+        await page.mouse.move(snappedThumbCenterX, snappedThumbCenterY);
+        await page.mouse.down();
+        await page.mouse.move(sliderBox.x + sliderBox.width - 2, snappedThumbCenterY, { steps: 6 });
+        await page.mouse.up();
+        await page.waitForFunction(() => window.__sidebarSwitchCalls === 1);
+        await page.waitForFunction(() => document.querySelector("#sidebar-model-switcher-slider")?.getAttribute("aria-valuenow") === "0");
+
+        await page.focus("#sidebar-model-switcher-slider");
+        await page.keyboard.press("ArrowRight");
+        assert.equal(await page.evaluate(() => window.__sidebarSwitchCalls), 1, "an arrow key should preview without switching");
+        assert.match(await page.textContent("#sidebar-model-switcher-status"), /Press Enter to switch to Model B/);
+        await page.keyboard.press("Enter");
+        await page.waitForFunction(() => window.__sidebarSwitchCalls === 2);
+        await page.waitForFunction(() => document.querySelector("#sidebar-model-switcher-slider")?.getAttribute("aria-valuenow") === "0");
+        assert.equal(pageErrors.length, 0, pageErrors.join("\n"));
+
         console.log(`flag sync smoke passed on http://127.0.0.1:${port}/`);
     } finally {
         await browser.close().catch(() => {});

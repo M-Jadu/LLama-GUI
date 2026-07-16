@@ -101,6 +101,16 @@ assert.match(indexHtml, /id="model-switch-card"/);
 assert.match(indexHtml, /id="model-switch-toggle"[^>]+aria-controls="model-switch-body"/);
 assert.match(indexHtml, /id="model-switch-manage-toggle"[^>]+aria-controls="model-switch-manage"/);
 assert.match(indexHtml, /Standby means the model configuration is saved and ready to preflight/);
+assert.match(indexHtml, /id="sidebar-model-switcher-slider"[\s\S]*?role="slider"/);
+assert.match(indexHtml, /id="sidebar-model-switcher-slider"[\s\S]*?aria-disabled="true"/);
+assert.ok(
+    indexHtml.indexOf('id="sidebar-model-switcher"') < indexHtml.indexOf('class="theme-switcher"'),
+    "the compact model slider should sit above the theme switcher"
+);
+const sidebarSwitcherMarkup = indexHtml.match(/<section class="sidebar-model-switcher"[\s\S]*?<\/section>/)?.[0] || "";
+assert.doesNotMatch(sidebarSwitcherMarkup, /<svg/, "the sidebar switch thumb should not contain an icon");
+assert.match(source, /sidebarThumb\.addEventListener\("pointerdown", handleSidebarPointerDown\)/);
+assert.doesNotMatch(source, /sidebarThumb\.addEventListener\("click"/, "thumb clicks must not switch models");
 assert.match(appSource, /\/api\/presets\/fingerprint/);
 assert.doesNotMatch(appSource, /crypto\.subtle/, "drift fingerprints must use backend canonicalization");
 assert.match(source, /handleAssignmentChange[\s\S]*refresh\(\{ reloadPresets: true \}\)/);
@@ -190,6 +200,27 @@ views = slotViews({
 });
 assert.deepEqual(Array.from(views, view => view.state), ["active", "standby"]);
 assert.equal(api.selectActionSlot(views), "b", "the non-active slot should be the sole switch target");
+
+let sidebarState = api.buildSidebarSliderState(views, { phase: "ready", busy: false }, "a", true);
+assert.equal(sidebarState.activeSlot, "a");
+assert.equal(sidebarState.committedSlot, "a");
+assert.equal(sidebarState.targetSlot, "b");
+assert.equal(sidebarState.enabled, true);
+assert.equal(sidebarState.status, "Drag to switch");
+
+sidebarState = api.buildSidebarSliderState(slotViews(), { phase: "idle", busy: false }, "a", true);
+assert.equal(sidebarState.committedSlot, "a", "the inactive slider should default visually to A");
+assert.equal(sidebarState.enabled, false, "the sidebar shortcut must not become an initial launch surface");
+assert.match(sidebarState.status, /Quick Launch first/);
+
+sidebarState = api.buildSidebarSliderState(views, { phase: "ready", busy: true }, "a", true);
+assert.equal(sidebarState.enabled, false, "a busy lifecycle must lock the sidebar slider");
+
+assert.equal(api.resolveSidebarDragTarget("a", 0.95, false), "", "a click without movement must not switch");
+assert.equal(api.resolveSidebarDragTarget("a", 0.6, true), "", "a short drag must snap back");
+assert.equal(api.resolveSidebarDragTarget("a", 0.72, true), "b");
+assert.equal(api.resolveSidebarDragTarget("b", 0.28, true), "a");
+assert.equal(api.resolveSidebarDragTarget("b", 0.4, true), "", "the B-to-A drag must cross its threshold");
 
 views = slotViews({
     status: { running: true, active_runtime: activeRuntime },

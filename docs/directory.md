@@ -166,7 +166,7 @@ The frontend loads scripts in a strict dependency order via `ui/index.html`:
 | `ui/js/config-flags-ui.js` | `window.LlamaGui.configFlagsUi` | Configure tab flag rendering, search/filtering, expand/collapse state, type-specific flag input builders, input restoration, and high-risk `multi_enum` warnings |
 | `ui/js/manager.js` | `window.LlamaGui.manager` | GitHub release fetching, backend selection, installation progress UI, app update (git status/pull/restart), the shared `fetchJson()` utility, and accepted-status observer wiring for runtime reconciliation |
 | `ui/js/presets.js` | `window.LlamaGui.presets` | Preset normalization, validation, saving, loading, updating, deleting, exporting, importing, and group-by-model rendering with search and collapsible groups |
-| `ui/js/model-switch-ui.js` | `window.LlamaGui.modelSwitchUi` | Versioned two-slot saved-preset references, strict storage normalization, duplicate detection, session-only fallback, and accessible Quick Launch card state/rendering wired through injected preset/runtime dependencies |
+| `ui/js/model-switch-ui.js` | `window.LlamaGui.modelSwitchUi` | Versioned two-slot saved-preset references, strict storage normalization, duplicate detection, session-only fallback, accessible Quick Launch card state/rendering, and the drag-to-confirm sidebar shortcut wired through injected preset/runtime dependencies |
 | `ui/js/app-data.js` | (data) | `QUICK_PROFILES`, `BUILTIN_SAMPLER_PRESETS`, `CHAT_SAMPLER_SLIDER_MAP` |
 | `ui/js/output-cursor.js` | `window.LlamaGui.outputCursor` | Shared monotonic cursor consumer for main and benchmark process-output polling |
 | `ui/js/process-lifecycle.js` | `window.LlamaGui.processLifecycle` | Race-resistant launch, stop, switch, restore, authoritative-status reconciliation, and generation-keyed readiness controller with injectable UI hooks |
@@ -406,6 +406,21 @@ Quick Launch renders simplified controls for:
 - Profile selector with summary text
 
 All controls write through `window.LlamaGui.flagCore` setters (`setFlagValue()` / `setMultipleFlagValues()`), keeping Configure and Quick Launch in sync.
+
+### Model Switcher
+
+The Model Switcher card stores references to two saved full `llama-server`
+presets. It owns assignment, missing/invalid/drift/failure presentation while
+`process-lifecycle.js` owns preflight, stop, launch, readiness, and recovery.
+Standby means configuration is ready to preflight, not that a second model is
+resident in RAM or VRAM.
+
+The compact slider above the sidebar theme selector is a shortcut for an
+already-active Model Switcher runtime. Its position comes from authoritative
+active-runtime identity, pointer activation requires dragging the thumb across
+the far-side threshold, and keyboard activation requires selecting with an
+arrow/Home/End key followed by Enter or Space. It is disabled until a switcher
+slot is active; initial launch and slot assignment remain in Quick Launch.
 
 ### Optional llama-server Authentication
 

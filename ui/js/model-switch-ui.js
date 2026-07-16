@@ -20,6 +20,12 @@
     let refreshId = 0;
     let pendingSlot = "";
     let uiWarning = "";
+    let sidebarCommittedSlot = "a";
+    let sidebarPreviewSlot = "";
+    let sidebarKeyboardArmed = false;
+    let sidebarDrag = null;
+    let sidebarSliderState = null;
+    let lastViewState = null;
     const slotFailures = {};
 
     function clearSlotFailures(slotId = "") {
@@ -385,6 +391,48 @@
         return target ? target.id : "";
     }
 
+    function clampSliderProgress(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return 0;
+        return Math.min(1, Math.max(0, numeric));
+    }
+
+    function resolveSidebarDragTarget(currentSlot, progress, moved) {
+        if (!moved || !SLOT_IDS.includes(currentSlot)) return "";
+        const normalized = clampSliderProgress(progress);
+        if (currentSlot === "a" && normalized >= 0.72) return "b";
+        if (currentSlot === "b" && normalized <= 0.28) return "a";
+        return "";
+    }
+
+    function buildSidebarSliderState(views, lifecycle = {}, fallbackSlot = "a", canSwitch = true) {
+        const list = Array.isArray(views) ? views : [];
+        const active = list.find(view => view && view.activeIdentity);
+        const loading = list.find(view => view && view.state === "loading");
+        const committedSlot = active && SLOT_IDS.includes(active.id)
+            ? active.id
+            : SLOT_IDS.includes(fallbackSlot) ? fallbackSlot : "a";
+        const targetSlot = committedSlot === "a" ? "b" : "a";
+        const target = list.find(view => view && view.id === targetSlot);
+        const busy = Boolean(lifecycle.busy || pendingSlot || loading);
+        const enabled = Boolean(active && target && target.actionable && !busy && canSwitch);
+        let status = "Drag to switch";
+        if (loading) status = `Switching to Model ${loading.id.toUpperCase()}`;
+        else if (!active) status = "Launch a slot in Quick Launch first";
+        else if (busy) status = "Model switcher is busy";
+        else if (!canSwitch) status = "Model switching is unavailable";
+        else if (!target || !target.actionable) status = `Model ${targetSlot.toUpperCase()} is not ready`;
+        return {
+            activeSlot: active ? active.id : "",
+            committedSlot,
+            targetSlot,
+            enabled,
+            busy,
+            loadingSlot: loading ? loading.id : "",
+            status,
+        };
+    }
+
     async function loadPresetEntries(force = false) {
         if (presetEntries && !force) return presetEntries;
         const fetchEntries = dependencies.fetchPresetEntries
@@ -485,6 +533,54 @@
         }
     }
 
+    function setSidebarSliderPresentation(slot, progress, status) {
+        const slider = byId("sidebar-model-switcher-slider");
+        const panel = byId("sidebar-model-switcher");
+        const statusElement = byId("sidebar-model-switcher-status");
+        const visibleSlot = SLOT_IDS.includes(slot) ? slot : "a";
+        const normalizedProgress = clampSliderProgress(progress);
+        if (slider) {
+            slider.style.setProperty("--model-switch-progress", String(normalizedProgress));
+            slider.setAttribute("aria-valuenow", visibleSlot === "b" ? "1" : "0");
+            slider.setAttribute("aria-valuetext", `Model ${visibleSlot.toUpperCase()}`);
+        }
+        for (const slotId of SLOT_IDS) {
+            const label = byId(`sidebar-model-switcher-label-${slotId}`);
+            if (label) label.classList.toggle("is-active", slotId === visibleSlot);
+        }
+        if (panel) panel.dataset.position = visibleSlot;
+        if (statusElement && status) statusElement.textContent = status;
+    }
+
+    function renderSidebarSlider(viewState) {
+        const slider = byId("sidebar-model-switcher-slider");
+        const panel = byId("sidebar-model-switcher");
+        if (!slider || !panel) return;
+        const lifecycle = viewState.lifecycle || {};
+        sidebarSliderState = buildSidebarSliderState(
+            viewState.views,
+            lifecycle,
+            sidebarCommittedSlot,
+            typeof dependencies.switchSlot === "function"
+        );
+        if (sidebarSliderState.activeSlot) sidebarCommittedSlot = sidebarSliderState.activeSlot;
+        if (!sidebarSliderState.enabled && !sidebarSliderState.busy) {
+            sidebarKeyboardArmed = false;
+            sidebarPreviewSlot = "";
+        }
+        const visibleSlot = sidebarSliderState.loadingSlot
+            || (sidebarKeyboardArmed && sidebarPreviewSlot)
+            || sidebarCommittedSlot;
+        const status = sidebarKeyboardArmed && sidebarPreviewSlot !== sidebarCommittedSlot
+            ? `Press Enter to switch to Model ${sidebarPreviewSlot.toUpperCase()}`
+            : sidebarSliderState.status;
+        slider.setAttribute("aria-disabled", String(!sidebarSliderState.enabled));
+        slider.setAttribute("aria-busy", String(sidebarSliderState.busy));
+        panel.dataset.state = sidebarSliderState.busy ? "busy" : sidebarSliderState.enabled ? "ready" : "disabled";
+        panel.dataset.activeSlot = sidebarSliderState.activeSlot;
+        setSidebarSliderPresentation(visibleSlot, visibleSlot === "b" ? 1 : 0, status);
+    }
+
     function summaryText(views, lifecycle, runtime) {
         const loading = views.find(view => view.state === "loading");
         if (loading) return `Switching to ${loading.label}…`;
@@ -499,6 +595,7 @@
 
     function render(viewState) {
         if (typeof document === "undefined") return;
+        lastViewState = viewState;
         const lifecycle = viewState.lifecycle || {};
         const runtime = lifecycle.activeRuntime || viewState.status.active_runtime || null;
         const actionSlot = selectActionSlot(viewState.views, lifecycle);
@@ -507,6 +604,7 @@
         renderNotice(viewState.storageStatus, viewState.issues);
         populateManageSelect("a", viewState.entries, viewState.assignments);
         populateManageSelect("b", viewState.entries, viewState.assignments);
+        renderSidebarSlider(viewState);
     }
 
     async function refresh(options = {}) {
@@ -601,6 +699,8 @@
             return;
         }
         pendingSlot = slotId;
+        sidebarPreviewSlot = slotId;
+        sidebarKeyboardArmed = false;
         uiWarning = "";
         await refresh();
         try {
@@ -614,7 +714,119 @@
             slotFailures[slotId] = error && error.message ? error.message : "The model switch failed.";
         } finally {
             pendingSlot = "";
+            sidebarPreviewSlot = "";
+            sidebarKeyboardArmed = false;
             await refresh({ reloadPresets: true });
+        }
+    }
+
+    function sliderProgressFromPointer(event, drag = sidebarDrag) {
+        if (!drag) return 0;
+        const usableWidth = Math.max(1, drag.sliderRect.width - drag.thumbWidth);
+        return clampSliderProgress((event.clientX - drag.sliderRect.left - drag.grabOffset) / usableWidth);
+    }
+
+    function resetSidebarPreview() {
+        sidebarPreviewSlot = "";
+        sidebarKeyboardArmed = false;
+        if (lastViewState) renderSidebarSlider(lastViewState);
+    }
+
+    function handleSidebarPointerDown(event) {
+        if (!sidebarSliderState || !sidebarSliderState.enabled) return;
+        if (event.button !== undefined && event.button !== 0) return;
+        const slider = byId("sidebar-model-switcher-slider");
+        const thumb = byId("sidebar-model-switcher-thumb");
+        if (!slider || !thumb) return;
+        event.preventDefault();
+        slider.focus();
+        const sliderRect = slider.getBoundingClientRect();
+        const thumbRect = thumb.getBoundingClientRect();
+        sidebarDrag = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            sliderRect,
+            thumbWidth: thumbRect.width,
+            grabOffset: event.clientX - thumbRect.left,
+            committedSlot: sidebarCommittedSlot,
+            moved: false,
+        };
+        slider.classList.add("is-dragging");
+        if (typeof thumb.setPointerCapture === "function") thumb.setPointerCapture(event.pointerId);
+        setSidebarSliderPresentation(
+            sidebarCommittedSlot,
+            sidebarCommittedSlot === "b" ? 1 : 0,
+            `Drag to Model ${sidebarSliderState.targetSlot.toUpperCase()} and release`
+        );
+    }
+
+    function handleSidebarPointerMove(event) {
+        if (!sidebarDrag || event.pointerId !== sidebarDrag.pointerId) return;
+        event.preventDefault();
+        if (Math.abs(event.clientX - sidebarDrag.startX) >= 4) sidebarDrag.moved = true;
+        const progress = sliderProgressFromPointer(event);
+        const visibleSlot = progress >= 0.5 ? "b" : "a";
+        setSidebarSliderPresentation(
+            visibleSlot,
+            progress,
+            `Release near Model ${sidebarSliderState.targetSlot.toUpperCase()} to switch`
+        );
+    }
+
+    function finishSidebarPointer(event, cancelled = false) {
+        if (!sidebarDrag || event.pointerId !== sidebarDrag.pointerId) return;
+        const drag = sidebarDrag;
+        const thumb = byId("sidebar-model-switcher-thumb");
+        const slider = byId("sidebar-model-switcher-slider");
+        const progress = sliderProgressFromPointer(event, drag);
+        const targetSlot = cancelled ? "" : resolveSidebarDragTarget(drag.committedSlot, progress, drag.moved);
+        sidebarDrag = null;
+        if (slider) slider.classList.remove("is-dragging");
+        if (thumb && typeof thumb.releasePointerCapture === "function" && thumb.hasPointerCapture(event.pointerId)) {
+            thumb.releasePointerCapture(event.pointerId);
+        }
+        if (
+            targetSlot
+            && sidebarSliderState
+            && sidebarSliderState.enabled
+            && sidebarSliderState.targetSlot === targetSlot
+        ) {
+            sidebarPreviewSlot = targetSlot;
+            setSidebarSliderPresentation(targetSlot, targetSlot === "b" ? 1 : 0, `Switching to Model ${targetSlot.toUpperCase()}`);
+            void handleSwitch(targetSlot);
+            return;
+        }
+        resetSidebarPreview();
+    }
+
+    function handleSidebarKeyDown(event) {
+        if (!sidebarSliderState || !sidebarSliderState.enabled || sidebarDrag) return;
+        const keyTargets = {
+            ArrowLeft: "a",
+            Home: "a",
+            ArrowRight: "b",
+            End: "b",
+        };
+        if (keyTargets[event.key]) {
+            event.preventDefault();
+            const preview = keyTargets[event.key];
+            sidebarPreviewSlot = preview;
+            sidebarKeyboardArmed = preview !== sidebarCommittedSlot;
+            if (lastViewState) renderSidebarSlider(lastViewState);
+            return;
+        }
+        if (event.key === "Escape") {
+            event.preventDefault();
+            resetSidebarPreview();
+            return;
+        }
+        if ((event.key === "Enter" || event.key === " ") && sidebarKeyboardArmed) {
+            event.preventDefault();
+            const targetSlot = sidebarPreviewSlot;
+            if (targetSlot === sidebarSliderState.targetSlot) {
+                sidebarKeyboardArmed = false;
+                void handleSwitch(targetSlot);
+            }
         }
     }
 
@@ -641,6 +853,20 @@
                 if (select) select.addEventListener("change", () => handleAssignmentChange(slotId, select.value));
                 if (clear) clear.addEventListener("click", () => handleAssignmentChange(slotId, ""));
             }
+            const sidebarSlider = byId("sidebar-model-switcher-slider");
+            const sidebarThumb = byId("sidebar-model-switcher-thumb");
+            if (sidebarSlider) {
+                sidebarSlider.addEventListener("keydown", handleSidebarKeyDown);
+                sidebarSlider.addEventListener("blur", () => {
+                    if (!sidebarDrag && !pendingSlot) resetSidebarPreview();
+                });
+            }
+            if (sidebarThumb) {
+                sidebarThumb.addEventListener("pointerdown", handleSidebarPointerDown);
+                sidebarThumb.addEventListener("pointermove", handleSidebarPointerMove);
+                sidebarThumb.addEventListener("pointerup", event => finishSidebarPointer(event));
+                sidebarThumb.addEventListener("pointercancel", event => finishSidebarPointer(event, true));
+            }
         }
         setExpanded(true);
         setManageExpanded(false);
@@ -665,6 +891,8 @@
         refresh,
         buildSlotViews,
         selectActionSlot,
+        buildSidebarSliderState,
+        resolveSidebarDragTarget,
         handleSwitch,
     });
 })();

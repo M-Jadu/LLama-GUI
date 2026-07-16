@@ -59,7 +59,7 @@ Fast Node tests:
 - `launch_args_unit.cjs`: launch argument generation for inert defaults, sampler-related flag behavior, model-source recognition, and sensitive-value redaction.
 - `output_cursor_unit.cjs`: generation-aware process output cursor consumption and stale-response rejection.
 - `process_lifecycle_unit.cjs`: guarded launch/stop/switch ordering, readiness progression, generation conflicts, out-of-band replacement reconciliation, refused-stop recovery, stop-during-load, and stale transition handling.
-- `model_switch_ui_unit.cjs`: two-slot persistence, assignment validation, recoverable slot states, cancellation/failure cleanup, active-runtime display precedence, safe rendering helpers, and storage fallback.
+- `model_switch_ui_unit.cjs`: two-slot persistence, assignment validation, recoverable slot states, cancellation/failure cleanup, active-runtime display precedence, sidebar slider availability/drag thresholds/markup, safe rendering helpers, and storage fallback.
 - `benchmark_args_unit.cjs`: benchmark/perplexity argument adaptation without mutating source presets.
 - `chat_rendering_unit.cjs`: markdown escaping, fenced code safety, and safe source-link rendering.
 - `sampler_presets_unit.cjs`: sampler preset storage fallback, normalization, applying defaults, and built-in/custom preset shape.
@@ -72,7 +72,7 @@ Fast Node tests:
 
 Browser smoke test:
 
-- `flag_sync_smoke.cjs`: serves `ui/`, stubs backend APIs, and verifies shared state across Quick Launch, Configure, Chat, command preview, API authentication, API snippets, remote tunnel UI, sampler presets, and custom launch args.
+- `flag_sync_smoke.cjs`: serves `ui/`, stubs backend APIs, and verifies shared state across Quick Launch, Configure, Chat, command preview, API authentication, API snippets, remote tunnel UI, sampler presets, custom launch args, and the sidebar Model Switcher's rendered drag/keyboard guards.
 
 Use fast Node tests for focused debugging. Use the Playwright smoke test when a change affects real DOM wiring, mirrored controls, tab sync, command preview rendering, or launch blocking behavior.
 

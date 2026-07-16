@@ -113,6 +113,30 @@
         </nav>
 
         <div class="sidebar-footer">
+            <section class="sidebar-model-switcher" id="sidebar-model-switcher" aria-labelledby="sidebar-model-switcher-label">
+                <div class="sidebar-model-switcher-heading" id="sidebar-model-switcher-label">Model Switcher</div>
+                <div class="sidebar-model-switcher-control">
+                    <span class="sidebar-model-switcher-slot is-active" id="sidebar-model-switcher-label-a" aria-hidden="true">A</span>
+                    <div
+                        class="sidebar-model-switcher-slider"
+                        id="sidebar-model-switcher-slider"
+                        role="slider"
+                        tabindex="0"
+                        aria-label="Active model switcher slot"
+                        aria-valuemin="0"
+                        aria-valuemax="1"
+                        aria-valuenow="0"
+                        aria-valuetext="Model A"
+                        aria-disabled="true"
+                        aria-describedby="sidebar-model-switcher-status"
+                    >
+                        <span class="sidebar-model-switcher-track" id="sidebar-model-switcher-track" aria-hidden="true"></span>
+                        <span class="sidebar-model-switcher-thumb" id="sidebar-model-switcher-thumb" aria-hidden="true"></span>
+                    </div>
+                    <span class="sidebar-model-switcher-slot" id="sidebar-model-switcher-label-b" aria-hidden="true">B</span>
+                </div>
+                <div class="sidebar-model-switcher-status" id="sidebar-model-switcher-status" aria-live="polite">Launch a slot in Quick Launch first</div>
+            </section>
             <div class="theme-switcher" aria-label="Theme">
                 <button class="theme-switcher-btn active" type="button" data-theme-option="tokyo" aria-pressed="true" title="Use Tokyo dark theme">
                     <span class="icon icon-sm"><svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 7.5A9 9 0 1 1 12 3Z"/></svg></span>
