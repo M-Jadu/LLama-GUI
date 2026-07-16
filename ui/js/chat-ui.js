@@ -5,6 +5,7 @@
     let confirmAction = null;
     let getServerEndpointConfig = null;
     let getLatestStatus = null;
+    let getLifecycleSnapshot = null;
     let snapshotStatsBaseline = null;
     let getApiAuthorizationHeaders = (headers) => headers || {};
     let switchTab = () => {};
@@ -12,6 +13,7 @@
     let chatMessages = [];
     let chatStreaming = false;
     let chatAbortController = null;
+    let chatStreamPromise = null;
     let currentConversationId = null;
     let chatFocusMode = false;
 
@@ -45,6 +47,7 @@
         confirmAction = options.confirmAction;
         getServerEndpointConfig = options.getServerEndpointConfig;
         getLatestStatus = options.getLatestStatus;
+        getLifecycleSnapshot = options.getLifecycleSnapshot || getLifecycleSnapshot;
         snapshotStatsBaseline = options.snapshotStatsBaseline;
         getApiAuthorizationHeaders = options.getApiAuthorizationHeaders || getApiAuthorizationHeaders;
         switchTab = options.switchTab || switchTab;
@@ -80,6 +83,23 @@
     }
 
     function getChatModelName() {
+        const lifecycle = getLifecycleSnapshot ? getLifecycleSnapshot() : null;
+        const status = getLatestStatus();
+        const lifecycleRuntime = lifecycle && lifecycle.activeRuntime
+            && lifecycle.activeRuntime.tool === "llama-server"
+            ? lifecycle.activeRuntime
+            : null;
+        const statusRuntime = status && status.running && status.active_runtime
+            && status.active_runtime.tool === "llama-server"
+            ? status.active_runtime
+            : null;
+        const runtime = lifecycleRuntime || statusRuntime;
+        if (runtime) {
+            const activeAlias = String(runtime.alias || "").split(",")[0].trim();
+            if (activeAlias) return activeAlias;
+            const activeModel = String(runtime.model || "").trim();
+            if (activeModel) return activeModel;
+        }
         const values = flagCore.getFlagValues();
         const alias = String(values.alias || "").split(",")[0].trim();
         if (alias) return alias;
@@ -134,6 +154,10 @@
     }
 
     function isServerRunning() {
+        const lifecycle = getLifecycleSnapshot ? getLifecycleSnapshot() : null;
+        if (lifecycle && lifecycle.activeRuntime && lifecycle.activeRuntime.tool === "llama-server") {
+            return lifecycle.ready === true;
+        }
         const latestStatus = getLatestStatus ? getLatestStatus() : null;
         return !!(latestStatus && latestStatus.running && latestStatus.active_process_tool === "llama-server");
     }
@@ -142,11 +166,22 @@
         const chatInput = document.getElementById("chat-input");
         const sendBtn = document.getElementById("btn-chat-send");
         const note = document.getElementById("chat-no-server-note");
+        const lifecycle = getLifecycleSnapshot ? getLifecycleSnapshot() : null;
+        const isLoading = Boolean(
+            lifecycle
+            && lifecycle.activeRuntime
+            && lifecycle.activeRuntime.tool === "llama-server"
+            && (lifecycle.phase === "starting" || lifecycle.phase === "loading")
+        );
         const canSend = Boolean(isRunning) && !chatStreaming;
 
         if (chatInput) {
             chatInput.disabled = !isRunning;
-            chatInput.placeholder = isRunning ? "Type a message..." : "Start llama-server to chat...";
+            chatInput.placeholder = isRunning
+                ? "Type a message..."
+                : isLoading
+                    ? "Waiting for the model to finish loading..."
+                    : "Start llama-server to chat...";
         }
         if (sendBtn) {
             sendBtn.disabled = !canSend;
@@ -154,6 +189,12 @@
         }
         if (note) {
             note.classList.toggle("hidden", Boolean(isRunning));
+            const message = note.querySelector("span");
+            if (message) {
+                message.textContent = isLoading
+                    ? "llama-server is loading the selected model. Chat will unlock when it is ready."
+                    : "Start llama-server before sending chat messages.";
+            }
         }
     }
 
@@ -163,8 +204,16 @@
         if (!runningBadge || !noServerBadge) return;
 
         const isRunning = isServerRunning();
+        const lifecycle = getLifecycleSnapshot ? getLifecycleSnapshot() : null;
+        const isLoading = Boolean(
+            lifecycle
+            && lifecycle.activeRuntime
+            && lifecycle.activeRuntime.tool === "llama-server"
+            && (lifecycle.phase === "starting" || lifecycle.phase === "loading")
+        );
         runningBadge.style.display = isRunning ? "" : "none";
         noServerBadge.style.display = isRunning ? "none" : "";
+        noServerBadge.textContent = isLoading ? "Loading Model" : "No Server";
         updateChatAvailability(isRunning);
     }
 
@@ -241,7 +290,18 @@
         return params;
     }
 
-    async function sendMessage(userText) {
+    function sendMessage(userText) {
+        if (chatStreaming || !userText.trim()) return Promise.resolve();
+        const pending = runMessage(userText);
+        chatStreamPromise = pending;
+        const clearPending = () => {
+            if (chatStreamPromise === pending) chatStreamPromise = null;
+        };
+        pending.then(clearPending, clearPending);
+        return pending;
+    }
+
+    async function runMessage(userText) {
         if (chatStreaming || !userText.trim()) return;
         if (!isServerRunning()) {
             updateStatusBadge();
@@ -420,6 +480,29 @@
             chatAbortController.abort();
         }
         removeChatTypingIndicator();
+    }
+
+    async function abortActiveStream() {
+        const pending = chatStreamPromise;
+        stopStream();
+        if (pending) {
+            await pending.catch((error) => console.debug("Chat stream did not settle cleanly", error));
+        }
+    }
+
+    function addModelTransitionDivider(previousLabel, nextLabel) {
+        const container = document.getElementById("chat-messages");
+        if (!container) return;
+        const divider = document.createElement("div");
+        divider.className = "chat-model-divider";
+        divider.setAttribute("role", "separator");
+        const from = String(previousLabel || "previous model").trim() || "previous model";
+        const to = String(nextLabel || "new model").trim() || "new model";
+        divider.textContent = `Model switched: ${from} → ${to}`;
+        container.appendChild(divider);
+        const empty = document.getElementById("chat-empty");
+        if (empty) empty.style.display = "none";
+        container.scrollTop = container.scrollHeight;
     }
 
     function undoMessage() {
@@ -845,5 +928,7 @@
         onTabChanged,
         refreshSidebarUI,
         updateStatusBadge,
+        abortActiveStream,
+        addModelTransitionDivider,
     };
 })();

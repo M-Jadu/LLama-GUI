@@ -99,7 +99,9 @@ def completions(request, response, ctx):
         proxy_body.pop("port", None)
         proxy_body.pop("web_search_max_results", None)
 
-        api_url = chat_service.get_local_chat_api_url(body)
+        active_runtime = process_manager.get_active_runtime_snapshot(ctx)
+        target = active_runtime if active_runtime and active_runtime.get("tool") == "llama-server" else body
+        api_url = chat_service.get_local_chat_api_url(target)
         headers = {"Content-Type": "application/json"}
         authorization = process_manager.get_active_llama_authorization(
             ctx,

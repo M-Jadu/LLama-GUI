@@ -27,15 +27,42 @@ def launch(request, response, ctx):
     body = request.body or {}
     tool = body.get("tool", "llama-cli")
     args = body.get("args", [])
+    launch_context = body.get("launch_context")
     allowed_tools = ctx.services.llama_tools or []
     if tool not in allowed_tools:
         response.error(f"Unknown tool: {tool!r}", 400)
         return
-    result = process_manager.launch_process(ctx, tool, args)
+    result = process_manager.launch_process(ctx, tool, args, launch_context)
     if "error" in result:
         response.error(result.get("error", "Launch failed"), 400)
     else:
         response.json(result)
+
+
+def preflight_launch(request, response, ctx):
+    body = request.body or {}
+    result = process_manager.preflight_launch(
+        ctx,
+        body.get("tool", "llama-server"),
+        body.get("args"),
+        body.get("fingerprint_data"),
+    )
+    if "error" in result:
+        response.error(result.get("error", "Launch preflight failed"), 400)
+    else:
+        response.json(result)
+
+
+def fingerprint_preset(request, response, ctx):
+    body = request.body or {}
+    try:
+        fingerprint = process_manager.compute_preset_fingerprint(
+            body.get("fingerprint_data")
+        )
+    except ValueError as exc:
+        response.error(str(exc), 400)
+        return
+    response.json({"ok": True, "preset_fingerprint": fingerprint})
 
 
 def estimate_memory(request, response, ctx):
@@ -53,7 +80,32 @@ def get_buffer_types(request, response, ctx):
     response.json(process_manager.get_buffer_types(ctx))
 
 
+def get_health(request, response, ctx):
+    query = urllib.parse.parse_qs(request.query, keep_blank_values=True)
+    expected_generation = (query.get("expected_generation") or [None])[-1]
+    try:
+        result = process_manager.get_llama_health(ctx, expected_generation)
+    except Exception as exc:
+        sanitize_error(exc, 500)
+        result = {
+            "state": "error",
+            "ready": False,
+            "generation": None,
+            "expected_generation": None,
+            "message": "The llama-server health check failed.",
+        }
+    response.json(result)
+
+
 def stop(request, response, ctx):
+    body = request.body or {}
+    if "expected_generation" in body:
+        response.json(
+            process_manager.stop_process_for_generation(
+                ctx, body.get("expected_generation")
+            )
+        )
+        return
     response.json({"stopped": process_manager.stop_process(ctx)})
 
 

@@ -73,14 +73,67 @@ assert.equal(
     "API endpoint config should fall back for blank host and invalid port"
 );
 
+flagValues = { host: "pending-host", port: 9999, alias: "pending-alias" };
+apiTab.configure({
+    getLatestStatus: () => ({
+        running: true,
+        active_runtime: {
+            tool: "llama-server",
+            host: "127.0.0.1",
+            port: 8123,
+            alias: "active-alias",
+            model: "active-model.gguf",
+        },
+    }),
+});
+assert.equal(
+    JSON.stringify(apiTab.getServerEndpointConfig()),
+    JSON.stringify({ host: "127.0.0.1", port: 8123, baseUrl: "http://127.0.0.1:8123" }),
+    "running API consumers should prefer the backend active-runtime endpoint"
+);
+
 flagValues = { host: "0.0.0.0", port: "9099", alias: "primary-alias, backup", api_key: "secret" };
 selectedModel = "selected-model.gguf";
 currentTool = "llama-server";
+apiTab.configure({ getLatestStatus: () => ({ running: true }) });
 elements.set("api-base-url", createElement("a"));
 elements.set("api-endpoints-list", createElement("div"));
 elements.set("api-snippets-list", createElement("div"));
 elements.set("api-status-note", createElement("div"));
 
+apiTab.configure({
+    getLatestStatus: () => ({
+        running: true,
+        active_process_tool: "llama-server",
+        active_runtime: {
+            tool: "llama-server",
+            host: "127.0.0.1",
+            port: 8123,
+            alias: "active-alias",
+            model: "active-model.gguf",
+        },
+    }),
+});
+apiTab.updateEndpoints();
+const activeSnippetsText = elements.get("api-snippets-list").children
+    .map((card) => JSON.stringify(card))
+    .join("\n");
+assert.match(activeSnippetsText, /active-alias/);
+assert.doesNotMatch(activeSnippetsText, /primary-alias/);
+apiTab.configure({
+    getLifecycleSnapshot: () => ({
+        phase: "loading",
+        activeRuntime: { tool: "llama-server", host: "127.0.0.3", port: 8222, alias: "loading-alias" },
+    }),
+});
+apiTab.updateEndpoints();
+assert.match(elements.get("api-status-note").textContent, /temporarily unavailable/);
+assert.equal(apiTab.getServerEndpointConfig().baseUrl, "http://127.0.0.3:8222");
+
+apiTab.configure({
+    getLatestStatus: () => ({ running: true }),
+    getLifecycleSnapshot: () => null,
+});
 apiTab.updateEndpoints();
 
 assert.equal(elements.get("api-base-url").textContent, "http://0.0.0.0:9099");

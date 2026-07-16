@@ -253,6 +253,47 @@ vm.runInContext(source, context, { filename: "ui/js/manager.js" });
         "stale release responses should not overwrite the latest backend releases"
     );
 
+    let statusFetchCount = 0;
+    let releaseFirstObserver;
+    const firstObserverGate = new Promise(resolve => { releaseFirstObserver = resolve; });
+    const observedGenerations = [];
+    context.fetch = async (url) => {
+        if (url.startsWith("/api/releases")) {
+            return { ok: true, json: async () => [] };
+        }
+        assert.equal(url, "/api/status");
+        statusFetchCount += 1;
+        const generation = statusFetchCount;
+        return {
+            ok: true,
+            json: async () => ({
+                installed: true,
+                running: true,
+                active_process_tool: "llama-server",
+                active_runtime: { generation, tool: "llama-server" },
+                runtime_generation: generation,
+                available_backends: [],
+                executables: {},
+            }),
+        };
+    };
+    context.window.LlamaGui.manager.setAcceptedStatusObserver(async status => {
+        observedGenerations.push(status.runtime_generation);
+        if (status.runtime_generation === 1) await firstObserverGate;
+    });
+    const firstStatusCheck = context.checkStatus();
+    while (observedGenerations.length === 0) await Promise.resolve();
+    const secondStatus = await context.checkStatus();
+    assert.equal(secondStatus.runtime_generation, 2);
+    releaseFirstObserver();
+    const firstStatus = await firstStatusCheck;
+    assert.equal(firstStatus.runtime_generation, 2, "an older accepted request must return the latest status");
+    assert.deepEqual(
+        observedGenerations,
+        [1, 2, 2],
+        "the latest status must be re-observed after an older long-running observer settles"
+    );
+
     console.log("manager releases unit tests passed");
 })().catch((err) => {
     console.error(err);

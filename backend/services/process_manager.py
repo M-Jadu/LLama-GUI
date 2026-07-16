@@ -1,13 +1,21 @@
 """llama.cpp process management helpers."""
 
+import hashlib
+import json
+import math
 import os
+import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import threading
-import re
-from typing import Any, Iterable, Optional
+import unicodedata
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any, Iterable, Mapping, Optional
 
 from .. import config
 from ..context import AppContext
@@ -15,6 +23,14 @@ from ..context import AppContext
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _SENSITIVE_VALUE_FLAGS = {"--api-key"}
+_LAUNCH_CONTEXT_KEYS = {"source", "slot", "preset", "preset_fingerprint"}
+_MODEL_VALUE_FLAGS = ("-m", "--model", "-hf", "--hf-repo", "-mu", "--model-url")
+_LOCAL_MODEL_VALUE_FLAGS = ("-m", "--model")
+_REMOTE_MODEL_VALUE_FLAGS = ("-hf", "--hf-repo", "-mu", "--model-url")
+_ALIAS_VALUE_FLAGS = ("-a", "--alias")
+_FINGERPRINT_RE = re.compile(r"[0-9a-f]{64}\Z")
+_SENSITIVE_CUSTOM_ARG_RE = re.compile(r"(?<![A-Za-z0-9_-])--api-key(?=$|[=\s])")
+_HEALTH_TIMEOUT_SECONDS = 2
 _ESTIMATE_VALUE_FLAGS = {
     "-t",
     "--threads",
@@ -168,23 +184,208 @@ _ESTIMATE_BOOL_FLAGS = {
 }
 
 
+def _clear_active_process_state(ctx: AppContext) -> None:
+    ctx.state.active_process_tool = None
+    ctx.state.active_llama_api_keys = ()
+    ctx.state.active_runtime = None
+
+
 def _reap_finished_process(ctx: AppContext) -> None:
     """Clear state left behind by a process that exited on its own.
 
     Caller must hold ctx.state.process_lock.
     """
     process = ctx.state.process
-    if process is not None and process.poll() is not None:
+    if process is None:
+        _clear_active_process_state(ctx)
+    elif process.poll() is not None:
         ctx.state.last_exit_code = process.poll()
         ctx.state.process = None
-        ctx.state.active_process_tool = None
-        ctx.state.active_llama_api_keys = ()
+        _clear_active_process_state(ctx)
 
 
 def is_process_running(ctx: AppContext) -> bool:
     with ctx.state.process_lock:
         _reap_finished_process(ctx)
         return ctx.state.process is not None
+
+
+def get_active_runtime_snapshot(ctx: AppContext) -> Optional[dict[str, Any]]:
+    return get_process_status_snapshot(ctx)["active_runtime"]
+
+
+def get_process_status_snapshot(ctx: AppContext) -> dict[str, Any]:
+    with ctx.state.process_lock:
+        _reap_finished_process(ctx)
+        active_runtime = (
+            dict(ctx.state.active_runtime) if ctx.state.active_runtime is not None else None
+        )
+        return {
+            "running": ctx.state.process is not None,
+            "active_process_tool": ctx.state.active_process_tool,
+            "active_runtime": active_runtime,
+            "runtime_generation": ctx.state.runtime_generation,
+            "api_auth_configured": bool(
+                ctx.state.process is not None
+                and ctx.state.active_process_tool == "llama-server"
+                and ctx.state.active_llama_api_keys
+            ),
+            "last_exit_code": ctx.state.last_exit_code,
+        }
+
+
+def _parse_expected_generation(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError("expected_generation must be a positive integer")
+    try:
+        generation = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("expected_generation must be a positive integer") from exc
+    if generation < 1 or str(value).strip() != str(generation):
+        raise ValueError("expected_generation must be a positive integer")
+    return generation
+
+
+def _health_result(
+    state: str,
+    generation: Optional[int],
+    expected_generation: Optional[int],
+    message: str,
+) -> dict[str, Any]:
+    return {
+        "state": state,
+        "ready": state == "ready",
+        "generation": generation,
+        "expected_generation": expected_generation,
+        "message": message,
+    }
+
+
+def _superseded_health_result(
+    snapshot: Mapping[str, Any], expected_generation: Optional[int]
+) -> dict[str, Any]:
+    runtime = snapshot.get("active_runtime")
+    generation = (
+        runtime.get("generation")
+        if isinstance(runtime, Mapping)
+        else snapshot.get("runtime_generation")
+    )
+    return _health_result(
+        "superseded",
+        generation,
+        expected_generation,
+        "The observed runtime generation has been superseded.",
+    )
+
+
+def get_llama_health(ctx: AppContext, expected_generation: Any = None) -> dict[str, Any]:
+    try:
+        expected = _parse_expected_generation(expected_generation)
+    except ValueError as exc:
+        return _health_result("error", None, None, str(exc))
+
+    initial = get_process_status_snapshot(ctx)
+    runtime = initial.get("active_runtime")
+    if not initial.get("running") or not isinstance(runtime, Mapping):
+        return _health_result(
+            "stopped",
+            initial.get("runtime_generation"),
+            expected,
+            "No llama-server process is running.",
+        )
+
+    generation = runtime.get("generation")
+    if expected is not None and generation != expected:
+        return _superseded_health_result(initial, expected)
+    if runtime.get("tool") != "llama-server":
+        return _health_result(
+            "error",
+            generation,
+            expected,
+            "The active process is not llama-server.",
+        )
+
+    host = str(runtime.get("host") or "").strip()
+    try:
+        port = int(runtime.get("port"))
+    except (TypeError, ValueError):
+        port = 0
+    if not host or port < 1 or port > 65535:
+        return _health_result(
+            "error",
+            generation,
+            expected,
+            "The active llama-server target is invalid.",
+        )
+
+    url_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    request = urllib.request.Request(
+        f"http://{url_host}:{port}/health",
+        headers={"Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=_HEALTH_TIMEOUT_SECONDS) as upstream:
+            status = getattr(upstream, "status", None)
+            if status is None:
+                status = upstream.getcode()
+        if status == 200:
+            observed = _health_result(
+                "ready", generation, expected, "llama-server is ready."
+            )
+        elif status == 503:
+            observed = _health_result(
+                "loading", generation, expected, "llama-server is loading the model."
+            )
+        else:
+            observed = _health_result(
+                "error",
+                generation,
+                expected,
+                f"llama-server health returned HTTP {status}.",
+            )
+    except urllib.error.HTTPError as exc:
+        try:
+            if exc.code == 503:
+                observed = _health_result(
+                    "loading", generation, expected, "llama-server is loading the model."
+                )
+            else:
+                observed = _health_result(
+                    "error",
+                    generation,
+                    expected,
+                    f"llama-server health returned HTTP {exc.code}.",
+                )
+        finally:
+            exc.close()
+    except (urllib.error.URLError, TimeoutError, socket.timeout, ConnectionError, OSError):
+        observed = _health_result(
+            "starting", generation, expected, "llama-server is starting."
+        )
+    except Exception as exc:
+        print(f"[process] llama-server health probe failed: {exc}", file=sys.stderr)
+        observed = _health_result(
+            "error", generation, expected, "The llama-server health check failed."
+        )
+
+    current = get_process_status_snapshot(ctx)
+    current_runtime = current.get("active_runtime")
+    if isinstance(current_runtime, Mapping):
+        if current_runtime.get("generation") != generation:
+            return _superseded_health_result(current, expected)
+    elif current.get("runtime_generation") != generation:
+        return _superseded_health_result(current, expected)
+    else:
+        state = "failed" if current.get("last_exit_code") not in (None, 0) else "stopped"
+        message = (
+            "llama-server exited before becoming ready."
+            if state == "failed"
+            else "llama-server stopped before the health check completed."
+        )
+        return _health_result(state, generation, expected, message)
+    return observed
 
 
 def get_output_snapshot(ctx: AppContext, since: Optional[int] = None) -> dict[str, Any]:
@@ -200,11 +401,14 @@ def get_output_snapshot(ctx: AppContext, since: Optional[int] = None) -> dict[st
             offset = cursor - start_cursor
         lines = list(ctx.state.output_buffer[offset:])
         readers_active = ctx.state.output_reader_count > 0
+    process_status = get_process_status_snapshot(ctx)
     snapshot = {
         "lines": lines,
         "next_cursor": next_cursor,
         "dropped": dropped,
-        "running": is_process_running(ctx) or readers_active,
+        "running": bool(process_status["running"] or readers_active),
+        "runtime_generation": process_status["runtime_generation"],
+        "active_process_tool": process_status["active_process_tool"],
     }
     if since is None:
         # Deprecated alias for consumers that poll without a cursor and still
@@ -549,6 +753,116 @@ def parse_launch_api_target(ctx: AppContext, args_list: Optional[Iterable[Any]])
         return dict(ctx.services.get_llama_api_target())
 
 
+def _normalize_context_text(value: Any, field: str, max_length: int) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"launch_context.{field} must be a string")
+    normalized = value.strip()
+    if not normalized or len(normalized) > max_length:
+        raise ValueError(f"launch_context.{field} is invalid")
+    if any(unicodedata.category(char).startswith("C") for char in normalized):
+        raise ValueError(f"launch_context.{field} is invalid")
+    return normalized
+
+
+def normalize_launch_context(value: Any) -> dict[str, str]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ValueError("launch_context must be an object")
+    if set(value) != _LAUNCH_CONTEXT_KEYS:
+        raise ValueError("launch_context fields are invalid")
+
+    source = _normalize_context_text(value.get("source"), "source", 32)
+    if source != "model-switcher":
+        raise ValueError("launch_context.source is invalid")
+    slot = _normalize_context_text(value.get("slot"), "slot", 1)
+    if slot not in {"a", "b"}:
+        raise ValueError("launch_context.slot is invalid")
+    preset = _normalize_context_text(value.get("preset"), "preset", 128)
+    fingerprint = _normalize_context_text(
+        value.get("preset_fingerprint"), "preset_fingerprint", 128
+    )
+    if not _FINGERPRINT_RE.fullmatch(fingerprint):
+        raise ValueError("launch_context.preset_fingerprint is invalid")
+    return {
+        "source": source,
+        "slot": slot,
+        "preset": preset,
+        "preset_fingerprint": fingerprint,
+    }
+
+
+def _last_launch_flag_entry(
+    flat_args: list[str], flags: tuple[str, ...]
+) -> tuple[Optional[str], Optional[str]]:
+    result: tuple[Optional[str], Optional[str]] = (None, None)
+    index = 0
+    while index < len(flat_args):
+        item = flat_args[index]
+        if item in flags and index + 1 < len(flat_args):
+            result = (item, flat_args[index + 1])
+            index += 2
+            continue
+        matched = next((flag for flag in flags if item.startswith(f"{flag}=")), None)
+        if matched is not None:
+            result = (matched, item.split("=", 1)[1])
+        index += 1
+    return result
+
+
+def _last_launch_flag_value(flat_args: list[str], flags: tuple[str, ...]) -> Optional[str]:
+    return _last_launch_flag_entry(flat_args, flags)[1]
+
+
+def _safe_runtime_text(value: Any, max_length: int) -> Optional[str]:
+    if value is None:
+        return None
+    text = "".join(
+        char
+        for char in str(value).strip()
+        if not unicodedata.category(char).startswith("C")
+    )
+    return text[:max_length] or None
+
+
+def _safe_runtime_model_identity(flat_args: list[str]) -> Optional[str]:
+    model_flag, model_value = _last_launch_flag_entry(flat_args, _MODEL_VALUE_FLAGS)
+    if model_flag in ("-mu", "--model-url"):
+        # Model URLs commonly contain signed query strings or userinfo. Runtime
+        # status is public management metadata, so expose only a non-secret label.
+        return "Remote model URL"
+    return _safe_runtime_text(model_value, 1024)
+
+
+def _build_active_runtime(
+    ctx: AppContext,
+    tool: str,
+    flat_args: list[str],
+    launch_context: Mapping[str, str],
+    api_target: Optional[Mapping[str, Any]],
+) -> dict[str, Any]:
+    model = _safe_runtime_model_identity(flat_args)
+    raw_alias = _last_launch_flag_value(flat_args, _ALIAS_VALUE_FLAGS)
+    aliases = parse_csv_row(raw_alias) if raw_alias is not None else []
+    alias = next((_safe_runtime_text(item, 128) for item in aliases if str(item).strip()), None)
+    runtime = {
+        "generation": ctx.state.runtime_generation + 1,
+        "tool": tool,
+        "model": model,
+        "alias": alias,
+        "host": None,
+        "port": None,
+        "source": launch_context.get("source", "manual"),
+        "slot": launch_context.get("slot"),
+        "preset": launch_context.get("preset"),
+        "preset_fingerprint": launch_context.get("preset_fingerprint"),
+    }
+    if api_target is not None:
+        runtime["host"] = _safe_runtime_text(api_target.get("host"), 255)
+        runtime["port"] = int(api_target.get("port"))
+    return runtime
+
+
 def parse_csv_row(value: Any) -> list[str]:
     """Match llama.cpp's CSV parsing for --api-key values."""
     text = str(value)
@@ -681,34 +995,160 @@ def redact_sensitive_text(text: Any, args: Iterable[Any]) -> str:
     return result
 
 
-def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]]) -> dict[str, Any]:
+def _validate_launch_environment(
+    ctx: AppContext, tool: str
+) -> tuple[Optional[Path], Optional[str]]:
+    exe_name = ctx.services.get_tool_filename(tool)
+    exe_path = ctx.services.find_tool_executable(tool)
+    if not exe_path.exists():
+        return None, f"{exe_name} not found. Install llama.cpp first."
+
+    runtime_health = dict(ctx.services.validate_runtime_dependencies([tool]))
+    missing_runtime_files = runtime_health.get("missing_runtime_files") or []
+    if not missing_runtime_files:
+        return exe_path, None
+
+    missing = ", ".join(str(name) for name in missing_runtime_files)
+    plural = "libraries" if len(missing_runtime_files) != 1 else "library"
+    cfg = _load_config_safe(ctx)
+    recovery = (
+        "Add the missing files to llama/custom/bin/."
+        if cfg.get("backend") == "custom"
+        else "Use Repair Install to reinstall binaries."
+    )
+    return None, f"Missing llama.cpp runtime {plural}: {missing}. {recovery}"
+
+
+def _canonical_fingerprint_json(value: Any) -> str:
+    if not isinstance(value, Mapping):
+        raise ValueError("fingerprint_data must be an object")
+
+    def validate(candidate: Any) -> None:
+        if isinstance(candidate, Mapping):
+            for key, nested in candidate.items():
+                if not isinstance(key, str):
+                    raise ValueError("fingerprint_data contains an invalid key")
+                if key.casefold() == "api_key":
+                    raise ValueError("fingerprint_data must not contain api_key")
+                validate(nested)
+            return
+        if isinstance(candidate, list):
+            for nested in candidate:
+                validate(nested)
+            return
+        if isinstance(candidate, str) and _SENSITIVE_CUSTOM_ARG_RE.search(candidate):
+            raise ValueError("fingerprint_data must not contain --api-key")
+        if candidate is None or isinstance(candidate, (str, int, float, bool)):
+            return
+        raise ValueError("fingerprint_data contains an unsupported value")
+
+    validate(value)
+    try:
+        return json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("fingerprint_data is not valid canonical JSON") from exc
+
+
+def compute_preset_fingerprint(value: Any) -> str:
+    canonical = _canonical_fingerprint_json(value)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _normalize_preflight_args(args_list: Any) -> list[str]:
+    if not isinstance(args_list, list):
+        raise ValueError("args must be an array")
+    for entry in args_list:
+        values = entry if isinstance(entry, list) else [entry]
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (str, int, float))
+            or (isinstance(value, float) and not math.isfinite(value))
+            for value in values
+        ):
+            raise ValueError("args contains an invalid value")
+    return flatten_launch_args(args_list)
+
+
+def preflight_launch(
+    ctx: AppContext,
+    tool: Any,
+    args_list: Any,
+    fingerprint_data: Any,
+) -> dict[str, Any]:
+    allowed_tools = tuple(ctx.services.llama_tools or ())
+    if not isinstance(tool, str):
+        return {"error": "tool must be a string"}
+    if tool not in allowed_tools:
+        return {"error": f"Unknown tool: {tool!r}"}
+    if tool != "llama-server":
+        return {"error": "Model switching requires llama-server."}
+
+    try:
+        flat_args = _normalize_preflight_args(args_list)
+        preset_fingerprint = compute_preset_fingerprint(fingerprint_data)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    exe_path, environment_error = _validate_launch_environment(ctx, tool)
+    if environment_error is not None:
+        return {"error": environment_error}
+
+    model_flag, model_value = _last_launch_flag_entry(
+        flat_args, _LOCAL_MODEL_VALUE_FLAGS + _REMOTE_MODEL_VALUE_FLAGS
+    )
+    model_value = str(model_value or "").strip()
+    if model_flag is None or not model_value:
+        return {"error": "Launch args must contain a model source."}
+
+    if model_flag in _LOCAL_MODEL_VALUE_FLAGS:
+        model_path = Path(model_value)
+        if not model_path.is_absolute():
+            model_path = ctx.paths.root / model_path
+        if not model_path.is_file():
+            return {"error": "Local model file does not exist."}
+        model_source = "local"
+        safe_model = _safe_runtime_text(model_value, 1024)
+    elif model_flag in ("-hf", "--hf-repo"):
+        model_source = "hugging-face"
+        safe_model = _safe_runtime_text(model_value, 1024)
+    else:
+        model_source = "url"
+        safe_model = None
+
+    return {
+        "ok": True,
+        "tool": tool,
+        "model": safe_model,
+        "model_source": model_source,
+        "preset_fingerprint": preset_fingerprint,
+        "executable": exe_path.name if exe_path is not None else None,
+    }
+
+
+def launch_process(
+    ctx: AppContext,
+    tool: str,
+    args_list: Optional[Iterable[Any]],
+    launch_context: Any = None,
+) -> dict[str, Any]:
     with ctx.state.process_lock:
         _reap_finished_process(ctx)
         if ctx.state.process is not None:
             return {"error": "A process is already running"}
+        try:
+            normalized_launch_context = normalize_launch_context(launch_context)
+        except ValueError as exc:
+            return {"error": str(exc)}
 
-        exe_name = ctx.services.get_tool_filename(tool)
-        exe_path = ctx.services.find_tool_executable(tool)
-        if not exe_path.exists():
-            return {"error": f"{exe_name} not found. Install llama.cpp first."}
-
-        runtime_health = dict(ctx.services.validate_runtime_dependencies([tool]))
-        missing_runtime_files = runtime_health.get("missing_runtime_files") or []
-        if missing_runtime_files:
-            missing = ", ".join(str(name) for name in missing_runtime_files)
-            plural = "libraries" if len(missing_runtime_files) != 1 else "library"
-            cfg = _load_config_safe(ctx)
-            recovery = (
-                "Add the missing files to llama/custom/bin/."
-                if cfg.get("backend") == "custom"
-                else "Use Repair Install to reinstall binaries."
-            )
-            return {
-                "error": (
-                    f"Missing llama.cpp runtime {plural}: {missing}. "
-                    f"{recovery}"
-                )
-            }
+        exe_path, environment_error = _validate_launch_environment(ctx, tool)
+        if environment_error is not None:
+            return {"error": environment_error}
 
         flat_launch_args = flatten_launch_args(args_list)
         args = [str(exe_path), *flat_launch_args]
@@ -716,6 +1156,7 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
         env = _build_process_env(ctx)
 
         process = None
+        generation = None
         try:
             process = subprocess.Popen(
                 args,
@@ -747,15 +1188,26 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
                 args=(ctx, process.stderr, True, generation),
                 daemon=True,
             ).start()
+            api_target = None
+            if tool == "llama-server":
+                api_target = parse_launch_api_target(ctx, flat_launch_args)
+            active_runtime = _build_active_runtime(
+                ctx,
+                tool,
+                flat_launch_args,
+                normalized_launch_context,
+                api_target,
+            )
             ctx.state.active_process_tool = tool
             ctx.state.active_llama_api_keys = launch_api_keys
+            ctx.state.runtime_generation = active_runtime["generation"]
+            ctx.state.active_runtime = active_runtime
             ctx.state.last_exit_code = None
-            if tool == "llama-server":
-                parse_launch_api_target(ctx, args_list)
             return {
                 "pid": ctx.state.process.pid,
                 "command": " ".join(redact_sensitive_args(args)),
                 "output_cursor": output_cursor,
+                "active_runtime": dict(active_runtime),
             }
         except Exception as e:
             if process is not None:
@@ -769,43 +1221,89 @@ def launch_process(ctx: AppContext, tool: str, args_list: Optional[Iterable[Any]
                         f"[process] failed to clean up partially launched process: {cleanup_exc}",
                         file=sys.stderr,
                     )
-                ctx.state.process = None
-                ctx.state.active_process_tool = None
-                ctx.state.active_llama_api_keys = ()
+            ctx.state.process = None
+            _clear_active_process_state(ctx)
+            if generation is not None:
+                with ctx.state.output_buffer_lock:
+                    ctx.state.output_reader_count = 0
             return {"error": redact_sensitive_text(e, args)}
+
+
+def _stop_process_locked(ctx: AppContext) -> bool:
+    process = ctx.state.process
+    if process is not None and process.poll() is None:
+        if sys.platform == "win32":
+            process.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        if process.poll() is None:
+            # Keep tracking the process so a new launch can't run
+            # alongside one that refused to die.
+            print(
+                f"[process] PID {process.pid} survived kill; still tracking it",
+                file=sys.stderr,
+            )
+            return False
+        ctx.state.last_exit_code = process.poll()
+        ctx.state.process = None
+        _clear_active_process_state(ctx)
+        return True
+    _reap_finished_process(ctx)
+    return False
 
 
 def stop_process(ctx: AppContext) -> bool:
     with ctx.state.process_lock:
-        process = ctx.state.process
-        if process is not None and process.poll() is None:
-            if sys.platform == "win32":
-                process.send_signal(signal.CTRL_BREAK_EVENT)
-            else:
-                process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    pass
-            if process.poll() is None:
-                # Keep tracking the process so a new launch can't run
-                # alongside one that refused to die.
-                print(
-                    f"[process] PID {process.pid} survived kill; still tracking it",
-                    file=sys.stderr,
-                )
-                return False
-            ctx.state.last_exit_code = process.poll()
-            ctx.state.process = None
-            ctx.state.active_process_tool = None
-            ctx.state.active_llama_api_keys = ()
-            return True
+        return _stop_process_locked(ctx)
+
+
+def stop_process_for_generation(ctx: AppContext, expected_generation: Any) -> dict[str, Any]:
+    try:
+        expected = _parse_expected_generation(expected_generation)
+        if expected is None:
+            raise ValueError("expected_generation must be a positive integer")
+    except ValueError as exc:
+        return {
+            "stopped": False,
+            "state": "error",
+            "generation": None,
+            "message": str(exc),
+        }
+
+    with ctx.state.process_lock:
         _reap_finished_process(ctx)
-        return False
+        runtime = ctx.state.active_runtime
+        current_generation = (
+            runtime.get("generation")
+            if isinstance(runtime, Mapping)
+            else ctx.state.runtime_generation
+        )
+        if not isinstance(runtime, Mapping) or current_generation != expected:
+            return {
+                "stopped": False,
+                "state": "superseded",
+                "generation": current_generation,
+                "message": "The requested runtime generation is no longer active.",
+            }
+        stopped = _stop_process_locked(ctx)
+        return {
+            "stopped": stopped,
+            "state": "stopped" if stopped else "error",
+            "generation": expected,
+            "message": (
+                "The runtime was stopped."
+                if stopped
+                else "The runtime could not be stopped."
+            ),
+        }
 
 
 def send_input(ctx: AppContext, text: str) -> bool:

@@ -77,6 +77,8 @@ class ServerStateTests(unittest.TestCase):
         self.assertEqual(state.model_download.snapshot()["status"], "idle")
         self.assertEqual(state.remote_tunnel.snapshot()["message"], "Remote tunnel is not running.")
         self.assertEqual(state.llama_api_target.snapshot(), {"host": "127.0.0.1", "port": 8080})
+        self.assertIsNone(state.active_runtime)
+        self.assertEqual(state.runtime_generation, 0)
         self.assertFalse(state.restart_requested.is_set())
 
     def test_app_context_groups_paths_config_and_state(self):

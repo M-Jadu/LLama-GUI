@@ -201,7 +201,7 @@
             return {
                 ok: false,
                 type: "warning",
-                message: "Select a model or provide an HF repo before launching.",
+                message: "Select a model or provide a remote model source before launching.",
             };
         }
         return { ok: true, type: "", message: "" };

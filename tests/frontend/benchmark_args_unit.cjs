@@ -265,4 +265,49 @@ function flat(result) {
     assert.equal(elements["benchmark-chunks"].value, "5");
 }
 
-console.log("benchmark adapter tests passed");
+function trackedClassList(initial = []) {
+    const values = new Set(initial);
+    return {
+        toggle(name, force) {
+            if (force === undefined ? !values.has(name) : force) values.add(name);
+            else values.delete(name);
+        },
+        add(name) { values.add(name); },
+        remove(name) { values.delete(name); },
+        contains(name) { return values.has(name); },
+    };
+}
+
+(async () => {
+    const runButton = { classList: trackedClassList(["hidden"]) };
+    const stopButton = { classList: trackedClassList() };
+    context.document.getElementById = id => ({
+        "btn-run-benchmark": runButton,
+        "btn-stop-benchmark": stopButton,
+    })[id] || null;
+    let refreshCount = 0;
+    adapter.configure({
+        fetchJson: async () => ({
+            lines: ["replacement server output"],
+            next_cursor: 1,
+            dropped: false,
+            running: true,
+            runtime_generation: 2,
+            active_process_tool: "llama-server",
+        }),
+        refreshRuntimeStatusPanels: async () => { refreshCount += 1; },
+        processLifecycle: {
+            getSnapshot: () => ({ activeRuntime: { generation: 1, tool: "llama-bench" } }),
+        },
+    });
+
+    await adapter._testPollOutput();
+
+    assert.equal(runButton.classList.contains("hidden"), false);
+    assert.equal(stopButton.classList.contains("hidden"), true);
+    assert.equal(refreshCount, 1);
+    console.log("benchmark adapter tests passed");
+})().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});

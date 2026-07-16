@@ -340,6 +340,18 @@ class HandlerResponseTests(ServerStateIsolationMixin, unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(match.handler_name, "get_status")
 
+        preflight_match = server.API_ROUTER.match("POST", "/api/launch/preflight")
+        self.assertIsNotNone(preflight_match)
+        self.assertEqual(preflight_match.handler_name, "preflight_launch")
+
+        fingerprint_match = server.API_ROUTER.match("POST", "/api/presets/fingerprint")
+        self.assertIsNotNone(fingerprint_match)
+        self.assertEqual(fingerprint_match.handler_name, "fingerprint_preset")
+
+        health_match = server.API_ROUTER.match("GET", "/api/llama/health")
+        self.assertIsNotNone(health_match)
+        self.assertEqual(health_match.handler_name, "get_health")
+
     def test_unknown_api_route_returns_json_404(self):
         handler = self.make_handler(origin="http://localhost:5240")
         handler.path = "/api/missing"

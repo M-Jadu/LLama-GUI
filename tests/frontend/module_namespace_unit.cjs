@@ -66,6 +66,7 @@ for (const scriptFile of scriptFiles) {
 const expectedNamespaces = [
     "flagCore",
     "outputCursor",
+    "processLifecycle",
     "themeUi",
     "configFlagsUi",
     "quickLaunchUi",
@@ -77,6 +78,7 @@ const expectedNamespaces = [
     "samplerPresets",
     "benchmarkUi",
     "presets",
+    "modelSwitchUi",
     "manager",
 ];
 
@@ -95,6 +97,8 @@ assert.equal(typeof context.window.LlamaGui.apiTab.updateEndpoints, "function");
 assert.equal(typeof context.window.LlamaGui.remoteTunnelUi.renderStatus, "function");
 assert.equal(typeof context.window.LlamaGui.benchmarkUi.init, "function");
 assert.equal(typeof context.window.LlamaGui.presets.loadPreset, "function");
+assert.equal(typeof context.window.LlamaGui.modelSwitchUi.getAssignments, "function");
+assert.equal(typeof context.window.LlamaGui.processLifecycle.switchRuntime, "function");
 assert.equal(typeof context.window.LlamaGui.manager.fetchJson, "function");
 
 console.log(`module namespace check passed for ${scriptFiles.length} scripts`);

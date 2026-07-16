@@ -242,6 +242,82 @@
                 </button>
             </div>
 
+            <section class="card model-switch-card" id="model-switch-card" aria-labelledby="model-switch-title">
+                <div class="model-switch-header">
+                    <button class="model-switch-collapse" id="model-switch-toggle" type="button" aria-expanded="true" aria-controls="model-switch-body">
+                        <span class="model-switch-chevron" aria-hidden="true">▾</span>
+                        <span>
+                            <span class="card-kicker">Two-slot launcher</span>
+                            <span class="model-switch-heading" id="model-switch-title">Model Switcher</span>
+                            <span class="model-switch-summary" id="model-switch-summary">Assign two saved server presets for quick switching.</span>
+                        </span>
+                    </button>
+                    <button class="btn btn-sm" id="model-switch-manage-toggle" type="button" aria-expanded="false" aria-controls="model-switch-manage">Manage slots</button>
+                </div>
+                <div id="model-switch-body">
+                    <p class="model-switch-explainer">Standby means the model configuration is saved and ready to preflight; it is not kept loaded in RAM or VRAM.</p>
+                    <div class="model-switch-notice hidden" id="model-switch-notice" role="status" aria-live="polite"></div>
+                    <div class="model-switch-slots">
+                        <article class="model-switch-slot" id="model-switch-slot-a" aria-labelledby="model-switch-slot-a-title">
+                            <div class="model-switch-slot-top">
+                                <div>
+                                    <div class="model-switch-slot-label">Model A</div>
+                                    <div class="model-switch-slot-name" id="model-switch-slot-a-title">Unassigned</div>
+                                </div>
+                                <span class="model-switch-badge" id="model-switch-slot-a-badge">Unassigned</span>
+                            </div>
+                            <dl class="model-switch-details">
+                                <div><dt>Preset</dt><dd id="model-switch-slot-a-preset">—</dd></div>
+                                <div><dt>Model</dt><dd id="model-switch-slot-a-model">—</dd></div>
+                                <div><dt>GGUF</dt><dd id="model-switch-slot-a-gguf">—</dd></div>
+                            </dl>
+                            <div class="model-switch-slot-footer">
+                                <span class="model-switch-slot-message" id="model-switch-slot-a-message">Choose a saved llama-server preset.</span>
+                                <button class="btn btn-sm btn-primary hidden" id="model-switch-slot-a-action" type="button" data-model-switch-action="a">Switch to Model A</button>
+                            </div>
+                        </article>
+                        <article class="model-switch-slot" id="model-switch-slot-b" aria-labelledby="model-switch-slot-b-title">
+                            <div class="model-switch-slot-top">
+                                <div>
+                                    <div class="model-switch-slot-label">Model B</div>
+                                    <div class="model-switch-slot-name" id="model-switch-slot-b-title">Unassigned</div>
+                                </div>
+                                <span class="model-switch-badge" id="model-switch-slot-b-badge">Unassigned</span>
+                            </div>
+                            <dl class="model-switch-details">
+                                <div><dt>Preset</dt><dd id="model-switch-slot-b-preset">—</dd></div>
+                                <div><dt>Model</dt><dd id="model-switch-slot-b-model">—</dd></div>
+                                <div><dt>GGUF</dt><dd id="model-switch-slot-b-gguf">—</dd></div>
+                            </dl>
+                            <div class="model-switch-slot-footer">
+                                <span class="model-switch-slot-message" id="model-switch-slot-b-message">Choose a saved llama-server preset.</span>
+                                <button class="btn btn-sm btn-primary hidden" id="model-switch-slot-b-action" type="button" data-model-switch-action="b">Switch to Model B</button>
+                            </div>
+                        </article>
+                    </div>
+                    <div class="model-switch-manage hidden" id="model-switch-manage" aria-hidden="true">
+                        <div class="model-switch-manage-heading">Assign saved server presets</div>
+                        <div class="model-switch-manage-grid">
+                            <div class="form-group">
+                                <label class="form-label" for="model-switch-select-a">Model A preset</label>
+                                <div class="input-row">
+                                    <select id="model-switch-select-a"><option value="">Unassigned</option></select>
+                                    <button class="btn btn-sm btn-ghost" id="model-switch-clear-a" type="button" disabled>Clear</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="model-switch-select-b">Model B preset</label>
+                                <div class="input-row">
+                                    <select id="model-switch-select-b"><option value="">Unassigned</option></select>
+                                    <button class="btn btn-sm btn-ghost" id="model-switch-clear-b" type="button" disabled>Clear</button>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="help-text">Only saved full presets configured for llama-server are available.</p>
+                    </div>
+                </div>
+            </section>
+
             <div class="quick-grid">
                 <div class="quick-setup-grid span-full">
                     <div class="card">
@@ -1208,8 +1284,10 @@
 <script src="/js/config-flags-ui.js?v=revamp-1"></script>
 <script src="/js/manager.js?v=revamp-2"></script>
 <script src="/js/presets.js?v=revamp-3"></script>
+<script src="/js/model-switch-ui.js?v=model-switch-1"></script>
 <script src="/js/app-data.js?v=revamp-1"></script>
 <script src="/js/output-cursor.js?v=revamp-1"></script>
+<script src="/js/process-lifecycle.js?v=model-switch-1"></script>
 <script src="/js/sampler-presets.js?v=revamp-1"></script>
 <script src="/js/chat-rendering.js?v=revamp-1"></script>
 <script src="/js/api-tab.js?v=revamp-1"></script>
