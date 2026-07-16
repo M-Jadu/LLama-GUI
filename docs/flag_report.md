@@ -65,7 +65,7 @@ No local flag appears truly removed.
 | `-c` / `--ctx-size` | default | `16000` | upstream default `0`, loaded from model |
 | `--mmap` | default | local default disables mmap via `--no-mmap` | upstream default enabled |
 | `-fitc` / `--fit-ctx` | default | `16000` | upstream default `4096` |
-| `-np` / `--parallel` | default | `-1` | upstream default `1` |
+| `-np` / `--parallel` | default | `-1` | upstream default `1` (correction, July 2026: upstream now defaults to `-1` = auto as well — no longer a divergence) |
 | `--metrics` | default | local default enabled | upstream default disabled |
 
 The default differences may be intentional GUI safe defaults, but because this app emits defaults into launch args, they do change `llama-server` behavior versus upstream.
