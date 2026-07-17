@@ -25,7 +25,6 @@ from backend.config import (
     PRESETS_DIR,
     REQUEST_BODY_TIMEOUT_SECONDS,
     UI_DIR,
-    WEB_SEARCH_FETCH_BYTES,
     WEB_SEARCH_MAX_RESULTS,
     WEB_SEARCH_PAGE_CHARS,
     WEB_SEARCH_TIMEOUT,
@@ -63,6 +62,7 @@ from backend.services import file_picker as file_picker_service
 from backend.services import hf_download as hf_download_service
 from backend.services import llama_manager as llama_manager_service
 from backend.services import lifecycle as lifecycle_service
+from backend.services import local_llama_http as local_llama_http_service
 from backend.services import process_manager as process_service
 from backend.services import tunnel as tunnel_service
 from backend.services import web_search as web_search_service
@@ -457,63 +457,19 @@ def get_local_interface_addresses():
 
 
 def get_metrics_host(host):
-    return chat_service.get_local_proxy_host(host)
+    return local_llama_http_service.get_metrics_host(host)
 
 
 def get_local_llama_metrics(host, port, authorization=""):
-    try:
-        parsed_port = int(port or LLAMA_PORT)
-    except (TypeError, ValueError):
-        return None, "Invalid llama-server metrics port."
-    if parsed_port < 1 or parsed_port > 65535:
-        return None, "Invalid llama-server metrics port."
-
-    metrics_host, host_error = get_metrics_host(host)
-    if not metrics_host:
-        return None, host_error
-
-    url = f"http://{metrics_host}:{parsed_port}/metrics"
-    headers = {"Accept": "text/plain"}
-    if authorization:
-        headers["Authorization"] = authorization
-    req = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            raw = resp.read(WEB_SEARCH_FETCH_BYTES)
-            charset = resp.headers.get_content_charset() or "utf-8"
-            return raw.decode(charset, errors="replace"), ""
-    except urllib.error.HTTPError as exc:
-        return None, f"llama-server metrics returned HTTP {exc.code}."
-    except Exception as exc:
-        return None, f"Failed to fetch llama-server metrics: {exc}"
+    return local_llama_http_service.get_local_llama_metrics(
+        host, port, authorization
+    )
 
 
 def get_local_llama_slots(host, port, authorization=""):
-    try:
-        parsed_port = int(port or LLAMA_PORT)
-    except (TypeError, ValueError):
-        return None, "Invalid llama-server slots port."
-    if parsed_port < 1 or parsed_port > 65535:
-        return None, "Invalid llama-server slots port."
-
-    metrics_host, host_error = get_metrics_host(host)
-    if not metrics_host:
-        return None, host_error
-
-    url = f"http://{metrics_host}:{parsed_port}/slots"
-    headers = {"Accept": "application/json"}
-    if authorization:
-        headers["Authorization"] = authorization
-    req = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            raw = resp.read(WEB_SEARCH_FETCH_BYTES)
-            charset = resp.headers.get_content_charset() or "utf-8"
-            return raw.decode(charset, errors="replace"), ""
-    except urllib.error.HTTPError as exc:
-        return None, f"llama-server slots returned HTTP {exc.code}."
-    except Exception as exc:
-        return None, f"Failed to fetch llama-server slots: {exc}"
+    return local_llama_http_service.get_local_llama_slots(
+        host, port, authorization
+    )
 
 
 def iter_versioned_ui_asset_paths(index_html=None):

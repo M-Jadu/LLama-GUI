@@ -106,6 +106,7 @@
 | `git_update.py` | Git fetch/pull/status, safe dirty path classification |
 | `lifecycle.py` | Server shutdown, restart, cleanup |
 | `chat.py` | Chat proxy helpers (search queries, context building, local addresses) |
+| `local_llama_http.py` | Shared local llama-server metrics and slots HTTP fetching |
 | `file_picker.py` | Native tkinter file dialog |
 
 ### State Pattern
@@ -731,7 +732,6 @@ Prefer `rg` for local search. On Windows/PowerShell, use patterns like `rg -n "p
 | `AGENTS.md` | Agent workflow rules, pitfalls, task recipes, file ownership |
 | `docs/directory.md` | This file — project structure and feature reference |
 | `docs/todo.md` | Known planned work |
-| `docs/model_switcher_plan.md` | Two-slot Quick Launch model switcher implementation plan and progress log |
 | `docs/flag_report.md` | Archived one-time flag audit report (May 2026) |
 | `docs/llama_cpp_compat_report.md` | Current llama.cpp compatibility report |
 | `docs/images/` | Screenshots used by README.md |
