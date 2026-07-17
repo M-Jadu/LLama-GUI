@@ -325,4 +325,47 @@ function launchResult() {
     assert.match(unsupported.error, /Unsupported/);
 }
 
+{
+    // Test full paths with forward slashes (from HuggingFace cache, LM Studio, etc.)
+    const hfPath = vm.runInContext(`window.LlamaGui.flagCore.buildLaunchArgs({
+        tool: "llama-server",
+        model: "/home/user/.cache/huggingface/hub/models/model.gguf",
+        flags: {},
+    })`, context);
+    const hfArgs = Array.from(hfPath.args).flat().map(String);
+    assert.ok(hfArgs.includes("/home/user/.cache/huggingface/hub/models/model.gguf"), "full HF path should be preserved as-is");
+    assert.equal(hfPath.error, null, "full HF path should not produce an error");
+
+    // Test full paths with backslashes (Windows paths)
+    const windowsPathStr = String.raw`C:\Users\user\models\model.gguf`;
+    context.windowsModel = windowsPathStr;
+    const windowsPath = vm.runInContext(`window.LlamaGui.flagCore.buildLaunchArgs({
+        tool: "llama-server",
+        model: windowsModel,
+        flags: {},
+    })`, context);
+    const windowsArgs = Array.from(windowsPath.args).flat().map(String);
+    assert.ok(windowsArgs.includes(windowsPathStr), `full Windows path "${windowsPathStr}" should be preserved as-is`);
+    assert.equal(windowsPath.error, null, "full Windows path should not produce an error");
+    delete context.windowsModel;
+
+    // Test relative paths with forward slashes (e.g., from scanner with relative paths)
+    const relativePath = vm.runInContext(`window.LlamaGui.flagCore.buildLaunchArgs({
+        tool: "llama-server",
+        model: "models/subfolder/model.gguf",
+        flags: {},
+    })`, context);
+    const relativeArgs = Array.from(relativePath.args).flat().map(String);
+    assert.ok(relativeArgs.includes("models/subfolder/model.gguf"), "relative path should be preserved as-is");
+    assert.equal(relativePath.error, null, "relative path should not produce an error");
+
+    // Test path traversal rejection (.. should still be rejected)
+    const traversal = vm.runInContext(`window.LlamaGui.flagCore.buildLaunchArgs({
+        tool: "llama-server",
+        model: "../../../etc/passwd.gguf",
+        flags: {},
+    })`, context);
+    assert.match(traversal.error, /Invalid model filename/, "path traversal with .. should be rejected");
+}
+
 console.log("launch args unit tests passed");

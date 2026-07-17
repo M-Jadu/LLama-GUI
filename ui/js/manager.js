@@ -1014,7 +1014,7 @@ async function refreshModels() {
         for (const m of models) {
             if (!m.name || !String(m.name).toLowerCase().endsWith(".gguf")) continue;
             const opt = document.createElement("option");
-            opt.value = m.name;
+            opt.value = m.path || m.name;
             opt.textContent = `${m.name}  (${m.size_mb} MB)`;
             sel.appendChild(opt);
             added++;
@@ -1051,6 +1051,55 @@ async function refreshModels() {
     }
 }
 
+async function rescanModels() {
+    const sel = document.getElementById("model-select");
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">Scanning models...</option>';
+    try {
+        const models = await fetchJson("/api/models/rescan", { method: "POST" });
+        let added = 0;
+        sel.innerHTML = '<option value="">-- Select Model --</option>';
+        for (const m of models) {
+            if (!m.name || !String(m.name).toLowerCase().endsWith(".gguf")) continue;
+            const opt = document.createElement("option");
+            opt.value = m.path || m.name;
+            opt.textContent = `${m.name}  (${m.size_mb} MB)`;
+            sel.appendChild(opt);
+            added++;
+        }
+        if (added === 0) {
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "No .gguf models found \u2014 add one to models/ or download from Quick Launch";
+            sel.appendChild(opt);
+        }
+        if (current) sel.value = current;
+        if (window.LlamaGui && window.LlamaGui.flagCore) {
+            window.LlamaGui.flagCore.setSelectedModelValue(sel.value || "");
+        }
+        if (typeof syncQuickLaunchModelOptions === "function") {
+            syncQuickLaunchModelOptions();
+        }
+        if (typeof showToast === "function") {
+            showToast("Model scan complete: found " + added + " .gguf file(s)", "success");
+        }
+    } catch (e) {
+        sel.innerHTML = '<option value="">Rescan failed</option>';
+        if (window.LlamaGui && window.LlamaGui.flagCore) {
+            window.LlamaGui.flagCore.setSelectedModelValue("");
+        }
+        if (typeof syncQuickLaunchModelOptions === "function") {
+            syncQuickLaunchModelOptions();
+        }
+        if (typeof showToast === "function") {
+            showToast("Could not rescan models: " + e.message, "error");
+        } else {
+            console.debug("Failed to rescan model list", e);
+        }
+    }
+}
+
 if (window.addEventListener) {
     window.addEventListener("beforeunload", stopInstallProgressPolling);
 }
@@ -1062,6 +1111,7 @@ if (window.LlamaGui) {
         checkStatus,
         setAcceptedStatusObserver,
         refreshModels,
+        rescanModels,
         checkAppUpdateStatus,
         updateAppFromGitHub,
         stopInstallProgressPolling,

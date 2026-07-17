@@ -522,6 +522,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const btnRefreshModels = document.getElementById("btn-refresh-models");
     if (btnRefreshModels) btnRefreshModels.addEventListener("click", () => refreshModels());
+    const btnQuickRefreshModels = document.getElementById("btn-quick-refresh-models");
+    if (btnQuickRefreshModels) btnQuickRefreshModels.addEventListener("click", () => refreshModels());
+    const btnQuickRescanModels = document.getElementById("btn-quick-rescan-models");
+    if (btnQuickRescanModels) btnQuickRescanModels.addEventListener("click", () => rescanModels());
     const btnClearOutput = document.getElementById("btn-clear-output");
     if (btnClearOutput) btnClearOutput.addEventListener("click", clearOutput);
     const btnSendInput = document.getElementById("btn-send-input");

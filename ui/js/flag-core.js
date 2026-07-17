@@ -422,10 +422,16 @@
 
         const modelName = model;
         if (modelName) {
-            if (modelName.includes("..") || modelName.includes("/") || modelName.includes("\\")) {
+            // Check for path traversal attempts (.. is never allowed)
+            if (modelName.includes("..")) {
                 return { args, error: "Invalid model filename.", warnings };
             }
-            args.push(["-m", "models/" + modelName]);
+            // If path contains / or \, use it as-is (full path from scanner)
+            // Otherwise, assume it's a filename in the models/ directory
+            const modelPath = (modelName.includes("/") || modelName.includes("\\"))
+                ? modelName
+                : "models/" + modelName;
+            args.push(["-m", modelPath]);
         }
 
         return { args, error: null, warnings };

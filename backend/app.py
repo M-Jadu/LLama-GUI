@@ -840,6 +840,7 @@ API_ROUTER = (
     .add("GET", "/api/llama/metrics", metrics_routes.get_metrics)
     .add("GET", "/api/llama/slots", metrics_routes.get_slots)
     .add("GET", "/api/models", models_routes.list_models)
+    .add("POST", "/api/models/rescan", models_routes.rescan_models)
     .add("GET", "/api/app-update-status", git_update_routes.get_status)
     .add("GET", "/api/presets", presets_routes.list_presets)
     .add("POST", "/api/web-search", search_routes.search)
