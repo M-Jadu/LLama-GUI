@@ -7,15 +7,19 @@ import subprocess
 import tarfile
 import tempfile
 import unittest
+import urllib.error
 import zipfile
+from email.message import Message
 from types import SimpleNamespace
 from unittest import mock
 
+from backend import config
 from backend.context import AppContext, AppPaths, ServerConfig
 from backend.services import chat as chat_service
 from backend.services import file_picker as file_picker_service
 from backend.services import hf_download as hf_service
 from backend.services import llama_manager
+from backend.services import local_llama_http
 from backend.services import process_manager
 from backend.services import web_search as web_search_service
 
@@ -53,6 +57,197 @@ class FakeDownloadResponseTests(unittest.TestCase):
         self.assertEqual(resp.read(3), b"cde")
         self.assertEqual(resp.read(10), b"f")
         self.assertEqual(resp.read(10), b"")
+
+
+class LocalLlamaHttpTests(unittest.TestCase):
+    @staticmethod
+    def make_response(body, content_type=""):
+        response = mock.MagicMock()
+        response.read.return_value = body
+        response.headers = Message()
+        if content_type:
+            response.headers["Content-Type"] = content_type
+        response.__enter__.return_value = response
+        return response
+
+    def test_metrics_forwards_authorization_and_decodes_response_charset(self):
+        response = self.make_response(
+            "café".encode("iso-8859-1"),
+            "text/plain; charset=iso-8859-1",
+        )
+        with (
+            mock.patch.object(
+                local_llama_http,
+                "get_metrics_host",
+                return_value=("127.0.0.1", ""),
+            ),
+            mock.patch.object(
+                local_llama_http.urllib.request,
+                "urlopen",
+                return_value=response,
+            ) as urlopen,
+        ):
+            text, error = local_llama_http.get_local_llama_metrics(
+                "localhost", "9090", "Bearer secret"
+            )
+
+        self.assertEqual((text, error), ("café", ""))
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "http://127.0.0.1:9090/metrics")
+        self.assertEqual(request.get_header("Accept"), "text/plain")
+        self.assertEqual(request.get_header("Authorization"), "Bearer secret")
+        self.assertEqual(urlopen.call_args.kwargs, {"timeout": 3})
+        response.read.assert_called_once_with(config.WEB_SEARCH_FETCH_BYTES)
+
+    def test_slots_uses_json_accept_header_and_utf8_fallback(self):
+        response = self.make_response('[{"id":0}]'.encode("utf-8"))
+        with (
+            mock.patch.object(
+                local_llama_http,
+                "get_metrics_host",
+                return_value=("127.0.0.1", ""),
+            ),
+            mock.patch.object(
+                local_llama_http.urllib.request,
+                "urlopen",
+                return_value=response,
+            ) as urlopen,
+        ):
+            text, error = local_llama_http.get_local_llama_slots(
+                "127.0.0.1", 8080
+            )
+
+        self.assertEqual((text, error), ('[{"id":0}]', ""))
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "http://127.0.0.1:8080/slots")
+        self.assertEqual(request.get_header("Accept"), "application/json")
+        self.assertIsNone(request.get_header("Authorization"))
+
+    def test_app_delegates_and_default_service_wiring_are_preserved(self):
+        from backend import app
+
+        self.assertIs(
+            app.APP_CONTEXT.services.get_local_llama_metrics,
+            app.get_local_llama_metrics,
+        )
+        self.assertIs(
+            app.APP_CONTEXT.services.get_local_llama_slots,
+            app.get_local_llama_slots,
+        )
+        with (
+            mock.patch.object(
+                local_llama_http,
+                "get_local_llama_metrics",
+                return_value=("metrics", ""),
+            ) as get_metrics,
+            mock.patch.object(
+                local_llama_http,
+                "get_local_llama_slots",
+                return_value=("slots", ""),
+            ) as get_slots,
+        ):
+            self.assertEqual(
+                app.get_local_llama_metrics("localhost", 8080, "Bearer key"),
+                ("metrics", ""),
+            )
+            self.assertEqual(
+                app.get_local_llama_slots("localhost", 8080, "Bearer key"),
+                ("slots", ""),
+            )
+
+        get_metrics.assert_called_once_with("localhost", 8080, "Bearer key")
+        get_slots.assert_called_once_with("localhost", 8080, "Bearer key")
+
+    def test_endpoint_specific_port_errors_are_preserved(self):
+        cases = (
+            (local_llama_http.get_local_llama_metrics, "metrics"),
+            (local_llama_http.get_local_llama_slots, "slots"),
+        )
+        for fetch, label in cases:
+            for port in ("invalid", "0", "65536"):
+                with self.subTest(label=label, port=port):
+                    self.assertEqual(
+                        fetch("localhost", port),
+                        (None, f"Invalid llama-server {label} port."),
+                    )
+
+    def test_host_validation_error_is_returned_without_fetching(self):
+        with (
+            mock.patch.object(
+                local_llama_http,
+                "get_metrics_host",
+                return_value=("", "Blocked local host."),
+            ),
+            mock.patch.object(
+                local_llama_http.urllib.request,
+                "urlopen",
+            ) as urlopen,
+        ):
+            result = local_llama_http.get_local_llama_slots("remote", 8080)
+
+        self.assertEqual(result, (None, "Blocked local host."))
+        urlopen.assert_not_called()
+
+    def test_endpoint_specific_http_errors_are_preserved(self):
+        cases = (
+            (local_llama_http.get_local_llama_metrics, "metrics"),
+            (local_llama_http.get_local_llama_slots, "slots"),
+        )
+        for fetch, label in cases:
+            with self.subTest(label=label):
+                error_body = io.BytesIO(b"unavailable")
+                error = urllib.error.HTTPError(
+                    "http://127.0.0.1:8080/endpoint",
+                    503,
+                    "Unavailable",
+                    None,
+                    error_body,
+                )
+                with (
+                    mock.patch.object(
+                        local_llama_http,
+                        "get_metrics_host",
+                        return_value=("127.0.0.1", ""),
+                    ),
+                    mock.patch.object(
+                        local_llama_http.urllib.request,
+                        "urlopen",
+                        side_effect=error,
+                    ),
+                ):
+                    result = fetch("localhost", 8080)
+
+                self.assertEqual(
+                    result,
+                    (None, f"llama-server {label} returned HTTP 503."),
+                )
+                self.assertTrue(error_body.closed)
+
+    def test_endpoint_specific_network_errors_are_preserved(self):
+        cases = (
+            (local_llama_http.get_local_llama_metrics, "metrics"),
+            (local_llama_http.get_local_llama_slots, "slots"),
+        )
+        for fetch, label in cases:
+            with self.subTest(label=label):
+                with (
+                    mock.patch.object(
+                        local_llama_http,
+                        "get_metrics_host",
+                        return_value=("127.0.0.1", ""),
+                    ),
+                    mock.patch.object(
+                        local_llama_http.urllib.request,
+                        "urlopen",
+                        side_effect=OSError("offline"),
+                    ),
+                ):
+                    result = fetch("localhost", 8080)
+
+                self.assertEqual(
+                    result,
+                    (None, f"Failed to fetch llama-server {label}: offline"),
+                )
 
 
 def make_service_context(root):
